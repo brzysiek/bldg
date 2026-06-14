@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Grant Docs Manager{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'bottle': '#1C4B40',
+            'lime': '#B5E619',
+            'slate-text': '#484845',
+            'offwhite': '#F5F5F3',
+          },
+          fontFamily: {
+            sans: ['Work Sans', 'sans-serif'],
+          },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Work Sans', sans-serif; }
+    .prose h1, .prose h2, .prose h3, .prose h4 { font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #1C4B40; }
+    .prose h1 { font-size: 1.5rem; border-bottom: 2px solid #B5E619; padding-bottom: 0.25rem; }
+    .prose h2 { font-size: 1.25rem; }
+    .prose h3 { font-size: 1.1rem; }
+    .prose p { margin-bottom: 0.75rem; line-height: 1.7; }
+    .prose ul, .prose ol { margin-left: 1.5rem; margin-bottom: 0.75rem; }
+    .prose ul { list-style-type: disc; }
+    .prose ol { list-style-type: decimal; }
+    .prose li { margin-bottom: 0.25rem; }
+    .prose strong { font-weight: 600; color: #1C4B40; }
+    .prose code { background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+    .prose pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 6px; overflow-x: auto; margin-bottom: 0.75rem; }
+    .prose table { width: 100%; border-collapse: collapse; margin-bottom: 0.75rem; }
+    .prose th { background: #1C4B40; color: white; padding: 0.5rem 0.75rem; text-align: left; }
+    .prose td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; }
+    .prose tr:nth-child(even) td { background: #f9fafb; }
+    .prose blockquote { border-left: 4px solid #B5E619; padding-left: 1rem; color: #6b7280; font-style: italic; margin-bottom: 0.75rem; }
+    .prose hr { border-color: #e5e7eb; margin: 1rem 0; }
+  </style>
+</head>
+<body class="bg-offwhite text-slate-text min-h-screen flex">
+
+  <!-- Sidebar -->
+  <aside class="w-64 bg-bottle text-white flex flex-col fixed h-full z-10">
+    <div class="px-6 py-5 border-b border-white/10">
+      <div class="text-lime font-bold text-lg leading-tight">Grant Docs</div>
+      <div class="text-white/60 text-xs mt-0.5">Manager</div>
+    </div>
+    <nav class="flex-1 px-4 py-4 space-y-1">
+      <a href="{{ url_for('competitions.index') }}"
+         class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                {% if request.path == '/' or request.path.startswith('/competition') %}bg-white/15 text-white{% else %}text-white/70 hover:bg-white/10 hover:text-white{% endif %}">
+        <span class="text-base">📁</span>
+        <span>Konkursy</span>
+      </a>
+      <a href="{{ url_for('comparison.index') }}"
+         class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                {% if request.path.startswith('/comparison') %}bg-white/15 text-white{% else %}text-white/70 hover:bg-white/10 hover:text-white{% endif %}">
+        <span class="text-base">🔍</span>
+        <span>Porownaj dokumenty</span>
+      </a>
+      <a href="{{ url_for('settings.index') }}"
+         class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                {% if request.path.startswith('/settings') %}bg-white/15 text-white{% else %}text-white/70 hover:bg-white/10 hover:text-white{% endif %}">
+        <span class="text-base">⚙️</span>
+        <span>Ustawienia</span>
+      </a>
+    </nav>
+    <div class="px-6 py-4 border-t border-white/10">
+      <div class="text-white/40 text-xs">Brzyski & Partners</div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <div class="ml-64 flex-1 flex flex-col min-h-screen">
+    <!-- Flash messages -->
+    <div class="px-8 pt-4">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="mb-3 px-4 py-3 rounded-lg text-sm font-medium flex items-start gap-2
+              {% if category == 'success' %}bg-green-50 text-green-800 border border-green-200
+              {% elif category == 'error' %}bg-red-50 text-red-800 border border-red-200
+              {% elif category == 'warning' %}bg-yellow-50 text-yellow-800 border border-yellow-200
+              {% else %}bg-blue-50 text-blue-800 border border-blue-200{% endif %}">
+              <span>{% if category == 'success' %}✅{% elif category == 'error' %}❌{% elif category == 'warning' %}⚠️{% else %}ℹ️{% endif %}</span>
+              <span>{{ message }}</span>
+            </div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+    </div>
+
+    <main class="flex-1 px-8 py-6">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+</body>
+</html>

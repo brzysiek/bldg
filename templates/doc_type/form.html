@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{% if doc_type %}Edytuj typ{% else %}Nowy typ dokumentu{% endif %} – Grant Docs{% endblock %}
+{% block content %}
+<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2 flex-wrap">
+  <a href="{{ url_for('competitions.index') }}" class="hover:text-bottle">Konkursy</a>
+  <span>›</span>
+  <a href="{{ url_for('competitions.detail', slug=competition.slug) }}" class="hover:text-bottle">{{ competition.name }}</a>
+  <span>›</span>
+  <a href="{{ url_for('editions.detail', c_slug=competition.slug, e_slug=edition.slug) }}" class="hover:text-bottle">{{ edition.name }}</a>
+  <span>›</span>
+  <span>{% if doc_type %}Edytuj typ{% else %}Nowy typ dokumentu{% endif %}</span>
+</nav>
+
+<div class="max-w-xl">
+  <h1 class="text-2xl font-bold text-bottle mb-6">{% if doc_type %}Edytuj typ dokumentu{% else %}Nowy typ dokumentu{% endif %}</h1>
+
+  <form method="POST" class="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Nazwa *</label>
+      <input type="text" name="name" required value="{{ doc_type.name if doc_type else '' }}"
+             class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
+             placeholder="np. Regulamin konkursu" />
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Opis</label>
+      <textarea name="description" rows="2"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
+                placeholder="Opcjonalny opis...">{{ doc_type.description if doc_type else '' }}</textarea>
+    </div>
+    <div class="flex items-center gap-3 pt-2">
+      <button type="submit"
+              class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+        {% if doc_type %}Zapisz zmiany{% else %}Dodaj typ{% endif %}
+      </button>
+      <a href="{{ url_for('editions.detail', c_slug=competition.slug, e_slug=edition.slug) }}"
+         class="px-5 py-2.5 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+        Anuluj
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

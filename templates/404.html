@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}404 – Nie znaleziono{% endblock %}
+{% block content %}
+<div class="flex flex-col items-center justify-center py-24 text-center">
+  <div class="text-6xl mb-4">🔍</div>
+  <h1 class="text-3xl font-bold text-bottle mb-2">404 – Nie znaleziono</h1>
+  <p class="text-slate-text/70 mb-6">Strona lub zasób, którego szukasz, nie istnieje.</p>
+  <a href="{{ url_for('competitions.index') }}" class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90 transition-colors">
+    ← Wróć do listy konkursów
+  </a>
+</div>
+{% endblock %}

@@ -1,0 +1,191 @@
+import os
+import time
+from datetime import datetime
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, Response
+from werkzeug.utils import secure_filename
+import markdown as md_lib
+from extensions import db
+from models import Competition, Edition, DocumentType, Document, AppSettings
+from services.text_extractor import extract_text
+from services.gemini import summarize_document
+
+bp = Blueprint("files", __name__)
+
+ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "txt", "csv", "png", "jpg", "jpeg"}
+
+
+def _allowed(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@bp.route("/competition/<c_slug>/edition/<e_slug>/doctype/<int:dt_id>/upload", methods=["GET", "POST"])
+def upload(c_slug, e_slug, dt_id):
+    competition = Competition.query.filter_by(slug=c_slug).first_or_404()
+    edition = Edition.query.filter_by(competition_id=competition.id, slug=e_slug).first_or_404()
+    doc_type = DocumentType.query.get_or_404(dt_id)
+
+    if request.method == "POST":
+        f = request.files.get("file")
+        if not f or f.filename == "":
+            flash("Nie wybrano pliku.", "error")
+            return redirect(request.url)
+        if not _allowed(f.filename):
+            flash("Niedozwolony typ pliku.", "error")
+            return redirect(request.url)
+
+        original_name = f.filename
+        safe_name = secure_filename(original_name)
+        ext = safe_name.rsplit(".", 1)[-1] if "." in safe_name else ""
+        base = safe_name.rsplit(".", 1)[0] if "." in safe_name else safe_name
+        ts = str(int(time.time()))
+        stored_name = f"{base}_{ts}.{ext}" if ext else f"{base}_{ts}"
+
+        storage_dir = os.path.join(
+            "storage",
+            competition.slug,
+            edition.slug,
+            doc_type.slug,
+        )
+        os.makedirs(storage_dir, exist_ok=True)
+        stored_path = os.path.join(storage_dir, stored_name)
+        f.save(stored_path)
+
+        size = os.path.getsize(stored_path)
+        mime = f.content_type or ""
+
+        doc = Document(
+            document_type_id=dt_id,
+            original_name=original_name,
+            stored_path=stored_path,
+            file_size=size,
+            mime_type=mime,
+            version_label=request.form.get("version_label", "").strip() or None,
+            notes=request.form.get("notes", "").strip() or None,
+        )
+        db.session.add(doc)
+        db.session.commit()
+        flash(f'Plik "{original_name}" zostal wgrany.', "success")
+        return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
+
+    return render_template("file/upload.html", competition=competition, edition=edition, doc_type=doc_type)
+
+
+@bp.route("/files/<int:file_id>/download")
+def download(file_id):
+    doc = Document.query.get_or_404(file_id)
+    if not os.path.exists(doc.stored_path):
+        abort(404)
+    return send_file(
+        doc.stored_path,
+        as_attachment=True,
+        download_name=doc.original_name,
+    )
+
+
+@bp.route("/files/<int:file_id>/delete", methods=["POST"])
+def delete(file_id):
+    doc = Document.query.get_or_404(file_id)
+    dt = doc.document_type
+    edition = dt.edition
+    competition = edition.competition
+
+    if os.path.exists(doc.stored_path):
+        os.remove(doc.stored_path)
+
+    db.session.delete(doc)
+    db.session.commit()
+    flash(f'Plik "{doc.original_name}" zostal usuniety.', "success")
+    return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+
+
+@bp.route("/files/<int:file_id>/summarize", methods=["POST"])
+def summarize(file_id):
+    doc = Document.query.get_or_404(file_id)
+    dt = doc.document_type
+    edition = dt.edition
+    competition = edition.competition
+
+    settings = AppSettings.query.first()
+    if not settings or not settings.gemini_api_key:
+        flash("Brak klucza Gemini API. Przejdź do ⚙️ Ustawień.", "warning")
+        return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+
+    doc.ai_summary_status = "pending"
+    db.session.commit()
+
+    try:
+        text = extract_text(doc.stored_path, doc.mime_type or "")
+    except ValueError as e:
+        doc.ai_summary_status = "error"
+        doc.ai_summary_error = str(e)
+        db.session.commit()
+        flash(f"Błąd ekstrakcji tekstu: {e}", "error")
+        return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+    except Exception as e:
+        doc.ai_summary_status = "error"
+        doc.ai_summary_error = str(e)
+        db.session.commit()
+        flash(f"Błąd ekstrakcji tekstu: {e}", "error")
+        return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+
+    if not text or len(text.strip()) < 50:
+        doc.ai_summary_status = "error"
+        doc.ai_summary_error = "Nie udało się wyodrębnić tekstu z dokumentu — plik może być zeskanowany lub zabezpieczony"
+        db.session.commit()
+        flash("Nie udało się wyodrębnić tekstu z dokumentu.", "error")
+        return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+
+    if len(text) > 400_000:
+        text = text[:400_000] + "\n[TEKST OBCIĘTY DO 400 000 ZNAKÓW]"
+
+    try:
+        summary = summarize_document(text, settings)
+        doc.ai_summary = summary
+        doc.ai_summary_model = settings.gemini_model
+        doc.ai_summarized_at = datetime.utcnow()
+        doc.ai_summary_status = "done"
+        doc.ai_summary_error = None
+        db.session.commit()
+        flash("Podsumowanie AI zostało wygenerowane.", "success")
+    except Exception as e:
+        doc.ai_summary_status = "error"
+        doc.ai_summary_error = str(e)
+        db.session.commit()
+        flash(f"Błąd Gemini API: {e}", "error")
+
+    return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+
+
+@bp.route("/files/<int:file_id>/summary")
+def summary(file_id):
+    doc = Document.query.get_or_404(file_id)
+    dt = doc.document_type
+    edition = dt.edition
+    competition = edition.competition
+
+    summary_html = None
+    if doc.ai_summary:
+        summary_html = md_lib.markdown(doc.ai_summary, extensions=["tables", "fenced_code"])
+
+    return render_template(
+        "file/summary.html",
+        doc=doc,
+        doc_type=dt,
+        edition=edition,
+        competition=competition,
+        summary_html=summary_html,
+    )
+
+
+@bp.route("/files/<int:file_id>/summary/download")
+def summary_download(file_id):
+    doc = Document.query.get_or_404(file_id)
+    if not doc.ai_summary:
+        abort(404)
+    content = doc.ai_summary
+    filename = f"podsumowanie_{doc.original_name}.md"
+    return Response(
+        content,
+        mimetype="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

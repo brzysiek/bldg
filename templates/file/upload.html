@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Wgraj plik – Grant Docs{% endblock %}
+{% block content %}
+<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2 flex-wrap">
+  <a href="{{ url_for('competitions.index') }}" class="hover:text-bottle">Konkursy</a>
+  <span>›</span>
+  <a href="{{ url_for('competitions.detail', slug=competition.slug) }}" class="hover:text-bottle">{{ competition.name }}</a>
+  <span>›</span>
+  <a href="{{ url_for('editions.detail', c_slug=competition.slug, e_slug=edition.slug) }}" class="hover:text-bottle">{{ edition.name }}</a>
+  <span>›</span>
+  <span class="text-slate-text font-medium">Wgraj plik do „{{ doc_type.name }}"</span>
+</nav>
+
+<div class="max-w-xl">
+  <h1 class="text-2xl font-bold text-bottle mb-6">Wgraj plik</h1>
+  <p class="text-sm text-slate-text/60 mb-5">Typ dokumentu: <strong class="text-bottle">{{ doc_type.name }}</strong></p>
+
+  <form method="POST" enctype="multipart/form-data" class="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Plik *</label>
+      <input type="file" name="file" required accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.png,.jpg,.jpeg"
+             class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-bottle file:text-white" />
+      <p class="text-xs text-slate-text/50 mt-1">Dozwolone: PDF, DOC, DOCX, XLS, XLSX, TXT, CSV, PNG, JPG</p>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Etykieta wersji</label>
+      <input type="text" name="version_label"
+             class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
+             placeholder="np. v1.2, aktualna" />
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Notatka</label>
+      <textarea name="notes" rows="2"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
+                placeholder="Opcjonalna notatka do pliku..."></textarea>
+    </div>
+    <div class="flex items-center gap-3 pt-2">
+      <button type="submit"
+              class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+        📎 Wgraj plik
+      </button>
+      <a href="{{ url_for('editions.detail', c_slug=competition.slug, e_slug=edition.slug) }}"
+         class="px-5 py-2.5 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+        Anuluj
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

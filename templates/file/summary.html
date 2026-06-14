@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Podsumowanie AI – {{ doc.original_name }} – Grant Docs{% endblock %}
+{% block content %}
+<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2 flex-wrap">
+  <a href="{{ url_for('competitions.index') }}" class="hover:text-bottle">Konkursy</a>
+  <span>›</span>
+  <a href="{{ url_for('competitions.detail', slug=competition.slug) }}" class="hover:text-bottle">{{ competition.name }}</a>
+  <span>›</span>
+  <a href="{{ url_for('editions.detail', c_slug=competition.slug, e_slug=edition.slug) }}" class="hover:text-bottle">{{ edition.name }}</a>
+  <span>›</span>
+  <span class="text-slate-text font-medium">Podsumowanie AI</span>
+</nav>
+
+<div class="max-w-4xl">
+  <div class="flex items-start justify-between mb-6">
+    <div>
+      <h1 class="text-xl font-bold text-bottle mb-1">🤖 Podsumowanie AI</h1>
+      <div class="text-sm text-slate-text/70 flex items-center gap-3 flex-wrap">
+        <span class="font-medium text-slate-text">{{ doc.original_name }}</span>
+        {% if doc.ai_summarized_at %}
+          <span>•</span>
+          <span>{{ doc.ai_summarized_at.strftime('%d.%m.%Y %H:%M') }}</span>
+        {% endif %}
+        {% if doc.ai_summary_model %}
+          <span>•</span>
+          <span class="px-2 py-0.5 bg-bottle/10 text-bottle text-xs rounded-full font-medium">{{ doc.ai_summary_model }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex items-center gap-2 ml-4 shrink-0">
+      {% if doc.ai_summary %}
+        <a href="{{ url_for('files.summary_download', file_id=doc.id) }}"
+           class="px-3 py-2 border border-bottle text-bottle rounded-lg text-sm font-medium hover:bg-bottle/5 transition-colors whitespace-nowrap">
+          ⬇ Pobierz .md
+        </a>
+      {% endif %}
+      <form method="POST" action="{{ url_for('files.summarize', file_id=doc.id) }}"
+            onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳ Trwa analiza...';">
+        <button type="submit"
+                class="px-3 py-2 bg-lime text-bottle rounded-lg text-sm font-semibold hover:bg-lime/80 transition-colors whitespace-nowrap">
+          🔄 Wygeneruj ponownie
+        </button>
+      </form>
+    </div>
+  </div>
+
+  {% if doc.ai_summary_status == 'error' %}
+    <div class="bg-red-50 border border-red-200 rounded-xl p-5 mb-5">
+      <div class="font-semibold text-red-800 mb-1">❌ Błąd generowania podsumowania</div>
+      <p class="text-red-700 text-sm">{{ doc.ai_summary_error }}</p>
+    </div>
+  {% elif summary_html %}
+    <div class="bg-white rounded-xl border border-gray-100 p-6 sm:p-8 prose max-w-none">
+      {{ summary_html | safe }}
+    </div>
+  {% else %}
+    <div class="bg-white rounded-xl border border-dashed border-gray-200 p-10 text-center">
+      <div class="text-4xl mb-3">🤖</div>
+      <p class="text-slate-text/60 text-sm">Brak podsumowania. Kliknij „Wygeneruj ponownie".</p>
+    </div>
+  {% endif %}
+
+  <div class="mt-5">
+    <a href="{{ url_for('editions.detail', c_slug=competition.slug, e_slug=edition.slug) }}"
+       class="text-sm text-bottle hover:underline">← Wróć do edycji</a>
+  </div>
+</div>
+{% endblock %}

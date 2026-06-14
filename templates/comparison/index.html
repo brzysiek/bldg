@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Porownanie dokumentow – Grant Docs{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-bottle">🔍 Porownanie dokumentow</h1>
+    <p class="text-slate-text/60 text-sm mt-0.5">Historia przeprowadzonych analiz porownan</p>
+  </div>
+  <a href="{{ url_for('comparison.new_comparison') }}"
+     class="flex items-center gap-2 px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+    + Nowe porownanie
+  </a>
+</div>
+
+{% if jobs %}
+  <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-slate-text/50 border-b border-gray-100 bg-gray-50/50">
+          <th class="text-left px-5 py-3 font-medium">Data</th>
+          <th class="text-left px-4 py-3 font-medium">Konkurs</th>
+          <th class="text-left px-4 py-3 font-medium">Edycje</th>
+          <th class="text-left px-4 py-3 font-medium">Status</th>
+          <th class="text-left px-4 py-3 font-medium">Zmiany</th>
+          <th class="text-right px-5 py-3 font-medium">Akcje</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        {% for job in jobs %}
+          {% set done_statuses = ['done'] %}
+          {% set error_statuses = ['error'] %}
+          {% set in_progress = job.status not in ['done', 'error'] %}
+          <tr class="hover:bg-gray-50/50 transition-colors">
+            <td class="px-5 py-3 text-slate-text/60 whitespace-nowrap text-xs">
+              {{ job.created_at.strftime('%d.%m.%Y %H:%M') }}
+            </td>
+            <td class="px-4 py-3 font-medium text-slate-text max-w-[180px] truncate" title="{{ job.competition_name or '' }}">
+              {{ job.competition_name or '—' }}
+            </td>
+            <td class="px-4 py-3 text-slate-text/70 whitespace-nowrap">
+              <span class="text-xs">{{ job.label_old or '?' }}</span>
+              <span class="text-slate-text/30 mx-1">→</span>
+              <span class="text-xs">{{ job.label_new or '?' }}</span>
+            </td>
+            <td class="px-4 py-3">
+              {% if job.status == 'done' %}
+                <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">✅ Gotowe</span>
+              {% elif job.status == 'error' %}
+                <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium" title="{{ job.error_message or '' }}">❌ Blad</span>
+              {% else %}
+                <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">⏳ W toku</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-slate-text/60">
+              {% if job.status == 'done' and job.changes_json %}
+                {% set changes_count = job.changes_json | from_json_len %}
+                <span class="font-semibold text-bottle">{{ changes_count }}</span>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td class="px-5 py-3">
+              <div class="flex items-center justify-end gap-2">
+                <a href="{{ url_for('comparison.job_status', job_id=job.id) }}"
+                   class="px-3 py-1.5 border border-bottle text-bottle rounded text-xs font-medium hover:bg-bottle/5 transition-colors">
+                  👁 Wyniki
+                </a>
+                <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
+                      onsubmit="return confirm('Usunac to porownanie?')">
+                  <button type="submit" class="px-2.5 py-1.5 border border-red-200 text-red-500 rounded text-xs hover:bg-red-50 transition-colors">🗑</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="bg-white rounded-xl border border-dashed border-gray-200 p-12 text-center">
+    <div class="text-5xl mb-4">🔍</div>
+    <h2 class="text-lg font-semibold text-slate-text mb-2">Brak porownan</h2>
+    <p class="text-slate-text/60 text-sm mb-5">Uruchom pierwsze porownanie, aby zobaczyc roznice miedzy edycjami dokumentow.</p>
+    <a href="{{ url_for('comparison.new_comparison') }}"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+      + Nowe porownanie
+    </a>
+  </div>
+{% endif %}
+{% endblock %}

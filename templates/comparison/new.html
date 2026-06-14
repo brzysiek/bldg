@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Nowe porownanie – Grant Docs{% endblock %}
+{% block content %}
+<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2">
+  <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porownaj dokumenty</a>
+  <span>›</span>
+  <span class="text-slate-text font-medium">Nowe porownanie</span>
+</nav>
+
+<div class="max-w-2xl">
+  <h1 class="text-2xl font-bold text-bottle mb-2">🔍 Nowe porownanie</h1>
+  <p class="text-slate-text/60 text-sm mb-6">Wgraj dwa dokumenty z roznych edycji tego samego konkursu, aby zobaczyc co sie zmienilo.</p>
+
+  <!-- Info box -->
+  <div class="mb-6 px-4 py-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 flex items-start gap-2">
+    <span class="mt-0.5">ℹ️</span>
+    <span>Analiza porownawcza moze potrwac od 2 do 15 minut w zaleznosci od dlugosci dokumentow. Strona bedzie sie automatycznie odswiezac.</span>
+  </div>
+
+  <form method="POST" enctype="multipart/form-data"
+        class="bg-white rounded-xl border border-gray-100 p-6 space-y-6"
+        onsubmit="handleSubmit(event)">
+
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Nazwa konkursu</label>
+      <input type="text" name="competition_name"
+             class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
+             placeholder="np. PARP – Sciezka SMART" />
+    </div>
+
+    <!-- Starsza edycja -->
+    <div class="border border-gray-100 rounded-lg p-4 bg-gray-50/50">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-base">📄</span>
+        <span class="text-sm font-semibold text-slate-text">Starsza edycja</span>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-text/70 mb-1">Etykieta (opis edycji)</label>
+          <input type="text" name="label_old"
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle bg-white"
+                 placeholder="np. Edycja 2024" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-text/70 mb-1">Plik dokumentu</label>
+          <input type="file" name="file_old" accept=".pdf,.docx,.doc,.txt" required
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle bg-white file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-bottle file:text-white" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Nowsza edycja -->
+    <div class="border border-lime/40 rounded-lg p-4 bg-lime/5">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-base">📄</span>
+        <span class="text-sm font-semibold text-slate-text">Nowsza edycja</span>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-text/70 mb-1">Etykieta (opis edycji)</label>
+          <input type="text" name="label_new"
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle bg-white"
+                 placeholder="np. Edycja 2025" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-text/70 mb-1">Plik dokumentu</label>
+          <input type="file" name="file_new" accept=".pdf,.docx,.doc,.txt" required
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle bg-white file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-lime file:text-bottle" />
+        </div>
+      </div>
+    </div>
+
+    <p class="text-xs text-slate-text/50">Dozwolone formaty: PDF, DOCX, DOC, TXT</p>
+
+    <div class="pt-2">
+      <button type="submit" id="submit-btn"
+              class="px-6 py-3 bg-lime text-bottle font-bold rounded-lg text-sm hover:bg-lime/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        🚀 Uruchom porownanie
+      </button>
+      <a href="{{ url_for('comparison.index') }}"
+         class="ml-3 px-5 py-3 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+        Anuluj
+      </a>
+    </div>
+  </form>
+</div>
+
+<script>
+function handleSubmit(e) {
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Uruchamianie...';
+}
+</script>
+{% endblock %}

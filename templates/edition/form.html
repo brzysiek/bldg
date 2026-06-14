@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{% if edition %}Edytuj edycję{% else %}Nowa edycja{% endif %} – Grant Docs{% endblock %}
+{% block content %}
+<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2">
+  <a href="{{ url_for('competitions.index') }}" class="hover:text-bottle">Konkursy</a>
+  <span>›</span>
+  <a href="{{ url_for('competitions.detail', slug=competition.slug) }}" class="hover:text-bottle">{{ competition.name }}</a>
+  <span>›</span>
+  <span>{% if edition %}Edytuj edycję{% else %}Nowa edycja{% endif %}</span>
+</nav>
+
+<div class="max-w-xl">
+  <h1 class="text-2xl font-bold text-bottle mb-6">{% if edition %}Edytuj edycję{% else %}Nowa edycja{% endif %}</h1>
+
+  <form method="POST" class="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Nazwa edycji *</label>
+      <input type="text" name="name" required value="{{ edition.name if edition else '' }}"
+             class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
+             placeholder="np. Nabór I/2025" />
+    </div>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-text mb-1">Rok naboru</label>
+        <input type="number" name="year" value="{{ edition.year if edition else '' }}"
+               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
+               placeholder="2025" min="2000" max="2099" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-text mb-1">Status</label>
+        <select name="status" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">
+          {% for s in ['aktywna', 'planowana', 'archiwalna'] %}
+            <option value="{{ s }}" {% if edition and edition.status == s %}selected{% elif not edition and s == 'aktywna' %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Termin składania</label>
+      <input type="date" name="deadline" value="{{ edition.deadline.isoformat() if edition and edition.deadline else '' }}"
+             class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle" />
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Opis</label>
+      <textarea name="description" rows="3"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
+                placeholder="Opcjonalny opis...">{{ edition.description if edition else '' }}</textarea>
+    </div>
+    <div class="flex items-center gap-3 pt-2">
+      <button type="submit"
+              class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+        {% if edition %}Zapisz zmiany{% else %}Dodaj edycję{% endif %}
+      </button>
+      <a href="{{ url_for('editions.detail', c_slug=competition.slug, e_slug=edition.slug) if edition else url_for('competitions.detail', slug=competition.slug) }}"
+         class="px-5 py-2.5 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+        Anuluj
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

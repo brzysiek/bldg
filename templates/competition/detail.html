@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ competition.name }} – Grant Docs{% endblock %}
+{% block content %}
+<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2">
+  <a href="{{ url_for('competitions.index') }}" class="hover:text-bottle">Konkursy</a>
+  <span>›</span>
+  <span class="text-slate-text font-medium">{{ competition.name }}</span>
+</nav>
+
+<div class="flex items-start justify-between mb-6">
+  <div>
+    <div class="flex items-center gap-3 mb-1">
+      <h1 class="text-2xl font-bold text-bottle">{{ competition.name }}</h1>
+      {% if competition.program %}
+        <span class="px-2.5 py-0.5 bg-bottle/10 text-bottle text-xs font-semibold rounded-full">{{ competition.program }}</span>
+      {% endif %}
+    </div>
+    {% if competition.description %}
+      <p class="text-slate-text/70 text-sm max-w-2xl">{{ competition.description }}</p>
+    {% endif %}
+  </div>
+  <div class="flex items-center gap-2 ml-6 shrink-0">
+    <a href="{{ url_for('competitions.edit', slug=competition.slug) }}"
+       class="px-3 py-2 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+      ✏️ Edytuj
+    </a>
+    <form method="POST" action="{{ url_for('competitions.delete', slug=competition.slug) }}"
+          onsubmit="return confirm('Czy na pewno usunąć konkurs i wszystkie jego dane?')">
+      <button type="submit" class="px-3 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors">
+        🗑 Usuń
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="flex items-center justify-between mb-4">
+  <h2 class="text-lg font-semibold text-slate-text">Edycje ({{ competition.editions | length }})</h2>
+  <a href="{{ url_for('editions.new', c_slug=competition.slug) }}"
+     class="flex items-center gap-1.5 px-3 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+    + Nowa edycja
+  </a>
+</div>
+
+{% if competition.editions %}
+  <div class="space-y-3">
+    {% for edition in competition.editions | sort(attribute='year', reverse=True) %}
+      {% set status_map = {'aktywna': ('bg-green-100 text-green-800', '🟢'), 'archiwalna': ('bg-gray-100 text-gray-600', '⬛'), 'planowana': ('bg-yellow-100 text-yellow-800', '🟡')} %}
+      {% set badge_cls, badge_icon = status_map.get(edition.status, ('bg-gray-100 text-gray-600', '⬜')) %}
+      <a href="{{ url_for('editions.detail', c_slug=competition.slug, e_slug=edition.slug) }}"
+         class="flex items-center justify-between bg-white rounded-xl border border-gray-100 px-5 py-4 hover:shadow-sm hover:border-lime/40 transition-all group">
+        <div class="flex items-center gap-4">
+          <div>
+            <div class="font-semibold text-bottle group-hover:text-bottle/80">{{ edition.name }}</div>
+            <div class="text-xs text-slate-text/50 mt-0.5 flex items-center gap-3">
+              {% if edition.year %}<span>{{ edition.year }}</span>{% endif %}
+              {% if edition.deadline %}<span>Termin: {{ edition.deadline.strftime('%d.%m.%Y') }}</span>{% endif %}
+              <span>{{ edition.document_types | length }} typ{% if edition.document_types | length != 1 %}y{% endif %} dokumentów</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold {{ badge_cls }}">{{ badge_icon }} {{ edition.status }}</span>
+          <span class="text-slate-text/30 text-sm">›</span>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="bg-white rounded-xl border border-dashed border-gray-200 p-10 text-center">
+    <div class="text-4xl mb-3">📅</div>
+    <p class="text-slate-text/60 text-sm mb-4">Brak edycji. Dodaj pierwszą edycję tego konkursu.</p>
+    <a href="{{ url_for('editions.new', c_slug=competition.slug) }}"
+       class="inline-flex items-center gap-1.5 px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+      + Nowa edycja
+    </a>
+  </div>
+{% endif %}
+{% endblock %}

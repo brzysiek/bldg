@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Konkursy – Grant Docs Manager{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-bottle">Konkursy grantowe</h1>
+    <p class="text-slate-text/60 text-sm mt-0.5">{{ competitions | length }} konkurs{% if competitions | length != 1 %}ów{% endif %}</p>
+  </div>
+  <a href="{{ url_for('competitions.new') }}"
+     class="flex items-center gap-2 px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+    <span>+</span> Nowy konkurs
+  </a>
+</div>
+
+{% if competitions %}
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+    {% for c in competitions %}
+      <a href="{{ url_for('competitions.detail', slug=c.slug) }}"
+         class="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md hover:border-lime/50 transition-all group block">
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex-1 min-w-0">
+            <h2 class="font-semibold text-bottle text-base leading-tight group-hover:text-bottle/80 truncate">{{ c.name }}</h2>
+            {% if c.program %}
+              <span class="inline-block mt-1.5 px-2 py-0.5 bg-bottle/10 text-bottle text-xs font-medium rounded-full">{{ c.program }}</span>
+            {% endif %}
+          </div>
+          <div class="ml-3 text-2xl">📋</div>
+        </div>
+        {% if c.description %}
+          <p class="text-slate-text/70 text-sm mb-3 line-clamp-2">{{ c.description }}</p>
+        {% endif %}
+        <div class="flex items-center justify-between text-xs text-slate-text/50 pt-3 border-t border-gray-50">
+          <span>{{ c.editions | length }} edycj{% if c.editions | length == 1 %}a{% elif c.editions | length in [2,3,4] %}e{% else %}i{% endif %}</span>
+          <span class="text-lime font-semibold text-xs">Szczegóły →</span>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="bg-white rounded-xl border border-dashed border-gray-200 p-12 text-center">
+    <div class="text-5xl mb-4">📁</div>
+    <h2 class="text-lg font-semibold text-slate-text mb-2">Brak konkursów</h2>
+    <p class="text-slate-text/60 text-sm mb-5">Dodaj pierwszy konkurs grantowy, aby zacząć pracę.</p>
+    <a href="{{ url_for('competitions.new') }}"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+      + Nowy konkurs
+    </a>
+  </div>
+{% endif %}
+{% endblock %}
