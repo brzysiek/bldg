@@ -120,9 +120,21 @@ const _ED_FILES_TPL = {{ url_for('editions.api_edition_files', edition_id=0)|toj
 const editionsUrl   = id => _EDITIONS_TPL.replace('/0', '/' + id);
 const edFilesUrl    = id => _ED_FILES_TPL.replace('/0', '/' + id);
 
-let filesOld = [];
-let filesNew = [];
-let pairs    = [];
+let filesOld    = [];
+let filesNew    = [];
+let pairs       = [];
+let allEditions = [];
+
+function _populateEditionSel(sel, excludeId) {
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— wybierz —</option>';
+  allEditions.forEach(e => {
+    if (String(e.id) === String(excludeId)) return;
+    const opt = new Option(e.name + (e.year ? ` (${e.year})` : ''), e.id);
+    sel.appendChild(opt);
+  });
+  if (current && String(current) !== String(excludeId)) sel.value = current;
+}
 
 async function loadEditions() {
   const compId = document.getElementById('competition-select').value;
@@ -134,20 +146,12 @@ async function loadEditions() {
   }
 
   const r = await fetch(editionsUrl(compId));
-  const editions = await r.json();
+  allEditions = await r.json();
 
   const oldSel = document.getElementById('edition-old-select');
   const newSel = document.getElementById('edition-new-select');
-
-  [oldSel, newSel].forEach(sel => {
-    sel.innerHTML = '<option value="">— wybierz —</option>';
-    editions.forEach(e => {
-      const opt = document.createElement('option');
-      opt.value = e.id;
-      opt.textContent = e.name + (e.year ? ` (${e.year})` : '');
-      sel.appendChild(opt);
-    });
-  });
+  _populateEditionSel(oldSel, newSel.value);
+  _populateEditionSel(newSel, oldSel.value);
 
   document.getElementById('editions-panel').style.display = '';
   document.getElementById('mapping-panel').style.display = 'none';
@@ -155,11 +159,16 @@ async function loadEditions() {
 }
 
 function onEditionChange() {
-  const oldId  = document.getElementById('edition-old-select').value;
-  const newId  = document.getElementById('edition-new-select').value;
+  const oldSel = document.getElementById('edition-old-select');
+  const newSel = document.getElementById('edition-new-select');
+  const oldId  = oldSel.value;
+  const newId  = newSel.value;
   const hint   = document.getElementById('new-edition-hint');
   const errEl  = document.getElementById('editions-error');
   const arrow  = document.getElementById('arrow-icon');
+
+  _populateEditionSel(oldSel, newId);
+  _populateEditionSel(newSel, oldId);
 
   // Hide mapping until both are valid
   document.getElementById('mapping-panel').style.display = 'none';
