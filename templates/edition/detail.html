@@ -291,6 +291,10 @@ function updateBulkBtn() {
   document.getElementById('check-all').checked = allChecked;
 }
 
+// URL template generated server-side — guaranteed correct even with subdirectory mounts
+const _SUMMARIZE_JSON_TPL = {{ url_for('files.summarize_json', file_id=0)|tojson }};
+const _summarizeJsonUrl = id => _SUMMARIZE_JSON_TPL.replace('/0/', '/' + id + '/');
+
 async function bulkSummarize() {
   const checked = Array.from(document.querySelectorAll('.doc-cb:checked'));
   if (!checked.length) return;
@@ -309,7 +313,7 @@ async function bulkSummarize() {
     setRowPending(file.id);
 
     try {
-      const resp = await fetch(`/files/${file.id}/summarize-json`, { method: 'POST' });
+      const resp = await fetch(_summarizeJsonUrl(file.id), { method: 'POST' });
       let data, rawText = '';
       try { rawText = await resp.text(); data = JSON.parse(rawText); } catch (_) { data = null; }
       if (!resp.ok) {

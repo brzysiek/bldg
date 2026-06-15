@@ -237,6 +237,25 @@ def create_app():
         since = float(_req.args.get("since", 0))
         return jsonify(_log_buffer.records(since=since))
 
+    @app.route("/api/health")
+    def api_health():
+        summarize_routes = [
+            str(rule) for rule in app.url_map.iter_rules()
+            if "summarize" in str(rule)
+        ]
+        import subprocess, shlex
+        try:
+            commit = subprocess.check_output(
+                shlex.split("git rev-parse --short HEAD"), text=True
+            ).strip()
+        except Exception:
+            commit = "unknown"
+        return jsonify({
+            "ok": True,
+            "commit": commit,
+            "summarize_routes": sorted(summarize_routes),
+        })
+
     @app.errorhandler(404)
     def not_found(e):
         return render_template("404.html"), 404
