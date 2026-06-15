@@ -1,11 +1,15 @@
 import hashlib
 import json
 import logging
+import os
 import time
 from datetime import datetime
 from services.text_extractor import extract_text
 
 log = logging.getLogger(__name__)
+
+# Opóźnienie między wywołaniami Gemini API (w sekundach), konfigurowalne przez .env
+_GEMINI_SLEEP = float(os.environ.get("GEMINI_SLEEP_SECONDS", "1.0"))
 
 DEFAULT_PROMPT_EXTRACTION = """Jestes ekspertem ds. analizy dokumentow prawnych i regulaminow konkursow grantowych.
 
@@ -156,7 +160,7 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
 
     def call_gemini(prompt):
         nonlocal t_in, t_out
-        log.debug("Gemini call  model=%s  prompt=%d znaków", model, len(prompt))
+        log.debug("Gemini call  model=%s  prompt=%d znaków  sleep=%.1fs", model, len(prompt), _GEMINI_SLEEP)
         resp = client.models.generate_content(model=model, contents=prompt)
         u = getattr(resp, "usage_metadata", None)
         if u:
@@ -166,6 +170,8 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
             t_out += tokens_out
             log.debug("Gemini odpowiedź  +%d tok_wej  +%d tok_wyj  (łącznie: %d/%d)",
                       tokens_in, tokens_out, t_in, t_out)
+        if _GEMINI_SLEEP > 0:
+            time.sleep(_GEMINI_SLEEP)
         return resp
 
     _status("Ekstrakcja tekstu")
@@ -371,8 +377,6 @@ def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_prog
                 "komentarz_biznesowy": f"[Blad analizy: {str(e)[:200]}]",
             })
             found += 1
-
-        time.sleep(0.5)
 
     log.debug("_compare_pair KONIEC  znaleziono %d zmian z %d sekcji", found, len(all_keys))
     return changes
