@@ -225,18 +225,20 @@ function _fileLabel(f) {
 function renderSelects() {
   const usedNewIds = new Set(pairs.map(p => String(p.new_id)));
   const usedOldIds = new Set(pairs.map(p => String(p.old_id)));
-  const newSel = document.getElementById('new-file-sel');
-  const oldSel = document.getElementById('old-file-sel');
+  const newSel  = document.getElementById('new-file-sel');
+  const oldSel  = document.getElementById('old-file-sel');
   const prevNew = newSel.value;
   const prevOld = oldSel.value;
+  const oldName = document.getElementById('lbl-old-file').textContent;
+  const newName = document.getElementById('lbl-new-file').textContent;
 
-  oldSel.innerHTML = '<option value="">— wybierz plik ze starszej edycji —</option>';
+  oldSel.innerHTML = `<option value="">— wybierz plik z: ${oldName} —</option>`;
   filesOld.filter(f => !usedOldIds.has(String(f.id))).forEach(f => {
     oldSel.appendChild(new Option(_fileLabel(f), String(f.id)));
   });
   if (prevOld && !usedOldIds.has(prevOld)) oldSel.value = prevOld;
 
-  newSel.innerHTML = '<option value="">— wybierz plik z nowszej edycji —</option>';
+  newSel.innerHTML = `<option value="">— wybierz plik z: ${newName} —</option>`;
   filesNew.filter(f => !usedNewIds.has(String(f.id))).forEach(f => {
     newSel.appendChild(new Option(_fileLabel(f), String(f.id)));
   });
