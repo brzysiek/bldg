@@ -197,7 +197,7 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
         text_old, text_new,
         job.label_old or "Edycja starsza",
         job.label_new or "Edycja nowsza",
-        call_gemini, lambda _: None, settings,
+        call_gemini, _status, settings,
         struct_old=struct_old, struct_new=struct_new,
     )
     log.debug("compare_one_pair  porównanie zakończone: %d zmian", len(changes))
