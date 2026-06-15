@@ -147,7 +147,7 @@
   <!-- Prompt podsumowania pliku -->
   <div class="bg-white rounded-xl border border-gray-100 p-6">
     <h2 class="text-base font-semibold text-bottle mb-1 pb-3 border-b border-gray-100">🧠 Prompt podsumowania dokumentu</h2>
-    <p class="text-xs text-slate-text/60 my-3">Użyj <code class="bg-gray-100 px-1 rounded">{document_text}</code> jako placeholder dla treści dokumentu.</p>
+    <p class="text-xs text-slate-text/60 my-3">Użyj <code class="bg-gray-100 px-1 rounded">{document_text}</code> jako placeholder dla treści dokumentu. Prompt powinien zwracać JSON z polami <code class="bg-gray-100 px-1 rounded">opis</code> (1–4 słowa) i <code class="bg-gray-100 px-1 rounded">podsumowanie</code> (1 akapit).</p>
     <form method="POST" action="{{ url_for('settings.save_prompt') }}" class="space-y-4">
       <textarea name="gemini_summary_prompt" rows="14"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.gemini_summary_prompt or '' }}</textarea>

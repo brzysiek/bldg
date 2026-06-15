@@ -97,7 +97,8 @@ def _migrate_db():
             "gdrive_synced_at":   "DATETIME",
         })
         add_cols("documents", {
-            "gdrive_file_id": "TEXT",
+            "gdrive_file_id":   "TEXT",
+            "ai_description":   "TEXT",
         })
 
         # Migracja: document_type_id → edition_id

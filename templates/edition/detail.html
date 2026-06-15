@@ -117,8 +117,7 @@
         <thead>
           <tr class="text-xs text-slate-text/50 border-b border-gray-100 bg-gray-50/60">
             <th class="text-left px-5 py-3 font-medium">Plik</th>
-            <th class="text-left px-3 py-3 font-medium hidden sm:table-cell">Źródło</th>
-            <th class="text-left px-3 py-3 font-medium hidden md:table-cell">Rozmiar</th>
+            <th class="text-left px-3 py-3 font-medium">Opis</th>
             <th class="text-left px-3 py-3 font-medium">Status AI</th>
             <th class="text-right px-5 py-3 font-medium">Akcje</th>
           </tr>
@@ -131,24 +130,23 @@
                   <span>{{ doc.original_name | file_icon }}</span>
                   <span class="font-medium text-slate-text max-w-[220px] truncate" title="{{ doc.original_name }}">{{ doc.original_name }}</span>
                 </div>
-              </td>
-              <td class="px-3 py-3 hidden sm:table-cell">
                 {% if doc.gdrive_file_id %}
-                  <span class="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full font-medium">☁️ Drive</span>
-                {% else %}
-                  <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">📎 Wgrane</span>
+                  <div class="mt-0.5 ml-6"><span class="text-xs text-blue-500">☁️ Drive</span></div>
                 {% endif %}
               </td>
-              <td class="px-3 py-3 text-slate-text/50 text-xs hidden md:table-cell whitespace-nowrap">
-                {{ doc.file_size | filesize_fmt }}
+              <td class="px-3 py-3 text-slate-text/70 text-xs max-w-[140px]">
+                {{ doc.ai_description or '—' }}
               </td>
               <td class="px-3 py-3">
                 {% if doc.ai_summary_status == 'done' %}
-                  <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">✅ Gotowe</span>
+                  <button onclick="showSummary({{ doc.id }}, {{ doc.original_name | tojson }})"
+                          class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors cursor-pointer">
+                    🔍 Podsumowanie
+                  </button>
                 {% elif doc.ai_summary_status == 'pending' %}
                   <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>
                 {% elif doc.ai_summary_status == 'error' %}
-                  <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium" title="{{ doc.ai_summary_error or '' }}">❌ Blad</span>
+                  <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="{{ doc.ai_summary_error or '' }}">❌ Błąd</span>
                 {% else %}
                   <span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full">— Brak</span>
                 {% endif %}
@@ -161,25 +159,19 @@
                       ☁️ Otwórz
                     </a>
                   {% else %}
-                    {% if doc.ai_summary_status == 'done' %}
-                      <a href="{{ url_for('files.summary', file_id=doc.id) }}"
-                         class="px-2.5 py-1.5 border border-bottle text-bottle rounded text-xs font-medium hover:bg-bottle/5 transition-colors">
-                        👁 Podglad
-                      </a>
-                    {% endif %}
-                    {% if has_gemini and doc.ai_summary_status != 'pending' %}
-                      <form method="POST" action="{{ url_for('files.summarize', file_id=doc.id) }}"
-                            onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳...'">
-                        <button type="submit"
-                                class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors">
-                          🤖 Podsumuj
-                        </button>
-                      </form>
-                    {% endif %}
                     <a href="{{ url_for('files.download', file_id=doc.id) }}"
                        class="px-2.5 py-1.5 bg-bottle text-white rounded text-xs font-medium hover:bg-bottle/80 transition-colors">
                       ⬇
                     </a>
+                  {% endif %}
+                  {% if has_gemini and doc.ai_summary_status != 'pending' %}
+                    <form method="POST" action="{{ url_for('files.summarize', file_id=doc.id) }}"
+                          onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳...'">
+                      <button type="submit"
+                              class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors">
+                        🤖 {{ 'Podsumuj ponownie' if doc.ai_summary_status == 'done' else 'Podsumuj AI' }}
+                      </button>
+                    </form>
                   {% endif %}
                   <form method="POST" action="{{ url_for('files.delete', file_id=doc.id) }}"
                         onsubmit="return confirm('Usunac plik {{ doc.original_name|e }}?')">
@@ -193,6 +185,21 @@
       </table>
     </div>
   </div>
+
+<!-- Summary popup modal -->
+<div id="summary-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+     onclick="if(event.target===this) closeSummary()">
+  <div class="bg-white rounded-xl max-w-2xl w-full max-h-[80vh] flex flex-col shadow-2xl">
+    <div class="flex justify-between items-center px-6 py-4 border-b border-gray-100">
+      <div>
+        <div class="text-xs text-slate-text/40 mb-0.5">Podsumowanie AI</div>
+        <h3 id="modal-title" class="font-semibold text-bottle text-sm truncate max-w-md"></h3>
+      </div>
+      <button onclick="closeSummary()" class="text-gray-300 hover:text-gray-500 text-xl leading-none ml-4">✕</button>
+    </div>
+    <div id="modal-body" class="prose prose-sm p-6 overflow-y-auto flex-1 text-slate-text"></div>
+  </div>
+</div>
 {% else %}
   <div class="bg-white rounded-xl border border-dashed border-gray-200 p-10 text-center">
     <div class="text-4xl mb-3">📂</div>
@@ -204,13 +211,35 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-  const syncForm = document.getElementById('sync-form');
-  if (syncForm) {
-    syncForm.addEventListener('submit', function() {
-      const btn = document.getElementById('sync-btn');
-      if (btn) { btn.disabled = true; btn.textContent = '⏳ Synchronizuję...'; }
-    });
-  }
+const syncForm = document.getElementById('sync-form');
+if (syncForm) {
+  syncForm.addEventListener('submit', function() {
+    const btn = document.getElementById('sync-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Synchronizuję...'; }
+  });
+}
+
+const SUMMARIES = {
+  {% for doc in all_docs %}{% if doc.ai_summary %}
+  {{ doc.id }}: {{ doc.ai_summary | tojson }},
+  {% endif %}{% endfor %}
+};
+
+function showSummary(id, name) {
+  document.getElementById('modal-title').textContent = name;
+  const text = SUMMARIES[id] || '';
+  document.getElementById('modal-body').innerHTML = marked.parse(text);
+  document.getElementById('summary-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSummary() {
+  document.getElementById('summary-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSummary(); });
 </script>
 {% endblock %}

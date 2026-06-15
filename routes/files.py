@@ -1,5 +1,6 @@
 import os
 import time
+import tempfile
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, Response
 from werkzeug.utils import secure_filename
@@ -8,6 +9,8 @@ from extensions import db
 from models import Competition, Edition, Document, AppSettings
 from services.text_extractor import extract_text
 from services.gemini import summarize_document
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 bp = Blueprint("files", __name__)
 
@@ -39,7 +42,7 @@ def upload(c_slug, e_slug):
         ts = str(int(time.time()))
         stored_name = f"{base}_{ts}.{ext}" if ext else f"{base}_{ts}"
 
-        storage_dir = os.path.join("storage", competition.slug, edition.slug)
+        storage_dir = os.path.join(BASE_DIR, "storage", competition.slug, edition.slug)
         os.makedirs(storage_dir, exist_ok=True)
         stored_path = os.path.join(storage_dir, stored_name)
         f.save(stored_path)
@@ -101,14 +104,43 @@ def summarize(file_id):
     doc.ai_summary_status = "pending"
     db.session.commit()
 
+    # For Drive files: download to temp dir for text extraction
+    _tmp_dir = None
+    local_path = doc.stored_path
+    if doc.gdrive_file_id:
+        if not settings.google_drive_api_key and not settings.google_access_token:
+            doc.ai_summary_status = "error"
+            doc.ai_summary_error = "Brak klucza Drive API — nie można pobrać pliku do analizy"
+            db.session.commit()
+            flash("Brak skonfigurowanego dostępu do Drive.", "warning")
+            return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+        try:
+            _tmp_dir = tempfile.mkdtemp()
+            if settings.google_access_token:
+                from services.google_drive import download_file
+                local_path = download_file(doc.gdrive_file_id, doc.original_name, doc.mime_type or "application/pdf", _tmp_dir, settings)
+            else:
+                from services.google_drive import download_file_public
+                local_path = download_file_public(doc.gdrive_file_id, doc.original_name, doc.mime_type or "application/pdf", _tmp_dir, settings.google_drive_api_key)
+        except Exception as e:
+            doc.ai_summary_status = "error"
+            doc.ai_summary_error = str(e)
+            db.session.commit()
+            flash(f"Błąd pobierania pliku z Drive: {e}", "error")
+            return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+
     try:
-        text = extract_text(doc.stored_path, doc.mime_type or "")
+        text = extract_text(local_path, doc.mime_type or "")
     except Exception as e:
         doc.ai_summary_status = "error"
         doc.ai_summary_error = str(e)
         db.session.commit()
         flash(f"Błąd ekstrakcji tekstu: {e}", "error")
         return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+    finally:
+        if _tmp_dir:
+            import shutil
+            shutil.rmtree(_tmp_dir, ignore_errors=True)
 
     if not text or len(text.strip()) < 50:
         doc.ai_summary_status = "error"
@@ -121,8 +153,9 @@ def summarize(file_id):
         text = text[:400_000] + "\n[TEKST OBCIĘTY DO 400 000 ZNAKÓW]"
 
     try:
-        summary = summarize_document(text, settings)
-        doc.ai_summary = summary
+        result = summarize_document(text, settings)
+        doc.ai_summary = result["summary"]
+        doc.ai_description = result.get("description", "") or ""
         doc.ai_summary_model = settings.gemini_model
         doc.ai_summarized_at = datetime.utcnow()
         doc.ai_summary_status = "done"

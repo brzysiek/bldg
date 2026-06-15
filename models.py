@@ -51,6 +51,7 @@ class Document(db.Model):
     gdrive_file_id = db.Column(db.Text)
 
     ai_summary = db.Column(db.Text)
+    ai_description = db.Column(db.Text)
     ai_summary_model = db.Column(db.Text)
     ai_summarized_at = db.Column(db.DateTime)
     ai_summary_status = db.Column(db.Text)
