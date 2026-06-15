@@ -309,16 +309,27 @@ async function bulkSummarize() {
 
     try {
       const resp = await fetch(`/files/${file.id}/summarize-json`, { method: 'POST' });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      if (data.ok) {
-        setRowDone(file.id, data.description, data.summary);
-      } else {
-        setRowError(file.id, data.error || 'Błąd');
+      let data;
+      try { data = await resp.json(); } catch (_) { data = null; }
+      if (!resp.ok) {
+        const msg = `HTTP ${resp.status}${data?.error ? ': ' + data.error : ''}`;
+        console.error(`[bulk] file ${file.id} (${file.name}):`, msg, data);
+        setRowError(file.id, msg);
+        showProgressError(msg);
         errors++;
+      } else if (!data?.ok) {
+        const msg = data?.error || 'Nieznany błąd';
+        console.error(`[bulk] file ${file.id} (${file.name}):`, msg);
+        setRowError(file.id, msg);
+        showProgressError(msg);
+        errors++;
+      } else {
+        setRowDone(file.id, data.description, data.summary);
       }
     } catch (e) {
+      console.error(`[bulk] file ${file.id} (${file.name}): fetch error`, e);
       setRowError(file.id, e.message);
+      showProgressError(e.message);
       errors++;
     }
     done++;
@@ -334,6 +345,11 @@ async function bulkSummarize() {
     cb.disabled = cb.classList.contains('opacity-30');
     cb.checked = false;
   });
+}
+
+function showProgressError(msg) {
+  const el = document.getElementById('progress-file');
+  if (el) { el.textContent = '❌ ' + msg; el.classList.add('text-red-500'); }
 }
 
 function setProgress(done, total, filename, state) {
