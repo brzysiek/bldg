@@ -119,14 +119,21 @@
         <div>
           <label class="block text-xs font-medium text-slate-text mb-1">Client ID (Google OAuth)</label>
           <input type="text" name="google_oauth_client_id"
-                 placeholder="{{ '••••' if settings.google_oauth_client_id else '1234....apps.googleusercontent.com' }}"
+                 value="{{ settings.google_oauth_client_id or '' }}"
+                 placeholder="1234....apps.googleusercontent.com"
                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle font-mono" />
+          {% if settings.google_oauth_client_id %}
+            <p class="text-xs text-green-600 mt-1">✅ Zapisano.</p>
+          {% endif %}
         </div>
         <div>
           <label class="block text-xs font-medium text-slate-text mb-1">Client Secret</label>
           <input type="password" name="google_oauth_client_secret"
-                 placeholder="{{ '••••' if settings.google_oauth_client_secret else 'GOCSPX-...' }}"
+                 placeholder="{{ 'pozostaw puste, aby nie zmieniać' if settings.google_oauth_client_secret else 'GOCSPX-...' }}"
                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle font-mono" />
+          {% if settings.google_oauth_client_secret %}
+            <p class="text-xs text-green-600 mt-1">✅ Zapisano. Pozostaw puste, aby nie zmieniać.</p>
+          {% endif %}
         </div>
       </div>
       <button type="submit" class="px-4 py-2 bg-bottle/10 text-bottle border border-bottle/20 rounded-lg text-xs font-semibold hover:bg-bottle/20 transition-colors">
@@ -143,7 +150,8 @@
       <p class="text-xs text-slate-text/40 mt-2">
         Najpierw wklej Client ID i Client Secret z
         <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a>
-        (projekt z wlaczonym Drive API, redirect URI: <code class="font-mono">http://localhost:5002/auth/google/callback</code>).
+        (projekt z włączonym Drive API).
+        Redirect URI do wpisania w konsoli: <code class="font-mono bg-gray-100 px-1 rounded">{{ google_redirect_uri }}</code>
       </p>
     {% endif %}
   </div>

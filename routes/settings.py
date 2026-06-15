@@ -19,8 +19,10 @@ def _get_or_create_settings():
 
 @bp.route("/settings")
 def index():
+    import os
     settings = _get_or_create_settings()
-    return render_template("settings/index.html", settings=settings, test_result=None)
+    redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
+    return render_template("settings/index.html", settings=settings, test_result=None, google_redirect_uri=redirect_uri)
 
 
 @bp.route("/settings/save", methods=["POST"])
@@ -127,9 +129,11 @@ def save_google_oauth():
 
 @bp.route("/settings/test", methods=["POST"])
 def test():
+    import os
     settings = _get_or_create_settings()
     if not settings.gemini_api_key:
         flash("Najpierw zapisz klucz Gemini API.", "warning")
         return redirect(url_for("settings.index"))
     result = test_connection(settings.gemini_api_key, settings.gemini_model)
-    return render_template("settings/index.html", settings=settings, test_result=result)
+    redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
+    return render_template("settings/index.html", settings=settings, test_result=result, google_redirect_uri=redirect_uri)

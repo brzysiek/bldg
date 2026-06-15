@@ -10,7 +10,7 @@ from googleapiclient.http import MediaIoBaseDownload
 import io
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-REDIRECT_URI = "http://localhost:5002/auth/google/callback"
+REDIRECT_URI = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
 
 # Google-native MIME types and their export formats
 EXPORT_MIME = {
