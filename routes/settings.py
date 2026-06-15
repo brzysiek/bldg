@@ -110,6 +110,21 @@ def gemini_models():
         return jsonify({"error": str(e), "models": []})
 
 
+@bp.route("/settings/save-google-oauth", methods=["POST"])
+def save_google_oauth():
+    settings = _get_or_create_settings()
+    client_id = request.form.get("google_oauth_client_id", "").strip()
+    client_secret = request.form.get("google_oauth_client_secret", "").strip()
+    if client_id:
+        settings.google_oauth_client_id = client_id
+    if client_secret:
+        settings.google_oauth_client_secret = client_secret
+    settings.updated_at = datetime.utcnow()
+    db.session.commit()
+    flash("Dane OAuth Google zapisane. Teraz polacz konto.", "success")
+    return redirect(url_for("settings.index"))
+
+
 @bp.route("/settings/test", methods=["POST"])
 def test():
     settings = _get_or_create_settings()

@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% block title %}Nowe porownanie – Grant Docs{% endblock %}
+{% block content %}
+<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2">
+  <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porownania</a>
+  <span>›</span>
+  <span class="text-slate-text font-medium">Nowe porownanie</span>
+</nav>
+
+<h1 class="text-xl font-bold text-bottle mb-6">Nowe porownanie edycji</h1>
+
+<form method="POST" id="setup-form">
+
+  <!-- Krok 1: Wybor konkursu -->
+  <div class="bg-white rounded-xl border border-gray-100 p-5 mb-4">
+    <h2 class="font-semibold text-bottle text-sm mb-3">1. Wybierz konkurs</h2>
+    <select name="competition_id" id="competition-select"
+            class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle"
+            onchange="loadEditions()">
+      <option value="">— wybierz konkurs —</option>
+      {% for c in competitions %}
+        <option value="{{ c.id }}" {% if request.args.get('competition_id')|int == c.id %}selected{% endif %}>{{ c.name }}{% if c.program %} ({{ c.program }}){% endif %}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- Krok 2: Wybor edycji -->
+  <div class="bg-white rounded-xl border border-gray-100 p-5 mb-4" id="editions-panel" style="display:none">
+    <h2 class="font-semibold text-bottle text-sm mb-3">2. Wybierz edycje do porownania</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-text/70 mb-1.5">Edycja starsza (referencyjna)</label>
+        <select name="edition_old_id" id="edition-old-select"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20"
+                onchange="loadFiles()">
+          <option value="">— wybierz —</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-text/70 mb-1.5">Edycja nowsza (porownywana)</label>
+        <select name="edition_new_id" id="edition-new-select"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20"
+                onchange="loadFiles()">
+          <option value="">— wybierz —</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Krok 3: Mapowanie plikow -->
+  <div class="bg-white rounded-xl border border-gray-100 p-5 mb-5" id="mapping-panel" style="display:none">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold text-bottle text-sm">3. Mapowanie plikow</h2>
+      <button type="button" onclick="autoMatch()"
+              class="px-3 py-1.5 bg-bottle/10 text-bottle rounded-lg text-xs font-semibold hover:bg-bottle/20 transition-colors">
+        ✨ Auto-dopasuj
+      </button>
+    </div>
+
+    <div class="grid grid-cols-2 text-xs font-semibold text-slate-text/50 mb-2 px-1">
+      <span id="label-old">Edycja starsza</span>
+      <span id="label-new">Porownaj z (edycja nowsza)</span>
+    </div>
+
+    <div id="mapping-rows" class="space-y-2">
+      <p class="text-sm text-slate-text/40 py-4 text-center">Wybierz obie edycje, aby zobaczyc pliki.</p>
+    </div>
+
+    <!-- Pliki z edycji B bez pary -->
+    <div id="unmatched-panel" class="mt-4" style="display:none">
+      <p class="text-xs font-semibold text-slate-text/50 mb-2">Pliki z nowej edycji bez pary (nie beda porownane):</p>
+      <div id="unmatched-new" class="flex flex-wrap gap-1.5"></div>
+    </div>
+  </div>
+
+  <!-- Submit -->
+  <div id="submit-panel" style="display:none">
+    <button type="submit"
+            class="flex items-center gap-2 px-6 py-3 bg-bottle text-white rounded-xl text-sm font-bold hover:bg-bottle/90 transition-colors"
+            onclick="this.disabled=true; this.textContent='Uruchamianie...'">
+      ▶ Uruchom porownanie
+    </button>
+  </div>
+
+</form>
+
+<script>
+let filesOld = [];
+let filesNew = [];
+
+async function loadEditions() {
+  const compId = document.getElementById('competition-select').value;
+  if (!compId) {
+    document.getElementById('editions-panel').style.display = 'none';
+    document.getElementById('mapping-panel').style.display = 'none';
+    document.getElementById('submit-panel').style.display = 'none';
+    return;
+  }
+
+  const r = await fetch(`/api/competitions/${compId}/editions`);
+  const editions = await r.json();
+
+  const oldSel = document.getElementById('edition-old-select');
+  const newSel = document.getElementById('edition-new-select');
+
+  [oldSel, newSel].forEach(sel => {
+    sel.innerHTML = '<option value="">— wybierz —</option>';
+    editions.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.id;
+      opt.textContent = e.name + (e.year ? ` (${e.year})` : '');
+      sel.appendChild(opt);
+    });
+  });
+
+  document.getElementById('editions-panel').style.display = '';
+  document.getElementById('mapping-panel').style.display = 'none';
+  document.getElementById('submit-panel').style.display = 'none';
+}
+
+async function loadFiles() {
+  const oldId = document.getElementById('edition-old-select').value;
+  const newId = document.getElementById('edition-new-select').value;
+  if (!oldId || !newId || oldId === newId) return;
+
+  const [rOld, rNew] = await Promise.all([
+    fetch(`/api/editions/${oldId}/files`),
+    fetch(`/api/editions/${newId}/files`),
+  ]);
+  filesOld = await rOld.json();
+  filesNew = await rNew.json();
+
+  const oldName = document.getElementById('edition-old-select').selectedOptions[0].text;
+  const newName = document.getElementById('edition-new-select').selectedOptions[0].text;
+  document.getElementById('label-old').textContent = oldName;
+  document.getElementById('label-new').textContent = `Porownaj z: ${newName}`;
+
+  renderMappingRows();
+  document.getElementById('mapping-panel').style.display = '';
+  document.getElementById('submit-panel').style.display = '';
+}
+
+function renderMappingRows(currentMappings = {}) {
+  const container = document.getElementById('mapping-rows');
+  container.innerHTML = '';
+
+  if (filesOld.length === 0) {
+    container.innerHTML = '<p class="text-sm text-slate-text/40 py-4 text-center">Edycja starsza nie ma dokumentow.</p>';
+    return;
+  }
+
+  filesOld.forEach((f, idx) => {
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-2 gap-3 items-center py-2 border-b border-gray-50 last:border-0';
+
+    const fileIcon = f.name.endsWith('.pdf') ? '📄' : f.name.endsWith('.docx') ? '📝' : '📎';
+    const sourceTag = f.from_gdrive ? '<span class="text-xs text-blue-500">☁️</span>' : '';
+
+    const leftDiv = document.createElement('div');
+    leftDiv.className = 'flex items-center gap-2 min-w-0';
+    leftDiv.innerHTML = `<span>${fileIcon}</span><span class="truncate text-sm font-medium text-slate-text" title="${f.name}">${f.name}</span>${sourceTag}`;
+
+    const sel = document.createElement('select');
+    sel.name = `mapping_${idx}_new`;
+    sel.className = 'w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 bg-gray-50';
+    sel.onchange = updateUnmatched;
+
+    const skipOpt = document.createElement('option');
+    skipOpt.value = '__skip__';
+    skipOpt.textContent = '(pomin)';
+    sel.appendChild(skipOpt);
+
+    filesNew.forEach(fn => {
+      const opt = document.createElement('option');
+      opt.value = fn.id;
+      const fnIcon = fn.from_gdrive ? '☁️ ' : '';
+      opt.textContent = `${fnIcon}${fn.name}`;
+      sel.appendChild(opt);
+    });
+
+    if (currentMappings[f.id] !== undefined) {
+      sel.value = currentMappings[f.id];
+    }
+
+    const hiddenOld = document.createElement('input');
+    hiddenOld.type = 'hidden';
+    hiddenOld.name = `mapping_${idx}_old`;
+    hiddenOld.value = f.id;
+
+    const rightDiv = document.createElement('div');
+    rightDiv.appendChild(sel);
+
+    row.appendChild(leftDiv);
+    row.appendChild(rightDiv);
+    row.appendChild(hiddenOld);
+    container.appendChild(row);
+  });
+
+  autoMatch();
+}
+
+function autoMatch() {
+  const selects = document.querySelectorAll('[name^="mapping_"][name$="_new"]');
+  selects.forEach((sel, idx) => {
+    if (!filesOld[idx]) return;
+    const oldBase = filesOld[idx].name.replace(/[_\-\s]+/g, ' ').toLowerCase().replace(/\.[^.]+$/, '');
+
+    let bestScore = 0;
+    let bestVal = '__skip__';
+
+    filesNew.forEach(fn => {
+      const newBase = fn.name.replace(/[_\-\s]+/g, ' ').toLowerCase().replace(/\.[^.]+$/, '');
+      const score = similarity(oldBase, newBase);
+      if (score > bestScore) {
+        bestScore = score;
+        bestVal = String(fn.id);
+      }
+    });
+
+    if (bestScore > 0.4) sel.value = bestVal;
+  });
+
+  updateUnmatched();
+}
+
+function similarity(a, b) {
+  const longer = a.length > b.length ? a : b;
+  const shorter = a.length > b.length ? b : a;
+  if (longer.length === 0) return 1.0;
+  const matches = shorter.split('').filter((c, i) => longer.includes(c)).length;
+  return matches / longer.length;
+}
+
+function updateUnmatched() {
+  const usedIds = new Set();
+  document.querySelectorAll('[name^="mapping_"][name$="_new"]').forEach(sel => {
+    if (sel.value && sel.value !== '__skip__') usedIds.add(sel.value);
+  });
+
+  const unmatchedNew = filesNew.filter(fn => !usedIds.has(String(fn.id)));
+  const panel = document.getElementById('unmatched-panel');
+  const container = document.getElementById('unmatched-new');
+
+  if (unmatchedNew.length > 0) {
+    panel.style.display = '';
+    container.innerHTML = unmatchedNew.map(fn => {
+      const icon = fn.name.endsWith('.pdf') ? '📄' : fn.name.endsWith('.docx') ? '📝' : '📎';
+      return `<span class="px-2 py-1 bg-yellow-50 border border-yellow-100 text-yellow-800 text-xs rounded-lg">${icon} ${fn.name}</span>`;
+    }).join('');
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+// Pre-select edition if passed via URL
+window.addEventListener('DOMContentLoaded', async () => {
+  const params = new URLSearchParams(location.search);
+  const editionOldParam = params.get('edition_old');
+
+  if (editionOldParam) {
+    // Find which competition this edition belongs to
+    const compSel = document.getElementById('competition-select');
+    for (const opt of compSel.options) {
+      if (!opt.value) continue;
+      const r = await fetch(`/api/competitions/${opt.value}/editions`);
+      const editions = await r.json();
+      const found = editions.find(e => String(e.id) === editionOldParam);
+      if (found) {
+        compSel.value = opt.value;
+        await loadEditions();
+        document.getElementById('edition-old-select').value = editionOldParam;
+        await loadFiles();
+        break;
+      }
+    }
+  }
+});
+</script>
+{% endblock %}

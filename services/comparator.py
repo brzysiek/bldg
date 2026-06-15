@@ -77,10 +77,123 @@ ZMIANY OPERACYJNE — zmiany w harmonogramie, procedurach, dokumentacji ktorych 
 Formatuj odpowiedz w Markdown. Uzywaj profesjonalnego, doradczego tonu."""
 
 
+DEFAULT_PROMPT_EDITION_SUMMARY = """Jestes glownym analitykiem projektow unijnych.
+
+Przeprowadzono porownanie edycji {label_old} z edycja {label_new} konkursu "{competition_name}".
+Przeanalizowano {n_files} par dokumentow. Ponizej podsumowania zmian per dokument:
+
+{per_file_summaries}
+
+Na podstawie powyzszych danych napisz syntetyczne PODSUMOWANIE CALEJ EDYCJI w jezyku polskim:
+
+1. **Ogolna ocena skali zmian** — czy to rewolucja, ewolucja czy jedynie kosmetyka?
+2. **Najwazniejsze zmiany** (max 5 punktow) — z perspektywy wnioskodawcy
+3. **Pliki z najwazniejszymi zmianami** — ktore dokumenty wymagaja najuwazniejszej lektury?
+4. **Rekomendacja dla zespolu** — co nalezy zrobic przed zlozeniem wniosku?
+
+Formatuj w Markdown. Badzprecyzyjny i praktyczny."""
+
+
+PRICING = {
+    "gemini-2.5-flash":      {"input": 0.30,  "output": 2.50},
+    "gemini-2.5-pro":        {"input": 1.25,  "output": 10.00},
+    "gemini-2.5-flash-lite": {"input": 0.10,  "output": 0.40},
+}
+
+
+def _extract_structure(text, label, call_gemini, settings):
+    from services.comparator import DEFAULT_PROMPT_EXTRACTION
+    prompt = (settings.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION).replace(
+        "{document_text}", text[:300_000]
+    )
+    resp = call_gemini(prompt)
+    raw = resp.text.strip().replace("```json", "").replace("```", "").strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        words = text.split()
+        blocks = {}
+        for i in range(0, len(words), 500):
+            b = i // 500 + 1
+            blocks[f"Blok {b}"] = " ".join(words[i:i + 500])
+        return {"tytul": label, "sekcje": blocks}
+
+
+def _compare_single_pair(text_old, text_new, label_old, label_new, call_gemini, save_detail, settings):
+    struct_old = _extract_structure(text_old, label_old, call_gemini, settings)
+    struct_new = _extract_structure(text_new, label_new, call_gemini, settings)
+
+    sekcje_old = struct_old.get("sekcje", {})
+    sekcje_new = struct_new.get("sekcje", {})
+    all_keys = sorted(set(list(sekcje_old.keys()) + list(sekcje_new.keys())))
+
+    changes = []
+    found = 0
+
+    for idx, sekcja in enumerate(all_keys, 1):
+        tresc_stara = sekcje_old.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
+        tresc_nowa = sekcje_new.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
+
+        save_detail(f"Sekcja {idx}/{len(all_keys)}: {sekcja}" + (f" — {found} zmian" if found else ""))
+
+        if tresc_stara == tresc_nowa:
+            continue
+
+        prompt = (
+            (settings.comparison_prompt_comparison or DEFAULT_PROMPT_COMPARISON)
+            .replace("{label_old}", label_old)
+            .replace("{label_new}", label_new)
+            .replace("{sekcja}", sekcja)
+            .replace("{tresc_stara}", tresc_stara[:4000])
+            .replace("{tresc_nowa}", tresc_nowa[:4000])
+        )
+
+        try:
+            resp = call_gemini(prompt)
+            raw = resp.text.strip()
+            if raw != "BRAK_ZMIAN":
+                raw = raw.replace("```json", "").replace("```", "").strip()
+                obj = json.loads(raw)
+                obj["sekcja"] = sekcja
+                changes.append(obj)
+                found += 1
+        except Exception as e:
+            changes.append({
+                "sekcja": sekcja,
+                "zapis_stary": tresc_stara[:500],
+                "zapis_nowy": tresc_nowa[:500],
+                "typ_zmiany": "INNE",
+                "waga": "NISKA",
+                "komentarz_biznesowy": f"[Blad analizy: {str(e)[:200]}]",
+            })
+            found += 1
+
+        time.sleep(0.5)
+
+    return changes
+
+
+def _generate_file_summary(changes, label_old, label_new, competition_name, call_gemini, settings):
+    if not changes:
+        return "Brak istotnych roznic w tym dokumencie."
+    changes_list_text = "\n".join(
+        f"- [{c.get('waga','?')}] {c.get('sekcja','?')} ({c.get('typ_zmiany','?')}): {c.get('komentarz_biznesowy','')[:300]}"
+        for c in changes
+    )
+    prompt = (
+        (settings.comparison_prompt_summary or DEFAULT_PROMPT_SUMMARY)
+        .replace("{label_old}", label_old)
+        .replace("{label_new}", label_new)
+        .replace("{competition_name}", competition_name)
+        .replace("{changes_list}", changes_list_text[:20_000])
+    )
+    resp = call_gemini(prompt)
+    return resp.text
+
+
 def run_comparison(job_id: int, app):
-    """Glowna funkcja porownania — wywoływana w osobnym watku."""
     with app.app_context():
-        from models import db, ComparisonJob, AppSettings
+        from models import db, ComparisonJob, AppSettings, Document
         from google import genai
 
         job = db.session.get(ComparisonJob, job_id)
@@ -95,13 +208,6 @@ def run_comparison(job_id: int, app):
 
         client = genai.Client(api_key=settings.gemini_api_key)
         model_name = settings.gemini_model or "gemini-2.5-flash"
-
-        # Cennik USD per 1M tokenow (czerwiec 2026)
-        PRICING = {
-            "gemini-2.5-flash":      {"input": 0.30,  "output": 2.50},
-            "gemini-2.5-pro":        {"input": 1.25,  "output": 10.00},
-            "gemini-2.5-flash-lite": {"input": 0.10,  "output": 0.40},
-        }
         price = PRICING.get(model_name, {"input": 0.30, "output": 2.50})
 
         total_input = 0
@@ -112,7 +218,7 @@ def run_comparison(job_id: int, app):
             resp = client.models.generate_content(model=model_name, contents=prompt)
             usage = getattr(resp, "usage_metadata", None)
             if usage:
-                total_input  += getattr(usage, "prompt_token_count", 0) or 0
+                total_input += getattr(usage, "prompt_token_count", 0) or 0
                 total_output += getattr(usage, "candidates_token_count", 0) or 0
             return resp
 
@@ -121,162 +227,159 @@ def run_comparison(job_id: int, app):
                 job.status_detail = detail
             db.session.commit()
 
-        try:
-            job.started_at = datetime.utcnow()
-            # Krok 1: Ekstrakcja tekstu z plikow
-            job.status = "extracting"
-            save(f"Odczytuje pliki z dysku...")
-
-            temp_data = json.loads(job.changes_json or "{}")
-            path_old = temp_data.get("path_old")
-            path_new = temp_data.get("path_new")
-
-            job.status_detail = f"Ekstrakcja tekstu: {job.doc_old_name}"
-            db.session.commit()
-            text_old = extract_text(path_old, "")
-
-            job.status_detail = f"Ekstrakcja tekstu: {job.doc_new_name}"
-            db.session.commit()
-            text_new = extract_text(path_new, "")
-
-            chars_old = len(text_old)
-            chars_new = len(text_new)
-
-            # Krok 2: Ustrukturyzuj przez Gemini
-            job.status = "chunking"
-            save(f"Gemini analizuje strukturę dokumentu: {job.label_old} ({chars_old:,} znaków)...")
-
-            def extract_structure(text, label):
-                prompt = (settings.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION).replace(
-                    "{document_text}", text[:300_000]
-                )
-                resp = call_gemini(prompt)
-                raw = resp.text.strip().replace("```json", "").replace("```", "").strip()
-                try:
-                    return json.loads(raw)
-                except json.JSONDecodeError:
-                    words = text.split()
-                    blocks = {}
-                    for i in range(0, len(words), 500):
-                        block_num = i // 500 + 1
-                        blocks[f"Blok {block_num}"] = " ".join(words[i : i + 500])
-                    return {"tytul": label, "sekcje": blocks}
-
-            struct_old = extract_structure(text_old, job.label_old or "Edycja starsza")
-
-            save(f"Gemini analizuje strukturę dokumentu: {job.label_new} ({chars_new:,} znaków)...")
-            struct_new = extract_structure(text_new, job.label_new or "Edycja nowsza")
-
-            sekcje_old = struct_old.get("sekcje", {})
-            sekcje_new = struct_new.get("sekcje", {})
-            all_keys = sorted(set(list(sekcje_old.keys()) + list(sekcje_new.keys())))
-
-            job.progress_total = len(all_keys)
-            job.progress_current = 0
-            job.status = "comparing"
-            save(f"Znaleziono {len(all_keys)} sekcji do porównania. Zaczynam analizę...")
-
-            # Krok 3: Porownanie per-sekcja
-            changes = []
-            found_changes = 0
-
-            for idx, sekcja in enumerate(all_keys, 1):
-                tresc_stara = sekcje_old.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
-                tresc_nowa = sekcje_new.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
-
-                job.status_detail = (
-                    f"Porównuję sekcję {idx}/{len(all_keys)}: {sekcja}"
-                    + (f" — znaleziono {found_changes} zmian" if found_changes else "")
-                )
-                db.session.commit()
-
-                if tresc_stara == tresc_nowa:
-                    job.progress_current += 1
-                    db.session.commit()
-                    continue
-
-                prompt = (
-                    (settings.comparison_prompt_comparison or DEFAULT_PROMPT_COMPARISON)
-                    .replace("{label_old}", job.label_old or "Edycja starsza")
-                    .replace("{label_new}", job.label_new or "Edycja nowsza")
-                    .replace("{sekcja}", sekcja)
-                    .replace("{tresc_stara}", tresc_stara[:4000])
-                    .replace("{tresc_nowa}", tresc_nowa[:4000])
-                )
-
-                try:
-                    resp = call_gemini(prompt)
-                    raw = resp.text.strip()
-
-                    if raw == "BRAK_ZMIAN":
-                        pass
-                    else:
-                        raw = raw.replace("```json", "").replace("```", "").strip()
-                        change_obj = json.loads(raw)
-                        change_obj["sekcja"] = sekcja
-                        changes.append(change_obj)
-                        found_changes += 1
-                except Exception as e:
-                    changes.append(
-                        {
-                            "sekcja": sekcja,
-                            "zapis_stary": tresc_stara[:500],
-                            "zapis_nowy": tresc_nowa[:500],
-                            "typ_zmiany": "INNE",
-                            "waga": "NISKA",
-                            "komentarz_biznesowy": f"[Blad analizy tej sekcji: {str(e)[:200]}]",
-                        }
-                    )
-                    found_changes += 1
-
-                job.progress_current += 1
-                job.changes_json = json.dumps(changes, ensure_ascii=False)
-                db.session.commit()
-
-                time.sleep(1.0)
-
-            job.changes_json = json.dumps(changes, ensure_ascii=False)
-
-            # Krok 4: Executive Summary
-            job.status = "summarizing"
-            save(f"Generuję Executive Summary dla {found_changes} znalezionych zmian...")
-
-            if changes:
-                changes_list_text = "\n".join(
-                    [
-                        f"- [{c.get('waga','?')}] {c.get('sekcja','?')} ({c.get('typ_zmiany','?')}): {c.get('komentarz_biznesowy','')[:300]}"
-                        for c in changes
-                    ]
-                )
-                summary_prompt = (
-                    (settings.comparison_prompt_summary or DEFAULT_PROMPT_SUMMARY)
-                    .replace("{label_old}", job.label_old or "Edycja starsza")
-                    .replace("{label_new}", job.label_new or "Edycja nowsza")
-                    .replace("{competition_name}", job.competition_name or "konkurs grantowy")
-                    .replace("{changes_list}", changes_list_text[:20_000])
-                )
-                resp = call_gemini(summary_prompt)
-                job.executive_summary = resp.text
-            else:
-                job.executive_summary = "**Brak istotnych roznic** — dokumenty sa identyczne lub roznice sa wylacznie redakcyjne."
-
+        def finish_tokens():
             cost = (total_input / 1_000_000 * price["input"]) + (total_output / 1_000_000 * price["output"])
-            job.status = "done"
-            job.status_detail = f"Analiza zakonczona. Znaleziono {found_changes} zmian."
-            job.gemini_model_used = model_name
             job.tokens_input = total_input
             job.tokens_output = total_output
             job.estimated_cost_usd = round(cost, 6)
             job.finished_at = datetime.utcnow()
+            job.gemini_model_used = model_name
+
+        try:
+            job.started_at = datetime.utcnow()
+
+            if job.file_mappings_json:
+                # NEW: multi-file edition comparison
+                mappings = json.loads(job.file_mappings_json)
+                job.progress_total = len(mappings)
+                job.progress_current = 0
+                job.status = "comparing"
+                save("Rozpoczynam porownanie plikow edycji...")
+
+                per_file_results = []
+                all_changes = []
+
+                for idx, mapping in enumerate(mappings):
+                    old_doc = db.session.get(Document, mapping["old_doc_id"])
+                    new_doc = db.session.get(Document, mapping["new_doc_id"])
+
+                    if not old_doc or not new_doc:
+                        job.progress_current += 1
+                        save()
+                        continue
+
+                    old_name = old_doc.original_name
+                    new_name = new_doc.original_name
+                    save(f"Plik {idx + 1}/{len(mappings)}: {old_name} — Ekstrakcja tekstu...")
+
+                    text_old = extract_text(old_doc.stored_path, old_doc.mime_type or "")
+                    text_new = extract_text(new_doc.stored_path, new_doc.mime_type or "")
+
+                    save(f"Plik {idx + 1}/{len(mappings)}: {old_name} — Analiza struktury...")
+
+                    def _detail(msg):
+                        save(f"Plik {idx + 1}/{len(mappings)}: {old_name} — {msg}")
+
+                    changes = _compare_single_pair(
+                        text_old, text_new,
+                        job.label_old or "Edycja starsza",
+                        job.label_new or "Edycja nowsza",
+                        call_gemini, _detail, settings
+                    )
+
+                    save(f"Plik {idx + 1}/{len(mappings)}: {old_name} — Generuje podsumowanie...")
+                    file_summary = _generate_file_summary(
+                        changes,
+                        job.label_old or "Edycja starsza",
+                        job.label_new or "Edycja nowsza",
+                        job.competition_name or "konkurs",
+                        call_gemini, settings
+                    )
+
+                    per_file_results.append({
+                        "idx": idx,
+                        "old_doc_id": mapping["old_doc_id"],
+                        "new_doc_id": mapping["new_doc_id"],
+                        "old_name": old_name,
+                        "new_name": new_name,
+                        "changes": changes,
+                        "summary": file_summary,
+                    })
+                    all_changes.extend(changes)
+
+                    job.progress_current = idx + 1
+                    job.per_file_results_json = json.dumps(per_file_results, ensure_ascii=False)
+                    job.changes_json = json.dumps(all_changes, ensure_ascii=False)
+                    db.session.commit()
+
+                # Edition summary
+                job.status = "summarizing"
+                save("Generuje podsumowanie calej edycji...")
+
+                per_file_summaries = "\n\n".join(
+                    f"### {r['old_name']} vs {r['new_name']}\n{r['summary'][:1000]}"
+                    for r in per_file_results
+                )
+                edition_prompt = (
+                    DEFAULT_PROMPT_EDITION_SUMMARY
+                    .replace("{label_old}", job.label_old or "Edycja starsza")
+                    .replace("{label_new}", job.label_new or "Edycja nowsza")
+                    .replace("{competition_name}", job.competition_name or "konkurs")
+                    .replace("{n_files}", str(len(per_file_results)))
+                    .replace("{per_file_summaries}", per_file_summaries[:30_000])
+                )
+                resp = call_gemini(edition_prompt)
+                job.edition_summary = resp.text
+                job.executive_summary = resp.text  # backward compat
+
+            else:
+                # LEGACY: single-file comparison
+                job.status = "extracting"
+                save("Odczytuje pliki z dysku...")
+
+                temp_data = json.loads(job.changes_json or "{}")
+                path_old = temp_data.get("path_old")
+                path_new = temp_data.get("path_new")
+
+                save(f"Ekstrakcja tekstu: {job.doc_old_name}")
+                text_old = extract_text(path_old, "")
+
+                save(f"Ekstrakcja tekstu: {job.doc_new_name}")
+                text_new = extract_text(path_new, "")
+
+                job.status = "chunking"
+                save(f"Gemini analizuje strukture dokumentu: {job.label_old}...")
+
+                def _legacy_detail(msg):
+                    save(msg)
+
+                job.status = "comparing"
+                changes = _compare_single_pair(
+                    text_old, text_new,
+                    job.label_old or "Edycja starsza",
+                    job.label_new or "Edycja nowsza",
+                    call_gemini, _legacy_detail, settings
+                )
+                job.changes_json = json.dumps(changes, ensure_ascii=False)
+
+                job.status = "summarizing"
+                save(f"Generuje Executive Summary dla {len(changes)} zmian...")
+
+                if changes:
+                    changes_list_text = "\n".join(
+                        f"- [{c.get('waga','?')}] {c.get('sekcja','?')} ({c.get('typ_zmiany','?')}): {c.get('komentarz_biznesowy','')[:300]}"
+                        for c in changes
+                    )
+                    summary_prompt = (
+                        (settings.comparison_prompt_summary or DEFAULT_PROMPT_SUMMARY)
+                        .replace("{label_old}", job.label_old or "Edycja starsza")
+                        .replace("{label_new}", job.label_new or "Edycja nowsza")
+                        .replace("{competition_name}", job.competition_name or "konkurs")
+                        .replace("{changes_list}", changes_list_text[:20_000])
+                    )
+                    resp = call_gemini(summary_prompt)
+                    job.executive_summary = resp.text
+                else:
+                    job.executive_summary = "**Brak istotnych roznic** — dokumenty sa identyczne lub roznice sa wylacznie redakcyjne."
+
+            finish_tokens()
+            job.status = "done"
+            job.status_detail = f"Analiza zakonczona."
             db.session.commit()
 
         except Exception as e:
-            cost = (total_input / 1_000_000 * price["input"]) + (total_output / 1_000_000 * price["output"])
+            finish_tokens()
             job.status = "error"
             job.status_detail = None
             job.error_message = str(e)[:1000]
-            job.tokens_input = total_input
-            job.tokens_output = total_output
-            job.estimated_cost_usd = round(cost, 6)
-            job.finished_at = datetime.utcnow()
             db.session.commit()

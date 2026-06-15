@@ -28,6 +28,11 @@ class Edition(db.Model):
     description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Google Drive
+    gdrive_folder_url = db.Column(db.Text)
+    gdrive_folder_id = db.Column(db.Text)
+    gdrive_synced_at = db.Column(db.DateTime)
+
     document_types = db.relationship("DocumentType", backref="edition", cascade="all, delete-orphan", lazy=True)
 
 
@@ -57,6 +62,9 @@ class Document(db.Model):
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.Column(db.Text)
 
+    # Google Drive
+    gdrive_file_id = db.Column(db.Text)
+
     ai_summary = db.Column(db.Text)
     ai_summary_model = db.Column(db.Text)
     ai_summarized_at = db.Column(db.DateTime)
@@ -73,43 +81,56 @@ class AppSettings(db.Model):
     gemini_summary_prompt = db.Column(db.Text)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Prompty dla modulu porownania
+    # Comparison prompts
     comparison_prompt_extraction = db.Column(db.Text)
     comparison_prompt_comparison = db.Column(db.Text)
-    comparison_prompt_summary    = db.Column(db.Text)
+    comparison_prompt_summary = db.Column(db.Text)
+
+    # Google Drive OAuth
+    google_oauth_client_id = db.Column(db.Text)
+    google_oauth_client_secret = db.Column(db.Text)
+    google_access_token = db.Column(db.Text)
+    google_refresh_token = db.Column(db.Text)
+    google_token_expiry = db.Column(db.DateTime)
+    google_user_email = db.Column(db.Text)
 
 
 class ComparisonJob(db.Model):
     __tablename__ = "comparison_jobs"
 
-    id               = db.Column(db.Integer, primary_key=True)
-    created_at       = db.Column(db.DateTime, default=datetime.utcnow)
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Edition-based (new flow)
+    edition_old_id = db.Column(db.Integer, db.ForeignKey("editions.id", ondelete="SET NULL"), nullable=True)
+    edition_new_id = db.Column(db.Integer, db.ForeignKey("editions.id", ondelete="SET NULL"), nullable=True)
+    file_mappings_json = db.Column(db.Text)    # [{old_doc_id, new_doc_id, old_name, new_name}, ...]
+    per_file_results_json = db.Column(db.Text) # [{idx, old_name, new_name, changes, summary}, ...]
+    edition_summary = db.Column(db.Text)
+
+    # Legacy (single file pair)
     competition_name = db.Column(db.Text)
-    doc_old_name     = db.Column(db.Text)
-    doc_new_name     = db.Column(db.Text)
-    label_old        = db.Column(db.Text)
-    label_new        = db.Column(db.Text)
+    doc_old_name = db.Column(db.Text)
+    doc_new_name = db.Column(db.Text)
+    label_old = db.Column(db.Text)
+    label_new = db.Column(db.Text)
 
-    status           = db.Column(db.Text, default="pending")
-    status_detail    = db.Column(db.Text)
+    status = db.Column(db.Text, default="pending")
+    status_detail = db.Column(db.Text)
     progress_current = db.Column(db.Integer, default=0)
-    progress_total   = db.Column(db.Integer, default=0)
-    error_message    = db.Column(db.Text)
+    progress_total = db.Column(db.Integer, default=0)
+    error_message = db.Column(db.Text)
 
-    changes_json      = db.Column(db.Text)
+    changes_json = db.Column(db.Text)
     executive_summary = db.Column(db.Text)
 
-    gemini_model_used          = db.Column(db.Text)
-    prompt_extraction_used     = db.Column(db.Text)
-    prompt_comparison_used     = db.Column(db.Text)
-    prompt_summary_used        = db.Column(db.Text)
+    gemini_model_used = db.Column(db.Text)
+    prompt_extraction_used = db.Column(db.Text)
+    prompt_comparison_used = db.Column(db.Text)
+    prompt_summary_used = db.Column(db.Text)
 
-    # Czas wykonania
-    started_at                 = db.Column(db.DateTime)
-    finished_at                = db.Column(db.DateTime)
-
-    # Statystyki tokenow i kosztu
-    tokens_input               = db.Column(db.Integer, default=0)
-    tokens_output              = db.Column(db.Integer, default=0)
-    estimated_cost_usd         = db.Column(db.Float,   default=0.0)
+    started_at = db.Column(db.DateTime)
+    finished_at = db.Column(db.DateTime)
+    tokens_input = db.Column(db.Integer, default=0)
+    tokens_output = db.Column(db.Integer, default=0)
+    estimated_cost_usd = db.Column(db.Float, default=0.0)

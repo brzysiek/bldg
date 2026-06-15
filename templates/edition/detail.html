@@ -9,165 +9,177 @@
   <span class="text-slate-text font-medium">{{ edition.name }}</span>
 </nav>
 
-{% if not has_gemini %}
-<div class="mb-5 px-4 py-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 flex items-center gap-2">
-  ⚠️ Funkcja AI nie jest skonfigurowana.
-  <a href="{{ url_for('settings.index') }}" class="font-semibold underline underline-offset-2 hover:text-yellow-900">Przejdź do Ustawień →</a>
-</div>
-{% endif %}
+{% set status_map = {'aktywna': ('bg-green-100 text-green-800','🟢'), 'archiwalna': ('bg-gray-100 text-gray-600','⬛'), 'planowana': ('bg-yellow-100 text-yellow-800','🟡')} %}
+{% set badge_cls, badge_icon = status_map.get(edition.status, ('bg-gray-100 text-gray-600','⬜')) %}
 
+<!-- Header -->
 <div class="flex items-start justify-between mb-6">
   <div>
-    {% set status_map = {'aktywna': ('bg-green-100 text-green-800', '🟢'), 'archiwalna': ('bg-gray-100 text-gray-600', '⬛'), 'planowana': ('bg-yellow-100 text-yellow-800', '🟡')} %}
-    {% set badge_cls, badge_icon = status_map.get(edition.status, ('bg-gray-100 text-gray-600', '⬜')) %}
-    <div class="flex items-center gap-3 mb-1">
-      <h1 class="text-2xl font-bold text-bottle">{{ edition.name }}</h1>
+    <div class="flex items-center gap-3 mb-1 flex-wrap">
+      <h1 class="text-xl font-bold text-bottle">{{ edition.name }}</h1>
       <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold {{ badge_cls }}">{{ badge_icon }} {{ edition.status }}</span>
     </div>
-    <div class="text-sm text-slate-text/60 flex items-center gap-4">
+    <div class="text-sm text-slate-text/60 flex items-center gap-4 flex-wrap">
       {% if edition.year %}<span>{{ edition.year }}</span>{% endif %}
       {% if edition.deadline %}<span>Termin: <strong class="text-slate-text">{{ edition.deadline.strftime('%d.%m.%Y') }}</strong></span>{% endif %}
+      {% if edition.description %}<span class="text-slate-text/50">{{ edition.description }}</span>{% endif %}
     </div>
   </div>
-  <div class="flex items-center gap-2 ml-6 shrink-0">
+  <div class="flex items-center gap-2 ml-4 shrink-0 flex-wrap">
+    <a href="{{ url_for('comparison.setup') }}?edition_old={{ edition.id }}"
+       class="flex items-center gap-1.5 px-3 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors">
+      ⚖️ Porownaj
+    </a>
     <a href="{{ url_for('editions.edit', c_slug=competition.slug, e_slug=edition.slug) }}"
        class="px-3 py-2 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
       ✏️ Edytuj
     </a>
     <form method="POST" action="{{ url_for('editions.delete', c_slug=competition.slug, e_slug=edition.slug) }}"
-          onsubmit="return confirm('Czy na pewno usunąć tę edycję i wszystkie jej dokumenty?')">
-      <button type="submit" class="px-3 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors">
-        🗑 Usuń
-      </button>
+          onsubmit="return confirm('Usunac edycje i wszystkie jej dokumenty?')">
+      <button type="submit" class="px-3 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors">🗑</button>
     </form>
   </div>
 </div>
 
-<!-- Document types -->
-<div class="flex items-center justify-between mb-4">
-  <h2 class="text-lg font-semibold text-slate-text">Typy dokumentów</h2>
-  <a href="{{ url_for('document_types.new', c_slug=competition.slug, e_slug=edition.slug) }}"
-     class="flex items-center gap-1.5 px-3 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-    + Nowy typ dokumentu
-  </a>
+<!-- Google Drive panel -->
+<div class="bg-white rounded-xl border border-gray-100 p-5 mb-5">
+  <div class="flex items-center gap-2 mb-3">
+    <span class="text-base">☁️</span>
+    <h2 class="font-semibold text-bottle text-sm">Google Drive</h2>
+    {% if edition.gdrive_synced_at %}
+      <span class="text-xs text-slate-text/40 ml-auto">Ostatnia sync: {{ edition.gdrive_synced_at.strftime('%d.%m.%Y %H:%M') }}</span>
+    {% endif %}
+  </div>
+
+  {% if not has_gdrive %}
+    <div class="bg-yellow-50 border border-yellow-100 rounded-lg px-4 py-3 text-sm text-yellow-800 flex items-center gap-2">
+      ⚠️ Konto Google Drive nie jest podlaczone.
+      <a href="{{ url_for('settings.index') }}#gdrive" class="font-semibold underline">Podlacz w Ustawieniach →</a>
+    </div>
+  {% else %}
+    <form method="POST" action="{{ url_for('editions.set_drive_url', c_slug=competition.slug, e_slug=edition.slug) }}" class="flex gap-2 mb-3">
+      <input type="url" name="gdrive_folder_url"
+             value="{{ edition.gdrive_folder_url or '' }}"
+             placeholder="https://drive.google.com/drive/folders/..."
+             class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle" />
+      <button type="submit" class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90 transition-colors whitespace-nowrap">
+        Ustaw folder
+      </button>
+    </form>
+
+    {% if edition.gdrive_folder_id %}
+      <form method="POST" action="{{ url_for('editions.sync_drive', c_slug=competition.slug, e_slug=edition.slug) }}">
+        <button type="submit"
+                class="flex items-center gap-2 px-4 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors"
+                onclick="this.disabled=true; this.textContent='Synchronizuje...'">
+          🔄 Synchronizuj pliki z Drive
+        </button>
+      </form>
+      <p class="text-xs text-slate-text/40 mt-2">Folder ID: <code class="font-mono">{{ edition.gdrive_folder_id }}</code></p>
+    {% else %}
+      <p class="text-xs text-slate-text/50">Wklej link do folderu Drive powyżej, aby aktywować synchronizację.</p>
+    {% endif %}
+  {% endif %}
 </div>
 
-{% if edition.document_types %}
-  {% for dt in edition.document_types | sort(attribute='order_index') %}
-    <div class="bg-white rounded-xl border border-gray-100 mb-5">
-      <div class="flex items-center justify-between px-5 py-3 border-b border-gray-50">
-        <div>
-          <h3 class="font-semibold text-bottle">{{ dt.name }}</h3>
-          {% if dt.description %}<p class="text-xs text-slate-text/60 mt-0.5">{{ dt.description }}</p>{% endif %}
-        </div>
-        <div class="flex items-center gap-2">
-          <a href="{{ url_for('files.upload', c_slug=competition.slug, e_slug=edition.slug, dt_id=dt.id) }}"
-             class="px-3 py-1.5 bg-bottle/10 text-bottle rounded-lg text-xs font-semibold hover:bg-bottle/20 transition-colors">
-            📎 Wgraj plik
-          </a>
-          <a href="{{ url_for('document_types.edit', c_slug=competition.slug, e_slug=edition.slug, dt_id=dt.id) }}"
-             class="px-2.5 py-1.5 border border-gray-200 text-slate-text/70 rounded-lg text-xs hover:bg-gray-50 transition-colors">✏️</a>
-          <form method="POST" action="{{ url_for('document_types.delete', c_slug=competition.slug, e_slug=edition.slug, dt_id=dt.id) }}"
-                onsubmit="return confirm('Usunąć typ dokumentu i wszystkie pliki?')">
-            <button type="submit" class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">🗑</button>
-          </form>
-        </div>
-      </div>
+<!-- Documents -->
+<div class="flex items-center justify-between mb-3">
+  <h2 class="font-semibold text-slate-text">Dokumenty ({{ all_docs | length }})</h2>
+  <div class="flex items-center gap-2">
+    {% if not has_gemini %}
+      <span class="text-xs text-yellow-700 bg-yellow-50 border border-yellow-100 px-2 py-1 rounded">
+        ⚠️ <a href="{{ url_for('settings.index') }}" class="underline">Skonfiguruj Gemini</a>
+      </span>
+    {% endif %}
+    <a href="{{ url_for('document_types.new', c_slug=competition.slug, e_slug=edition.slug) }}"
+       class="px-3 py-1.5 border border-gray-200 text-slate-text rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
+      + Nowy typ / wgraj plik
+    </a>
+  </div>
+</div>
 
-      {% if dt.documents %}
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-xs text-slate-text/50 border-b border-gray-50">
-                <th class="text-left px-5 py-2.5 font-medium">Plik</th>
-                <th class="text-left px-3 py-2.5 font-medium hidden sm:table-cell">Rozmiar</th>
-                <th class="text-left px-3 py-2.5 font-medium hidden md:table-cell">Wersja</th>
-                <th class="text-left px-3 py-2.5 font-medium hidden lg:table-cell">Data</th>
-                <th class="text-left px-3 py-2.5 font-medium hidden xl:table-cell">Notatka</th>
-                <th class="text-left px-3 py-2.5 font-medium">Status AI</th>
-                <th class="text-right px-5 py-2.5 font-medium">Akcje</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-50">
-              {% for doc in dt.documents | sort(attribute='uploaded_at', reverse=True) %}
-                <tr class="hover:bg-gray-50/50 transition-colors">
-                  <td class="px-5 py-3">
-                    <div class="flex items-center gap-2">
-                      <span class="text-base">
-                        {% set ext = doc.original_name.rsplit('.', 1)[-1].lower() if '.' in doc.original_name else '' %}
-                        {% if ext == 'pdf' %}📄{% elif ext in ['doc','docx'] %}📝{% elif ext in ['xls','xlsx'] %}📊{% elif ext in ['png','jpg','jpeg'] %}🖼️{% else %}📎{% endif %}
-                      </span>
-                      <span class="font-medium text-slate-text max-w-[200px] truncate" title="{{ doc.original_name }}">{{ doc.original_name }}</span>
-                    </div>
-                  </td>
-                  <td class="px-3 py-3 text-slate-text/60 hidden sm:table-cell whitespace-nowrap">
-                    {% if doc.file_size %}
-                      {% if doc.file_size > 1048576 %}{{ "%.1f"|format(doc.file_size / 1048576) }} MB
-                      {% elif doc.file_size > 1024 %}{{ "%.0f"|format(doc.file_size / 1024) }} KB
-                      {% else %}{{ doc.file_size }} B{% endif %}
-                    {% endif %}
-                  </td>
-                  <td class="px-3 py-3 text-slate-text/60 hidden md:table-cell">{{ doc.version_label or '—' }}</td>
-                  <td class="px-3 py-3 text-slate-text/60 hidden lg:table-cell whitespace-nowrap">{{ doc.uploaded_at.strftime('%d.%m.%Y') if doc.uploaded_at else '' }}</td>
-                  <td class="px-3 py-3 text-slate-text/60 hidden xl:table-cell max-w-[150px] truncate" title="{{ doc.notes or '' }}">{{ doc.notes or '—' }}</td>
-                  <td class="px-3 py-3">
-                    {% if doc.ai_summary_status == 'done' %}
-                      <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">✅ Podsumowano</span>
-                    {% elif doc.ai_summary_status == 'pending' %}
-                      <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>
-                    {% elif doc.ai_summary_status == 'error' %}
-                      <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium" title="{{ doc.ai_summary_error or '' }}">❌ Błąd</span>
-                    {% else %}
-                      <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-medium">— Brak</span>
-                    {% endif %}
-                  </td>
-                  <td class="px-5 py-3">
-                    <div class="flex items-center justify-end gap-1.5 flex-wrap">
-                      <a href="{{ url_for('files.download', file_id=doc.id) }}"
-                         class="px-2.5 py-1.5 bg-bottle text-white rounded text-xs font-medium hover:bg-bottle/80 transition-colors whitespace-nowrap">
-                        ⬇ Pobierz
-                      </a>
-                      {% if has_gemini %}
-                        <form method="POST" action="{{ url_for('files.summarize', file_id=doc.id) }}"
-                              onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳ Trwa analiza...';">
-                          <button type="submit"
-                                  class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors whitespace-nowrap">
-                            🤖 Podsumuj AI
-                          </button>
-                        </form>
-                      {% endif %}
-                      {% if doc.ai_summary_status == 'done' %}
-                        <a href="{{ url_for('files.summary', file_id=doc.id) }}"
-                           class="px-2.5 py-1.5 border border-bottle text-bottle rounded text-xs font-medium hover:bg-bottle/5 transition-colors whitespace-nowrap">
-                          👁 Podgląd
-                        </a>
-                      {% endif %}
-                      <form method="POST" action="{{ url_for('files.delete', file_id=doc.id) }}"
-                            onsubmit="return confirm('Usunąć plik {{ doc.original_name|e }}?')">
-                        <button type="submit" class="px-2.5 py-1.5 border border-red-200 text-red-500 rounded text-xs font-medium hover:bg-red-50 transition-colors">🗑</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <div class="px-5 py-6 text-center text-sm text-slate-text/50">
-          Brak plików. <a href="{{ url_for('files.upload', c_slug=competition.slug, e_slug=edition.slug, dt_id=dt.id) }}" class="text-bottle underline">Wgraj pierwszy plik</a>.
-        </div>
-      {% endif %}
+{% if all_docs %}
+  <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs text-slate-text/50 border-b border-gray-100 bg-gray-50/60">
+            <th class="text-left px-5 py-3 font-medium">Plik</th>
+            <th class="text-left px-3 py-3 font-medium hidden sm:table-cell">Źródło</th>
+            <th class="text-left px-3 py-3 font-medium hidden md:table-cell">Rozmiar</th>
+            <th class="text-left px-3 py-3 font-medium">Status AI</th>
+            <th class="text-right px-5 py-3 font-medium">Akcje</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for doc in all_docs %}
+            <tr class="hover:bg-gray-50/50 transition-colors">
+              <td class="px-5 py-3">
+                <div class="flex items-center gap-2">
+                  <span>{{ doc.original_name | file_icon }}</span>
+                  <span class="font-medium text-slate-text max-w-[220px] truncate" title="{{ doc.original_name }}">{{ doc.original_name }}</span>
+                </div>
+              </td>
+              <td class="px-3 py-3 hidden sm:table-cell">
+                {% if doc.gdrive_file_id %}
+                  <span class="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full font-medium">☁️ Drive</span>
+                {% else %}
+                  <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">📎 Wgrane</span>
+                {% endif %}
+              </td>
+              <td class="px-3 py-3 text-slate-text/50 text-xs hidden md:table-cell whitespace-nowrap">
+                {{ doc.file_size | filesize_fmt }}
+              </td>
+              <td class="px-3 py-3">
+                {% if doc.ai_summary_status == 'done' %}
+                  <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">✅ Gotowe</span>
+                {% elif doc.ai_summary_status == 'pending' %}
+                  <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>
+                {% elif doc.ai_summary_status == 'error' %}
+                  <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium" title="{{ doc.ai_summary_error or '' }}">❌ Blad</span>
+                {% else %}
+                  <span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full">— Brak</span>
+                {% endif %}
+              </td>
+              <td class="px-5 py-3">
+                <div class="flex items-center justify-end gap-1.5 flex-wrap">
+                  {% if doc.ai_summary_status == 'done' %}
+                    <a href="{{ url_for('files.summary', file_id=doc.id) }}"
+                       class="px-2.5 py-1.5 border border-bottle text-bottle rounded text-xs font-medium hover:bg-bottle/5 transition-colors">
+                      👁 Podglad
+                    </a>
+                  {% endif %}
+                  {% if has_gemini and doc.ai_summary_status != 'pending' %}
+                    <form method="POST" action="{{ url_for('files.summarize', file_id=doc.id) }}"
+                          onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳...'">
+                      <button type="submit"
+                              class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors">
+                        🤖 Podsumuj
+                      </button>
+                    </form>
+                  {% endif %}
+                  <a href="{{ url_for('files.download', file_id=doc.id) }}"
+                     class="px-2.5 py-1.5 bg-bottle text-white rounded text-xs font-medium hover:bg-bottle/80 transition-colors">
+                    ⬇
+                  </a>
+                  <form method="POST" action="{{ url_for('files.delete', file_id=doc.id) }}"
+                        onsubmit="return confirm('Usunac plik {{ doc.original_name|e }}?')">
+                    <button type="submit" class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded text-xs hover:bg-red-50 transition-colors">🗑</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-  {% endfor %}
+  </div>
 {% else %}
   <div class="bg-white rounded-xl border border-dashed border-gray-200 p-10 text-center">
     <div class="text-4xl mb-3">📂</div>
-    <p class="text-slate-text/60 text-sm mb-4">Brak typów dokumentów. Dodaj kategorię, aby zacząć wgrywać pliki.</p>
-    <a href="{{ url_for('document_types.new', c_slug=competition.slug, e_slug=edition.slug) }}"
-       class="inline-flex items-center gap-1.5 px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-      + Nowy typ dokumentu
-    </a>
+    <p class="text-slate-text/60 text-sm mb-2">Brak dokumentów.</p>
+    <p class="text-slate-text/40 text-xs">Synchronizuj pliki z Google Drive lub wgraj je recznie.</p>
   </div>
 {% endif %}
+
 {% endblock %}

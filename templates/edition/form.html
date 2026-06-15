@@ -46,6 +46,14 @@
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
                 placeholder="Opcjonalny opis...">{{ edition.description if edition else '' }}</textarea>
     </div>
+    <div class="border-t border-gray-100 pt-5">
+      <label class="block text-sm font-medium text-slate-text mb-1">Link do folderu Google Drive</label>
+      <input type="url" name="gdrive_folder_url"
+             value="{{ edition.gdrive_folder_url if edition else '' }}"
+             class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
+             placeholder="https://drive.google.com/drive/folders/..." />
+      <p class="text-xs text-slate-text/50 mt-1">Wklej link do folderu Drive zawierającego dokumenty tej edycji. Możesz go też ustawić później z poziomu edycji.</p>
+    </div>
     <div class="flex items-center gap-3 pt-2">
       <button type="submit"
               class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
