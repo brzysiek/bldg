@@ -202,34 +202,6 @@
   </div>
 </div>
 
-{# ── Add pair form (shown when job has editions and is not cancelled/queued) #}
-{% if job.edition_old_id and job.edition_new_id and job.status not in ('cancelled', 'queued') %}
-  <div id="add-pair-panel" class="bg-white rounded-xl border border-gray-100 p-5 mb-5">
-    <h2 class="text-sm font-semibold text-bottle mb-3">➕ Dodaj parę plików do porównania</h2>
-    <div class="flex flex-wrap items-end gap-3">
-      <div class="flex-1 min-w-[200px]">
-        <label class="block text-xs text-slate-text/50 mb-1">Plik ze starszej edycji ({{ job.label_old }})</label>
-        <select id="add-pair-old"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20">
-          <option value="">— ładowanie plików... —</option>
-        </select>
-      </div>
-      <div class="flex-1 min-w-[200px]">
-        <label class="block text-xs text-slate-text/50 mb-1">Plik z nowszej edycji ({{ job.label_new }})</label>
-        <select id="add-pair-new"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20">
-          <option value="">— ładowanie plików... —</option>
-        </select>
-      </div>
-      <button id="add-pair-btn" onclick="addAndRunPair()"
-              class="px-5 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors whitespace-nowrap">
-        Dodaj i porównaj
-      </button>
-    </div>
-    <p id="add-pair-msg" class="mt-2 text-xs text-slate-text/40 hidden"></p>
-  </div>
-{% endif %}
-
 {# ── Live pair cards (JS-managed, initially hidden) ─────────────────────── #}
 <div id="live-pairs" class="space-y-2 mb-5 hidden"></div>
 
@@ -282,6 +254,34 @@
         {% endif %}
       {% endfor %}
     </div>
+  </div>
+{% endif %}
+
+{# ── Add pair form (shown when job has editions and is not cancelled/queued) #}
+{% if job.edition_old_id and job.edition_new_id and job.status not in ('cancelled', 'queued') %}
+  <div id="add-pair-panel" class="bg-white rounded-xl border border-gray-100 p-5 mb-5">
+    <h2 class="text-sm font-semibold text-bottle mb-3">➕ Dodaj parę plików do porównania</h2>
+    <div class="flex flex-wrap items-end gap-3">
+      <div class="flex-1 min-w-[200px]">
+        <label class="block text-xs text-slate-text/50 mb-1">Plik ze starszej edycji ({{ job.label_old }})</label>
+        <select id="add-pair-old"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20">
+          <option value="">— ładowanie plików... —</option>
+        </select>
+      </div>
+      <div class="flex-1 min-w-[200px]">
+        <label class="block text-xs text-slate-text/50 mb-1">Plik z nowszej edycji ({{ job.label_new }})</label>
+        <select id="add-pair-new"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20">
+          <option value="">— ładowanie plików... —</option>
+        </select>
+      </div>
+      <button id="add-pair-btn" onclick="addAndRunPair()"
+              class="px-5 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors whitespace-nowrap">
+        Dodaj i porównaj
+      </button>
+    </div>
+    <p id="add-pair-msg" class="mt-2 text-xs text-slate-text/40 hidden"></p>
   </div>
 {% endif %}
 
@@ -341,46 +341,6 @@
     <div class="text-4xl mb-3">✅</div>
     <h3 class="font-semibold text-green-800 mb-1">Brak istotnych różnic</h3>
     <p class="text-green-700 text-sm">Dokumenty są identyczne lub różnice mają charakter wyłącznie redakcyjny.</p>
-  </div>
-{% endif %}
-
-{# ── API usage summary ────────────────────────────────────────────────────── #}
-{% if job.started_at or job.tokens_input %}
-  <div class="mt-4 bg-white rounded-xl border border-gray-100 p-5">
-    <h3 class="text-sm font-semibold text-bottle mb-3 flex items-center gap-2">
-      🧾 Podsumowanie wywołania API
-      <span class="text-xs font-normal text-slate-text/50">{{ job.gemini_model_used or '' }}</span>
-    </h3>
-    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-center">
-      <div class="bg-gray-50 rounded-lg p-3 col-span-2 sm:col-span-1">
-        {% if job.finished_at and job.started_at %}
-          {% set secs = (job.finished_at - job.started_at).total_seconds() %}
-          <div class="text-lg font-bold text-bottle">{{ secs | int | duration_fmt }}</div>
-          <div class="text-xs text-slate-text/50 mt-0.5">czas wykonania</div>
-          <div class="text-xs text-slate-text/30">{{ job.started_at.strftime('%H:%M:%S') }} → {{ job.finished_at.strftime('%H:%M:%S') }}</div>
-        {% else %}
-          <div class="text-lg font-bold text-slate-text/30">—</div>
-          <div class="text-xs text-slate-text/50 mt-0.5">czas wykonania</div>
-        {% endif %}
-      </div>
-      <div class="bg-gray-50 rounded-lg p-3">
-        <div class="text-lg font-bold text-bottle">{{ "{:,}".format(job.tokens_input or 0) }}</div>
-        <div class="text-xs text-slate-text/50 mt-0.5">tokenów wejścia</div>
-      </div>
-      <div class="bg-gray-50 rounded-lg p-3">
-        <div class="text-lg font-bold text-bottle">{{ "{:,}".format(job.tokens_output or 0) }}</div>
-        <div class="text-xs text-slate-text/50 mt-0.5">tokenów wyjścia</div>
-      </div>
-      <div class="bg-gray-50 rounded-lg p-3">
-        <div class="text-lg font-bold text-bottle">{{ "{:,}".format((job.tokens_input or 0) + (job.tokens_output or 0)) }}</div>
-        <div class="text-xs text-slate-text/50 mt-0.5">tokenów łącznie</div>
-      </div>
-      <div class="bg-lime/10 border border-lime/30 rounded-lg p-3">
-        <div class="text-lg font-bold text-bottle">${{ "%.4f"|format(job.estimated_cost_usd or 0) }}</div>
-        <div class="text-xs text-slate-text/50 mt-0.5">koszt szac. (USD)</div>
-      </div>
-    </div>
-    <p class="text-xs text-slate-text/40 mt-3">* Szacowany koszt wg cennika Gemini (czerwiec 2026).</p>
   </div>
 {% endif %}
 
