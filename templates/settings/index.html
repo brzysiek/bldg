@@ -1,14 +1,31 @@
 {% extends "base.html" %}
 {% block title %}Ustawienia – Grant Docs{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold text-bottle mb-6">⚙️ Ustawienia</h1>
+<h1 class="text-2xl font-bold text-bottle mb-5">⚙️ Ustawienia</h1>
+
+<!-- Tabs -->
+{% set active_tab = request.args.get('tab', 'integracje') %}
+<div class="flex gap-1 mb-6 border-b border-gray-200">
+  <a href="{{ url_for('settings.index', tab='integracje') }}"
+     class="px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 transition-colors
+            {% if active_tab == 'integracje' %}border-bottle text-bottle bg-white{% else %}border-transparent text-slate-text/60 hover:text-bottle hover:border-gray-300{% endif %}">
+    🔗 Integracje
+  </a>
+  <a href="{{ url_for('settings.index', tab='porownania') }}"
+     class="px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 transition-colors
+            {% if active_tab == 'porownania' %}border-bottle text-bottle bg-white{% else %}border-transparent text-slate-text/60 hover:text-bottle hover:border-gray-300{% endif %}">
+    🔍 Porównania
+  </a>
+</div>
 
 <div class="max-w-2xl space-y-6">
 
+{% if active_tab == 'integracje' %}
+
   <!-- Gemini connection -->
   <div class="bg-white rounded-xl border border-gray-100 p-6">
-    <h2 class="text-base font-semibold text-bottle mb-4 pb-3 border-b border-gray-100">🔑 Połączenie z Gemini</h2>
-    <form method="POST" action="{{ url_for('settings.save') }}" class="space-y-4">
+    <h2 class="text-base font-semibold text-bottle mb-4 pb-3 border-b border-gray-100">🔑 Google Gemini</h2>
+    <form method="POST" action="{{ url_for('settings.save') }}" class="space-y-4" id="form-gemini-save">
       <div>
         <label class="block text-sm font-medium text-slate-text mb-1">Klucz API Gemini</label>
         <div class="relative">
@@ -34,30 +51,25 @@
         </label>
         <select name="gemini_model" id="gemini_model_select"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">
-          {# Fallback — statyczna lista, zastępowana przez JS gdy API dostępne #}
           <option value="gemini-2.5-flash" {% if settings.gemini_model == 'gemini-2.5-flash' or not settings.gemini_model %}selected{% endif %}>gemini-2.5-flash — szybki, najlepsza cena/jakość (zalecany)</option>
           <option value="gemini-2.5-pro" {% if settings.gemini_model == 'gemini-2.5-pro' %}selected{% endif %}>gemini-2.5-pro — najbardziej zaawansowany</option>
           <option value="gemini-2.5-flash-lite" {% if settings.gemini_model == 'gemini-2.5-flash-lite' %}selected{% endif %}>gemini-2.5-flash-lite — najszybszy, do zadań masowych</option>
         </select>
         <p class="text-xs text-slate-text/40 mt-1" id="models-hint">Lista modeli ładuje się automatycznie po wpisaniu klucza API.</p>
       </div>
-      <button type="submit"
-              class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-        💾 Zapisz ustawienia
-      </button>
+      <div class="flex items-center gap-3 pt-1">
+        <button type="submit" form="form-gemini-save"
+                class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+          💾 Zapisz
+        </button>
+        <button type="submit" form="form-gemini-test"
+                class="px-4 py-2.5 bg-bottle/10 text-bottle border border-bottle/20 rounded-lg text-sm font-semibold hover:bg-bottle/20 transition-colors"
+                onclick="this.disabled=true; this.textContent='⏳ Testowanie...'">
+          🔌 Testuj połączenie
+        </button>
+      </div>
     </form>
-  </div>
-
-  <!-- Test connection -->
-  <div class="bg-white rounded-xl border border-gray-100 p-6">
-    <h2 class="text-base font-semibold text-bottle mb-4 pb-3 border-b border-gray-100">🔌 Test połączenia</h2>
-    <form method="POST" action="{{ url_for('settings.test') }}"
-          onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳ Testowanie...';">
-      <button type="submit"
-              class="px-4 py-2.5 bg-bottle/10 text-bottle border border-bottle/20 rounded-lg text-sm font-semibold hover:bg-bottle/20 transition-colors">
-        🔌 Testuj połączenie
-      </button>
-    </form>
+    <form method="POST" action="{{ url_for('settings.test') }}" id="form-gemini-test"></form>
     {% if test_result is not none %}
       <div class="mt-4 p-4 rounded-lg text-sm {% if test_result.ok %}bg-green-50 border border-green-200 text-green-800{% else %}bg-red-50 border border-red-200 text-red-800{% endif %}">
         {% if test_result.ok %}
@@ -69,51 +81,25 @@
     {% endif %}
   </div>
 
-  <!-- Prompt AI -->
-  <div class="bg-white rounded-xl border border-gray-100 p-6">
-    <h2 class="text-base font-semibold text-bottle mb-1 pb-3 border-b border-gray-100">🧠 Prompt AI (zaawansowane)</h2>
-    <p class="text-xs text-slate-text/60 my-3">Użyj <code class="bg-gray-100 px-1 rounded">{document_text}</code> jako placeholder dla treści dokumentu.</p>
-    <form method="POST" action="{{ url_for('settings.save_prompt') }}" class="space-y-4">
-      <textarea name="gemini_summary_prompt" rows="16"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.gemini_summary_prompt or '' }}</textarea>
-      <div class="flex items-center gap-3">
-        <button type="submit"
-                class="px-4 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-          💾 Zapisz prompt
-        </button>
-        <form method="POST" action="{{ url_for('settings.reset_prompt') }}"
-              onsubmit="return confirm('Przywrócić domyślny prompt?')">
-          <button type="submit"
-                  class="px-4 py-2.5 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
-            🔄 Przywróć domyślny
-          </button>
-        </form>
-      </div>
-    </form>
-  </div>
-
-
   <!-- Google Drive OAuth -->
   <div class="bg-white rounded-xl border border-gray-100 p-6" id="gdrive">
     <h2 class="text-base font-semibold text-bottle mb-4 pb-3 border-b border-gray-100">☁️ Google Drive</h2>
 
     {% if settings.google_user_email %}
-      <!-- Connected -->
       <div class="flex items-center gap-3 mb-4 p-3 bg-green-50 border border-green-100 rounded-lg">
         <span class="text-2xl">✅</span>
         <div>
-          <div class="text-sm font-semibold text-green-800">Polaczone z Google Drive</div>
+          <div class="text-sm font-semibold text-green-800">Połączono z Google Drive</div>
           <div class="text-xs text-green-700">{{ settings.google_user_email }}</div>
         </div>
         <form method="POST" action="{{ url_for('auth.google_disconnect') }}" class="ml-auto">
-          <button type="submit" class="px-3 py-1.5 border border-red-200 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">Odlacz</button>
+          <button type="submit" class="px-3 py-1.5 border border-red-200 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">Odłącz</button>
         </form>
       </div>
     {% else %}
-      <p class="text-sm text-slate-text/70 mb-4">Podlacz konto Google, aby synchronizowac pliki z folderow Drive.</p>
+      <p class="text-sm text-slate-text/70 mb-4">Podłącz konto Google, aby synchronizować pliki z folderów Drive.</p>
     {% endif %}
 
-    <!-- OAuth credentials -->
     <form method="POST" action="{{ url_for('settings.save_google_oauth') }}" class="space-y-3 mb-4">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
@@ -136,78 +122,103 @@
           {% endif %}
         </div>
       </div>
-      <button type="submit" class="px-4 py-2 bg-bottle/10 text-bottle border border-bottle/20 rounded-lg text-xs font-semibold hover:bg-bottle/20 transition-colors">
-        Zapisz credentials
-      </button>
+      <div class="flex items-center gap-3">
+        <button type="submit" class="px-4 py-2 bg-bottle/10 text-bottle border border-bottle/20 rounded-lg text-xs font-semibold hover:bg-bottle/20 transition-colors">
+          💾 Zapisz credentials
+        </button>
+        {% if settings.google_oauth_client_id and settings.google_oauth_client_secret %}
+          <a href="{{ url_for('auth.google_login') }}"
+             class="inline-flex items-center gap-2 px-4 py-2 bg-bottle text-white rounded-lg text-xs font-semibold hover:bg-bottle/90 transition-colors">
+            🔑 Połącz konto Google
+          </a>
+        {% endif %}
+      </div>
     </form>
 
-    {% if settings.google_oauth_client_id and settings.google_oauth_client_secret %}
-      <a href="{{ url_for('auth.google_login') }}"
-         class="inline-flex items-center gap-2 px-4 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-        🔑 Polacz konto Google
-      </a>
-    {% else %}
-      <p class="text-xs text-slate-text/40 mt-2">
-        Najpierw wklej Client ID i Client Secret z
-        <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a>
-        (projekt z włączonym Drive API).
-        Redirect URI do wpisania w konsoli: <code class="font-mono bg-gray-100 px-1 rounded">{{ google_redirect_uri }}</code>
-      </p>
-    {% endif %}
+    <p class="text-xs text-slate-text/40">
+      Redirect URI do wpisania w
+      <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a>:
+      <code class="font-mono bg-gray-100 px-1 rounded">{{ google_redirect_uri }}</code>
+    </p>
   </div>
 
-  <!-- Prompty porownania dokumentow -->
+{% else %}{# tab == porownania #}
+
+  <!-- Prompt podsumowania pliku -->
   <div class="bg-white rounded-xl border border-gray-100 p-6">
-    <h2 class="text-base font-semibold text-bottle mb-1 pb-3 border-b border-gray-100">🔍 Prompty — Porownanie dokumentow</h2>
+    <h2 class="text-base font-semibold text-bottle mb-1 pb-3 border-b border-gray-100">🧠 Prompt podsumowania dokumentu</h2>
+    <p class="text-xs text-slate-text/60 my-3">Użyj <code class="bg-gray-100 px-1 rounded">{document_text}</code> jako placeholder dla treści dokumentu.</p>
+    <form method="POST" action="{{ url_for('settings.save_prompt') }}" class="space-y-4">
+      <textarea name="gemini_summary_prompt" rows="14"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.gemini_summary_prompt or '' }}</textarea>
+      <div class="flex items-center gap-3">
+        <button type="submit" class="px-4 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+          💾 Zapisz prompt
+        </button>
+        <form method="POST" action="{{ url_for('settings.reset_prompt') }}"
+              onsubmit="return confirm('Przywrócić domyślny prompt?')">
+          <button type="submit" class="px-4 py-2.5 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+            🔄 Przywróć domyślny
+          </button>
+        </form>
+      </div>
+    </form>
+  </div>
+
+  <!-- Prompty porównania -->
+  <div class="bg-white rounded-xl border border-gray-100 p-6">
+    <h2 class="text-base font-semibold text-bottle mb-1 pb-3 border-b border-gray-100">🔍 Prompty porównania edycji</h2>
     <form method="POST" action="{{ url_for('settings.save_comparison_prompts') }}" class="space-y-5 mt-4">
 
       <div>
-        <label class="block text-sm font-medium text-slate-text mb-1">Prompt ekstrakcji struktury dokumentu</label>
+        <label class="block text-sm font-medium text-slate-text mb-1">Ekstrakcja struktury dokumentu</label>
         <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: <code class="bg-gray-100 px-1 rounded">{document_text}</code></p>
         <textarea name="comparison_prompt_extraction" rows="8"
                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.comparison_prompt_extraction or '' }}</textarea>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-slate-text mb-1">Prompt porownania per-sekcja</label>
+        <label class="block text-sm font-medium text-slate-text mb-1">Porównanie per sekcja</label>
         <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: <code class="bg-gray-100 px-1 rounded">{label_old}</code>, <code class="bg-gray-100 px-1 rounded">{label_new}</code>, <code class="bg-gray-100 px-1 rounded">{sekcja}</code>, <code class="bg-gray-100 px-1 rounded">{tresc_stara}</code>, <code class="bg-gray-100 px-1 rounded">{tresc_nowa}</code></p>
         <textarea name="comparison_prompt_comparison" rows="12"
                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.comparison_prompt_comparison or '' }}</textarea>
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-slate-text mb-1">Prompt Executive Summary</label>
+        <label class="block text-sm font-medium text-slate-text mb-1">Executive Summary</label>
         <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: <code class="bg-gray-100 px-1 rounded">{label_old}</code>, <code class="bg-gray-100 px-1 rounded">{label_new}</code>, <code class="bg-gray-100 px-1 rounded">{competition_name}</code>, <code class="bg-gray-100 px-1 rounded">{changes_list}</code></p>
         <textarea name="comparison_prompt_summary" rows="10"
                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.comparison_prompt_summary or '' }}</textarea>
       </div>
 
       <div class="flex items-center gap-3 pt-1">
-        <button type="submit"
-                class="px-4 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+        <button type="submit" class="px-4 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
           💾 Zapisz prompty
         </button>
         <a href="{{ url_for('settings.reset_comparison_prompts') }}"
-           onclick="return confirm('Przywrocic domyslne prompty porownan?')"
+           onclick="return confirm('Przywrócić domyślne prompty porównań?')"
            class="px-4 py-2.5 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
-          🔄 Przywroc domyslne
+          🔄 Przywróć domyślne
         </a>
       </div>
     </form>
   </div>
+
+{% endif %}
 
 </div>
 
 <script>
 function togglePassword() {
   const el = document.getElementById('gemini_api_key');
-  el.type = el.type === 'password' ? 'text' : 'password';
+  if (el) el.type = el.type === 'password' ? 'text' : 'password';
 }
 
 const currentModel = "{{ settings.gemini_model or 'gemini-2.5-flash' }}";
 
 async function loadGeminiModels() {
   const sel = document.getElementById('gemini_model_select');
+  if (!sel) return;
   const loadingEl = document.getElementById('models-loading');
   const errorEl = document.getElementById('models-error');
   const hintEl = document.getElementById('models-hint');
@@ -231,7 +242,6 @@ async function loadGeminiModels() {
       return;
     }
 
-    // Zastąp opcje dynamiczną listą
     sel.innerHTML = '';
     data.models.forEach(m => {
       const opt = document.createElement('option');
@@ -241,7 +251,6 @@ async function loadGeminiModels() {
       sel.appendChild(opt);
     });
 
-    // Jeśli aktualny model nie był na liście, dodaj go
     if (currentModel && !data.models.find(m => m.id === currentModel)) {
       const opt = document.createElement('option');
       opt.value = currentModel;
@@ -259,12 +268,10 @@ async function loadGeminiModels() {
   }
 }
 
-// Załaduj listę przy starcie jeśli klucz jest zapisany
-{% if settings.gemini_api_key %}
+{% if settings.gemini_api_key and active_tab == 'integracje' %}
 document.addEventListener('DOMContentLoaded', loadGeminiModels);
 {% endif %}
 
-// Załaduj po wpisaniu klucza (debounce 800ms)
 let _debTimer;
 const keyInput = document.getElementById('gemini_api_key');
 if (keyInput) {

@@ -31,11 +31,11 @@ def save():
     api_key = request.form.get("gemini_api_key", "").strip()
     if api_key:
         settings.gemini_api_key = api_key
-    settings.gemini_model = request.form.get("gemini_model", "gemini-1.5-flash")
+    settings.gemini_model = request.form.get("gemini_model", "gemini-2.5-flash")
     settings.updated_at = datetime.utcnow()
     db.session.commit()
     flash("Ustawienia zostały zapisane.", "success")
-    return redirect(url_for("settings.index"))
+    return redirect(url_for("settings.index", tab="integracje"))
 
 
 @bp.route("/settings/save-prompt", methods=["POST"])
@@ -47,7 +47,7 @@ def save_prompt():
     settings.updated_at = datetime.utcnow()
     db.session.commit()
     flash("Prompt AI został zapisany.", "success")
-    return redirect(url_for("settings.index"))
+    return redirect(url_for("settings.index", tab="porownania"))
 
 
 @bp.route("/settings/reset-prompt", methods=["POST"])
@@ -57,7 +57,7 @@ def reset_prompt():
     settings.updated_at = datetime.utcnow()
     db.session.commit()
     flash("Prompt przywrócony do domyślnego.", "success")
-    return redirect(url_for("settings.index"))
+    return redirect(url_for("settings.index", tab="porownania"))
 
 
 @bp.route("/settings/save-comparison-prompts", methods=["POST"])
@@ -68,8 +68,8 @@ def save_comparison_prompts():
     settings.comparison_prompt_summary    = request.form.get("comparison_prompt_summary", "")
     settings.updated_at = datetime.utcnow()
     db.session.commit()
-    flash("Prompty porownania zapisane.", "success")
-    return redirect(url_for("settings.index"))
+    flash("Prompty porównania zapisane.", "success")
+    return redirect(url_for("settings.index", tab="porownania"))
 
 
 @bp.route("/settings/reset-comparison-prompts")
@@ -81,8 +81,8 @@ def reset_comparison_prompts():
     settings.comparison_prompt_summary    = DEFAULT_PROMPT_SUMMARY
     settings.updated_at = datetime.utcnow()
     db.session.commit()
-    flash("Prompty przywrocone do domyslnych.", "success")
-    return redirect(url_for("settings.index"))
+    flash("Prompty przywrócone do domyślnych.", "success")
+    return redirect(url_for("settings.index", tab="porownania"))
 
 
 @bp.route("/settings/gemini-models")
@@ -123,8 +123,8 @@ def save_google_oauth():
         settings.google_oauth_client_secret = client_secret
     settings.updated_at = datetime.utcnow()
     db.session.commit()
-    flash("Dane OAuth Google zapisane. Teraz polacz konto.", "success")
-    return redirect(url_for("settings.index"))
+    flash("Dane OAuth Google zapisane. Teraz połącz konto.", "success")
+    return redirect(url_for("settings.index", tab="integracje"))
 
 
 @bp.route("/settings/test", methods=["POST"])
