@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import re
 from datetime import datetime
 
 from flask import (
@@ -684,6 +685,19 @@ def skip_pair(job_id):
 _BOTTLE     = "1C4B40"
 _WAGA_FILL  = {"KRYTYCZNA": "FFCCCC", "WYSOKA": "FFE5CC", "SREDNIA": "FFFFCC", "NISKA": "E5FFE5"}
 
+_ILLEGAL_XML = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
+_XL_MAX_LEN  = 32000  # Excel hard limit is 32 767; leave a small buffer
+
+
+def _xl_val(v):
+    """Strip XML-illegal control characters and cap length for Excel cell safety."""
+    if not isinstance(v, str):
+        return v
+    v = _ILLEGAL_XML.sub('', v)
+    if len(v) > _XL_MAX_LEN:
+        v = v[:_XL_MAX_LEN] + '…'
+    return v
+
 
 def _excel_filename(job, suffix=""):
     import re
@@ -710,9 +724,9 @@ def _write_summary_sheet(ws, job, per_file_results):
     from openpyxl.styles import Alignment, Font, PatternFill
 
     NCOLS = 7
-    ws["A1"] = job.competition_name or "Porównanie edycji"
+    ws["A1"] = _xl_val(job.competition_name or "Porównanie edycji")
     ws["A1"].font = Font(bold=True, size=15, color=_BOTTLE)
-    ws["A2"] = f"{job.label_old or '?'}  →  {job.label_new or '?'}"
+    ws["A2"] = _xl_val(f"{job.label_old or '?'}  →  {job.label_new or '?'}")
     ws["A2"].font = Font(size=11, color="444444")
     ws["A3"] = f"Data: {job.created_at.strftime('%d.%m.%Y %H:%M') if job.created_at else '—'}"
     ws["A3"].font = Font(size=9, color="888888")
@@ -740,7 +754,7 @@ def _write_summary_sheet(ws, job, per_file_results):
         n_med  = sum(1 for c in ch if c.get("waga") == "SREDNIA")
         n_low  = sum(1 for c in ch if c.get("waga") == "NISKA")
         for col, v in enumerate(
-            [pfr.get("old_name",""), pfr.get("new_name",""),
+            [_xl_val(pfr.get("old_name","")), _xl_val(pfr.get("new_name","")),
              n_tot, n_crit, n_high, n_med, n_low], 1
         ):
             cell = ws.cell(row=row, column=col, value=v)
@@ -771,10 +785,10 @@ def _write_summary_sheet(ws, job, per_file_results):
         lbl.font = Font(bold=True, size=11, color=_BOTTLE)
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
         row += 1
-        cell = ws.cell(row=row, column=1, value=job.edition_summary)
+        cell = ws.cell(row=row, column=1, value=_xl_val(job.edition_summary))
         cell.alignment = Alignment(wrap_text=True)
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
-        ws.row_dimensions[row].height = min(600, max(150, len(job.edition_summary) // 4))
+        ws.row_dimensions[row].height = min(400, max(60, len(job.edition_summary) // 8))
 
     _xl_col_widths(ws, [40, 40, 10, 12, 10, 10, 10])
 
@@ -782,9 +796,9 @@ def _write_summary_sheet(ws, job, per_file_results):
 def _write_pair_sheet(ws, pfr, job):
     from openpyxl.styles import Alignment, Font, PatternFill
 
-    old_name = pfr.get("old_name", "?")
-    new_name = pfr.get("new_name", "?")
-    summary  = pfr.get("summary", "")
+    old_name = _xl_val(pfr.get("old_name", "?"))
+    new_name = _xl_val(pfr.get("new_name", "?"))
+    summary  = _xl_val(pfr.get("summary", ""))
     changes  = pfr.get("changes", [])
 
     ws["A1"] = old_name
@@ -805,7 +819,7 @@ def _write_pair_sheet(ws, pfr, job):
         cell = ws.cell(row=row, column=1, value=summary)
         cell.alignment = Alignment(wrap_text=True)
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
-        ws.row_dimensions[row].height = min(400, max(80, len(summary) // 3))
+        ws.row_dimensions[row].height = min(400, max(60, len(summary) // 8))
         row += 2
 
     if not changes:
@@ -818,7 +832,8 @@ def _write_pair_sheet(ws, pfr, job):
     tbl_row = row
     for col, h in enumerate(
         ["Sekcja", "Typ zmiany", "Waga",
-         f"Zapis — {job.label_old}", f"Zapis — {job.label_new}", "Komentarz biznesowy"], 1
+         _xl_val(f"Zapis — {job.label_old}"), _xl_val(f"Zapis — {job.label_new}"),
+         "Komentarz biznesowy"], 1
     ):
         c = ws.cell(row=tbl_row, column=col, value=h)
         c.font = Font(bold=True, color="FFFFFF")
@@ -827,12 +842,15 @@ def _write_pair_sheet(ws, pfr, job):
 
     for change in changes:
         row += 1
-        waga = change.get("waga", "NISKA")
+        waga = _xl_val(change.get("waga", "NISKA"))
         fill = PatternFill("solid", fgColor=_WAGA_FILL.get(waga, "FFFFFF"))
         for col, v in enumerate(
-            [change.get("sekcja",""), change.get("typ_zmiany",""), waga,
-             change.get("zapis_stary",""), change.get("zapis_nowy",""),
-             change.get("komentarz_biznesowy","")], 1
+            [_xl_val(change.get("sekcja","")),
+             _xl_val(change.get("typ_zmiany","")),
+             waga,
+             _xl_val(change.get("zapis_stary","")),
+             _xl_val(change.get("zapis_nowy","")),
+             _xl_val(change.get("komentarz_biznesowy",""))], 1
         ):
             cell = ws.cell(row=row, column=col, value=v)
             cell.fill = fill
