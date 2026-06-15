@@ -470,13 +470,14 @@
 <script>
 {% if job.status == 'pending' %}
 /* ── Browser-driven sequential comparison ── */
-const JOB_ID           = {{ job.id }};
-const TOTAL_PAIRS      = {{ mappings | length }};
-const RUN_PAIR_URL     = {{ url_for('comparison.run_pair',                 job_id=job.id) | tojson }};
-const GEN_SUMMARY_URL  = {{ url_for('comparison.generate_edition_summary', job_id=job.id) | tojson }};
-const FINISH_PAIRS_URL = {{ url_for('comparison.finish_pairs',             job_id=job.id) | tojson }};
-const CANCEL_URL       = {{ url_for('comparison.cancel_job',               job_id=job.id) | tojson }};
-const STATUS_API_URL   = {{ url_for('comparison.job_status_api',           job_id=job.id) | tojson }};
+const JOB_ID             = {{ job.id }};
+const TOTAL_PAIRS        = {{ mappings | length }};
+const RUN_PAIR_BATCH_URL = {{ url_for('comparison.run_pair_batch',            job_id=job.id) | tojson }};
+const FINALIZE_PAIR_URL  = {{ url_for('comparison.finalize_pair',             job_id=job.id) | tojson }};
+const GEN_SUMMARY_URL    = {{ url_for('comparison.generate_edition_summary',  job_id=job.id) | tojson }};
+const FINISH_PAIRS_URL   = {{ url_for('comparison.finish_pairs',              job_id=job.id) | tojson }};
+const CANCEL_URL         = {{ url_for('comparison.cancel_job',                job_id=job.id) | tojson }};
+const STATUS_API_URL     = {{ url_for('comparison.job_status_api',            job_id=job.id) | tojson }};
 
 const WAGA_BADGE = {
   KRYTYCZNA: 'bg-red-100 text-red-700',
@@ -690,35 +691,81 @@ async function runOnePair(idx) {
   failedPairs.delete(idx);
   setProgress(idx, TOTAL_PAIRS, `⏳ Para ${idx + 1} z ${TOTAL_PAIRS}...`);
 
-  try {
-    const resp = await fetch(RUN_PAIR_URL, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({pair_idx: idx}),
-    });
-    let data = null;
-    try { data = JSON.parse(await resp.text()); } catch(_) {}
+  let allChanges = [], offset = 0;
 
-    if (data?.cancelled) {
-      stopPairTimer();
-      stopTotalTimer();
+  // Phase 1: section batches — each request processes GEMINI_BATCH_SECTIONS sections
+  while (true) {
+    if (cancelled) {
+      stopPairTimer(); stopTotalTimer();
       document.getElementById('progress-label').textContent = '⛔ Porównanie anulowane';
       setTimeout(() => window.location.reload(), 1500);
       return {cancelled: true};
     }
 
-    if (!resp.ok || !data?.ok) {
-      const msg = data?.error || `HTTP ${resp.status}`;
-      setPairError(idx, msg);
+    let resp, data = null;
+    try {
+      resp = await fetch(RUN_PAIR_BATCH_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pair_idx: idx, section_offset: offset}),
+      });
+      try { data = JSON.parse(await resp.text()); } catch(_) {}
+    } catch (e) {
+      setPairError(idx, e.message);
       failedPairs.add(idx);
       return {error: true};
     }
-    setPairDone(idx, data);
+
+    if (data?.cancelled) {
+      stopPairTimer(); stopTotalTimer();
+      document.getElementById('progress-label').textContent = '⛔ Porównanie anulowane';
+      setTimeout(() => window.location.reload(), 1500);
+      return {cancelled: true};
+    }
+    if (!resp.ok || !data?.ok) {
+      setPairError(idx, data?.error || `HTTP ${resp.status}`);
+      failedPairs.add(idx);
+      return {error: true};
+    }
+
+    allChanges = allChanges.concat(data.changes_batch || []);
+
+    const stageEl = document.getElementById(`pair-stage-${idx}`);
+    if (stageEl && data.sections_total > 0) {
+      stageEl.textContent = `sekcje ${data.next_offset}/${data.sections_total}`;
+    }
+
+    if (data.done) break;
+    offset = data.next_offset;
+  }
+
+  // Phase 2: finalize — generate per-file summary and persist to DB
+  {
+    const stageEl = document.getElementById(`pair-stage-${idx}`);
+    if (stageEl) stageEl.textContent = 'podsumowanie pliku...';
+
+    let resp2, data2 = null;
+    try {
+      resp2 = await fetch(FINALIZE_PAIR_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pair_idx: idx, changes: allChanges}),
+      });
+      try { data2 = JSON.parse(await resp2.text()); } catch(_) {}
+    } catch (e) {
+      setPairError(idx, e.message);
+      failedPairs.add(idx);
+      return {error: true};
+    }
+
+    if (!resp2.ok || !data2?.ok) {
+      setPairError(idx, data2?.error || `HTTP ${resp2.status}`);
+      failedPairs.add(idx);
+      return {error: true};
+    }
+
+    setPairDone(idx, data2);
     return {ok: true};
-  } catch (e) {
-    setPairError(idx, e.message);
-    failedPairs.add(idx);
-    return {error: true};
   }
 }
 

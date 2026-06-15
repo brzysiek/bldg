@@ -11,6 +11,9 @@ log = logging.getLogger(__name__)
 # Opóźnienie między wywołaniami Gemini API (w sekundach), konfigurowalne przez .env
 _GEMINI_SLEEP = float(os.environ.get("GEMINI_SLEEP_SECONDS", "1.0"))
 
+# Liczba sekcji przetwarzanych w jednym żądaniu HTTP, konfigurowalne przez .env
+BATCH_SIZE = int(os.environ.get("GEMINI_BATCH_SECTIONS", "20"))
+
 DEFAULT_PROMPT_EXTRACTION = """Jestes ekspertem ds. analizy dokumentow prawnych i regulaminow konkursow grantowych.
 
 Przeanalizuj ponizszy dokument regulaminowy i wyodrebnij jego strukture jako obiekt JSON.
@@ -397,6 +400,134 @@ def _file_summary(changes, label_old, label_new, competition_name, call_gemini, 
         .replace("{changes_list}", changes_text[:20_000])
     )
     return call_gemini(prompt).text
+
+
+# ── Batch-comparison helpers (browser-driven, one HTTP req per N sections) ──
+
+def make_gemini_caller(settings):
+    """Create a tracked Gemini caller. Returns (call_fn, tokens_dict)."""
+    from google import genai
+    client = genai.Client(api_key=settings.gemini_api_key)
+    model  = settings.gemini_model or "gemini-2.5-flash"
+    tokens = {"in": 0, "out": 0}
+
+    def call_gemini(prompt):
+        log.debug("Gemini call  model=%s  prompt=%d znaków", model, len(prompt))
+        resp = client.models.generate_content(model=model, contents=prompt)
+        u = getattr(resp, "usage_metadata", None)
+        if u:
+            t_in  = getattr(u, "prompt_token_count",     0) or 0
+            t_out = getattr(u, "candidates_token_count", 0) or 0
+            tokens["in"]  += t_in
+            tokens["out"] += t_out
+            log.debug("Gemini odpowiedź  +%d tok_wej  +%d tok_wyj", t_in, t_out)
+        if _GEMINI_SLEEP > 0:
+            time.sleep(_GEMINI_SLEEP)
+        return resp
+
+    return call_gemini, tokens
+
+
+def get_pair_structures(doc_old, doc_new, settings):
+    """Extract and cache document structures.
+
+    Returns (struct_old, struct_new, all_keys, t_in, t_out).
+    Extraction is cached per-document in the DB so repeated calls are fast.
+    """
+    import shutil
+    call_gemini, tokens = make_gemini_caller(settings)
+
+    old_path, old_tmp = _resolve_local_path(doc_old, settings)
+    new_path, new_tmp = _resolve_local_path(doc_new, settings)
+    try:
+        text_old = extract_text(old_path, doc_old.mime_type or "")
+        text_new = extract_text(new_path, doc_new.mime_type or "")
+    finally:
+        if old_tmp: shutil.rmtree(old_tmp, ignore_errors=True)
+        if new_tmp: shutil.rmtree(new_tmp, ignore_errors=True)
+
+    log.debug("get_pair_structures  stary=%d znaków  nowy=%d znaków",
+              len(text_old), len(text_new))
+    struct_old = _get_structure_cached(doc_old, text_old, call_gemini, settings)
+    struct_new = _get_structure_cached(doc_new, text_new, call_gemini, settings)
+
+    all_keys = sorted(set(
+        list(struct_old.get("sekcje", {}).keys()) +
+        list(struct_new.get("sekcje", {}).keys())
+    ))
+    log.debug("get_pair_structures  sekcji łącznie: %d", len(all_keys))
+    return struct_old, struct_new, all_keys, tokens["in"], tokens["out"]
+
+
+def compare_sections_batch(sekcje_old, sekcje_new, section_keys,
+                            label_old, label_new, call_gemini, settings,
+                            on_progress=None):
+    """Process the given section keys and return a list of changes."""
+    changes = []
+    n = len(section_keys)
+    for i, sekcja in enumerate(section_keys, 1):
+        if on_progress:
+            try:
+                on_progress(f"sekcja {i}/{n}: {sekcja[:50]}")
+            except Exception:
+                pass
+
+        tresc_stara = sekcje_old.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
+        tresc_nowa  = sekcje_new.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
+
+        if tresc_stara == tresc_nowa:
+            log.debug("compare_sections_batch  sekcja %s — identyczna", sekcja[:60])
+            continue
+
+        prompt = (
+            (settings.comparison_prompt_comparison or DEFAULT_PROMPT_COMPARISON)
+            .replace("{label_old}", label_old)
+            .replace("{label_new}", label_new)
+            .replace("{sekcja}", sekcja)
+            .replace("{tresc_stara}", tresc_stara[:4000])
+            .replace("{tresc_nowa}", tresc_nowa[:4000])
+        )
+        try:
+            resp = call_gemini(prompt)
+            raw  = resp.text.strip()
+            if raw == "BRAK_ZMIAN":
+                log.debug("compare_sections_batch  sekcja %s — BRAK_ZMIAN", sekcja[:60])
+            else:
+                raw = raw.replace("```json", "").replace("```", "").strip()
+                obj = json.loads(raw)
+                obj["sekcja"] = sekcja
+                changes.append(obj)
+                log.debug("compare_sections_batch  sekcja %s — zmiana: %s/%s",
+                          sekcja[:60], obj.get("typ_zmiany"), obj.get("waga"))
+        except Exception as e:
+            log.warning("compare_sections_batch  sekcja %s — błąd (%s): %s",
+                        sekcja[:60], type(e).__name__, e)
+            changes.append({
+                "sekcja": sekcja,
+                "zapis_stary": tresc_stara[:500],
+                "zapis_nowy": tresc_nowa[:500],
+                "typ_zmiany": "INNE",
+                "waga": "NISKA",
+                "komentarz_biznesowy": f"[Blad analizy: {str(e)[:200]}]",
+            })
+
+    return changes
+
+
+def generate_pair_summary(changes, label_old, label_new, competition_name, settings):
+    """Generate per-file summary from accumulated changes.
+
+    Returns (summary_text, t_in, t_out).
+    """
+    call_gemini, tokens = make_gemini_caller(settings)
+    text = _file_summary(
+        changes,
+        label_old or "Edycja starsza",
+        label_new or "Edycja nowsza",
+        competition_name or "konkurs",
+        call_gemini, settings,
+    )
+    return text, tokens["in"], tokens["out"]
 
 
 def run_comparison(job_id: int, app):

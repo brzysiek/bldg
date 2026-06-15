@@ -17,6 +17,11 @@ from services.comparator import (
     compare_one_pair,
     generate_edition_summary_text,
     run_comparison,
+    get_pair_structures,
+    compare_sections_batch,
+    generate_pair_summary,
+    make_gemini_caller,
+    BATCH_SIZE,
 )
 
 bp = Blueprint("comparison", __name__, url_prefix="/comparison")
@@ -216,6 +221,208 @@ def finish_pairs(job_id):
         job.status_detail    = f"Analiza par zakończona — {sum(len(r.get('changes',[])) for r in per_file_results)} zmian w {len(per_file_results)} parach"
         db.session.commit()
     return jsonify({"ok": True})
+
+
+@bp.route("/job/<int:job_id>/run-pair-batch", methods=["POST"])
+def run_pair_batch(job_id):
+    """Process one batch of N sections for a file pair (browser-driven, avoids Apache timeout)."""
+    job = ComparisonJob.query.get_or_404(job_id)
+
+    db.session.refresh(job)
+    if job.status == "cancelled":
+        return jsonify({"ok": False, "cancelled": True, "error": "Porównanie zostało anulowane"})
+
+    settings = db.session.get(AppSettings, 1)
+    if not settings or not settings.gemini_api_key:
+        return jsonify({"ok": False, "error": "Brak klucza Gemini API w ustawieniach"}), 400
+
+    data = request.get_json() or {}
+    pair_idx       = data.get("pair_idx", 0)
+    section_offset = data.get("section_offset", 0)
+
+    mappings = json.loads(job.file_mappings_json or "[]")
+    if pair_idx >= len(mappings):
+        return jsonify({"ok": False, "error": f"Nieprawidłowy indeks pary: {pair_idx}"}), 400
+
+    mapping = mappings[pair_idx]
+    doc_old = db.session.get(Document, mapping["old_doc_id"])
+    doc_new = db.session.get(Document, mapping["new_doc_id"])
+    if not doc_old or not doc_new:
+        return jsonify({"ok": False, "pair_idx": pair_idx, "error": "Dokument nie istnieje"}), 404
+
+    if not job.started_at:
+        job.started_at = datetime.utcnow()
+    job.status = "comparing"
+    pair_prefix = f"Para {pair_idx + 1}/{len(mappings)}"
+    job.status_detail = f"{pair_prefix}: ekstrakcja struktury"
+    db.session.commit()
+
+    log.debug("run_pair_batch START  job=%d  para=%d  offset=%d  stary=%s  nowy=%s",
+              job_id, pair_idx + 1, section_offset,
+              doc_old.original_name, doc_new.original_name)
+
+    try:
+        struct_old, struct_new, all_keys, t_in_struct, t_out_struct = get_pair_structures(
+            doc_old, doc_new, settings
+        )
+
+        job.tokens_input  = (job.tokens_input  or 0) + t_in_struct
+        job.tokens_output = (job.tokens_output or 0) + t_out_struct
+
+        sections_total = len(all_keys)
+        batch_end  = min(section_offset + BATCH_SIZE, sections_total)
+        batch_keys = all_keys[section_offset:batch_end]
+
+        sekcje_old = struct_old.get("sekcje", {})
+        sekcje_new = struct_new.get("sekcje", {})
+
+        job.status_detail = f"{pair_prefix}: sekcje {section_offset + 1}–{batch_end}/{sections_total}"
+        db.session.commit()
+
+        call_fn, batch_tokens = make_gemini_caller(settings)
+
+        def _on_progress(stage):
+            job.status_detail = f"{pair_prefix}: {stage}"
+            try:
+                db.session.commit()
+            except Exception:
+                pass
+
+        changes_batch = compare_sections_batch(
+            sekcje_old, sekcje_new, batch_keys,
+            job.label_old, job.label_new,
+            call_fn, settings, _on_progress,
+        )
+
+        job.tokens_input  = (job.tokens_input  or 0) + batch_tokens["in"]
+        job.tokens_output = (job.tokens_output or 0) + batch_tokens["out"]
+        _update_cost(job)
+
+        next_offset = batch_end
+        done = next_offset >= sections_total
+
+        log.debug("run_pair_batch OK  job=%d  para=%d  offset=%d→%d/%d  zmian=%d  done=%s",
+                  job_id, pair_idx + 1, section_offset, next_offset, sections_total,
+                  len(changes_batch), done)
+
+        db.session.commit()
+
+        return jsonify({
+            "ok":            True,
+            "pair_idx":      pair_idx,
+            "sections_total": sections_total,
+            "next_offset":   next_offset,
+            "done":          done,
+            "changes_batch": changes_batch,
+        })
+
+    except Exception as exc:
+        log.error("run_pair_batch BŁĄD  job=%d  para=%d  offset=%d  %s: %s",
+                  job_id, pair_idx + 1, section_offset,
+                  type(exc).__name__, exc, exc_info=True)
+        try:
+            job.status        = "error"
+            job.error_message = str(exc)[:1000]
+            db.session.commit()
+        except Exception as db_err:
+            log.error("run_pair_batch DB commit nieudany: %s", db_err)
+            try: db.session.rollback()
+            except Exception: pass
+        return jsonify({"ok": False, "pair_idx": pair_idx, "error": str(exc)}), 500
+
+
+@bp.route("/job/<int:job_id>/finalize-pair", methods=["POST"])
+def finalize_pair(job_id):
+    """Generate per-file summary from all accumulated changes, then persist the result."""
+    job = ComparisonJob.query.get_or_404(job_id)
+
+    settings = db.session.get(AppSettings, 1)
+    if not settings or not settings.gemini_api_key:
+        return jsonify({"ok": False, "error": "Brak klucza Gemini API w ustawieniach"}), 400
+
+    data = request.get_json() or {}
+    pair_idx    = data.get("pair_idx", 0)
+    all_changes = data.get("changes", [])
+
+    mappings = json.loads(job.file_mappings_json or "[]")
+    if pair_idx >= len(mappings):
+        return jsonify({"ok": False, "error": f"Nieprawidłowy indeks pary: {pair_idx}"}), 400
+
+    mapping = mappings[pair_idx]
+    doc_old = db.session.get(Document, mapping["old_doc_id"])
+    doc_new = db.session.get(Document, mapping["new_doc_id"])
+    if not doc_old or not doc_new:
+        return jsonify({"ok": False, "pair_idx": pair_idx, "error": "Dokument nie istnieje"}), 404
+
+    pair_prefix = f"Para {pair_idx + 1}/{len(mappings)}"
+    job.status_detail = f"{pair_prefix}: generuję podsumowanie pliku..."
+    db.session.commit()
+
+    log.debug("finalize_pair START  job=%d  para=%d  zmian=%d",
+              job_id, pair_idx + 1, len(all_changes))
+
+    try:
+        summary_text, t_in, t_out = generate_pair_summary(
+            all_changes,
+            job.label_old, job.label_new,
+            job.competition_name, settings,
+        )
+
+        result = {
+            "old_doc_id": doc_old.id,
+            "new_doc_id": doc_new.id,
+            "old_name":   doc_old.original_name or mapping.get("old_name", ""),
+            "new_name":   doc_new.original_name or mapping.get("new_name", ""),
+            "changes":    all_changes,
+            "summary":    summary_text,
+            "tokens_in":  t_in,
+            "tokens_out": t_out,
+        }
+
+        per_file_results = json.loads(job.per_file_results_json or "[]")
+        per_file_results = [r for r in per_file_results
+                            if not (r.get("old_doc_id") == doc_old.id
+                                    and r.get("new_doc_id") == doc_new.id)]
+        per_file_results.append(result)
+        job.per_file_results_json = json.dumps(per_file_results, ensure_ascii=False)
+
+        all_c = [c for r in per_file_results for c in r.get("changes", [])]
+        job.changes_json     = json.dumps(all_c, ensure_ascii=False)
+        job.progress_current = pair_idx + 1
+        job.tokens_input     = (job.tokens_input  or 0) + t_in
+        job.tokens_output    = (job.tokens_output or 0) + t_out
+        job.error_message    = None
+        _update_cost(job)
+        db.session.commit()
+
+        log.debug("finalize_pair OK  job=%d  para=%d  zmian=%d",
+                  job_id, pair_idx + 1, len(all_changes))
+
+        import markdown as md_lib
+        summary_html = md_lib.markdown(summary_text, extensions=["extra"]) if summary_text else ""
+
+        return jsonify({
+            "ok":           True,
+            "pair_idx":     pair_idx,
+            "old_name":     result["old_name"],
+            "new_name":     result["new_name"],
+            "changes":      all_changes,
+            "summary":      summary_text,
+            "summary_html": summary_html,
+        })
+
+    except Exception as exc:
+        log.error("finalize_pair BŁĄD  job=%d  para=%d  %s: %s",
+                  job_id, pair_idx + 1, type(exc).__name__, exc, exc_info=True)
+        try:
+            job.status        = "error"
+            job.error_message = str(exc)[:1000]
+            db.session.commit()
+        except Exception as db_err:
+            log.error("finalize_pair DB commit nieudany: %s", db_err)
+            try: db.session.rollback()
+            except Exception: pass
+        return jsonify({"ok": False, "pair_idx": pair_idx, "error": str(exc)}), 500
 
 
 @bp.route("/job/<int:job_id>/generate-summary", methods=["POST"])
