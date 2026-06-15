@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Logi aplikacji – Grant Docs{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-2xl font-bold text-bottle">📋 Logi aplikacji</h1>
+  <div class="flex items-center gap-2">
+    <span id="status-dot" class="inline-block w-2 h-2 rounded-full bg-green-400"></span>
+    <span id="status-txt" class="text-xs text-slate-text/50">live</span>
+    <button onclick="clearView()" class="px-3 py-1.5 border border-gray-200 text-slate-text/60 rounded-lg text-xs hover:bg-gray-50 transition-colors ml-3">
+      🗑 Wyczyść widok
+    </button>
+  </div>
+</div>
+
+<!-- Level filters -->
+<div class="flex gap-2 mb-4 flex-wrap">
+  {% for lvl, cls in [('ALL','bg-gray-700 text-white'), ('DEBUG','bg-gray-500 text-white'), ('INFO','bg-blue-600 text-white'), ('WARNING','bg-yellow-500 text-white'), ('ERROR','bg-red-600 text-white'), ('CRITICAL','bg-red-900 text-white')] %}
+  <button onclick="setFilter('{{ lvl }}')" id="btn-{{ lvl }}"
+          class="px-3 py-1 rounded text-xs font-semibold transition-opacity {{ cls }} {% if lvl != 'ALL' %}opacity-50{% endif %}">
+    {{ lvl }}
+  </button>
+  {% endfor %}
+</div>
+
+<!-- Log container -->
+<div id="log-box"
+     class="bg-gray-950 rounded-xl p-4 font-mono text-xs leading-relaxed overflow-y-auto h-[calc(100vh-220px)] space-y-0.5">
+  <p class="text-gray-500">Oczekiwanie na logi…</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const LEVEL_COLORS = {
+  DEBUG:    'text-gray-400',
+  INFO:     'text-blue-300',
+  WARNING:  'text-yellow-300',
+  ERROR:    'text-red-400',
+  CRITICAL: 'text-red-300 font-bold',
+};
+const LEVEL_ORDER = ['DEBUG','INFO','WARNING','ERROR','CRITICAL'];
+
+let activeFilter = 'ALL';
+let lastTs = 0;
+let allRecords = [];
+let autoScroll = true;
+
+const box = document.getElementById('log-box');
+
+box.addEventListener('scroll', () => {
+  autoScroll = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+});
+
+function setFilter(lvl) {
+  activeFilter = lvl;
+  document.querySelectorAll('[id^="btn-"]').forEach(b => b.classList.add('opacity-50'));
+  document.getElementById('btn-' + lvl).classList.remove('opacity-50');
+  renderAll();
+}
+
+function clearView() {
+  allRecords = [];
+  lastTs = Date.now() / 1000;
+  box.innerHTML = '<p class="text-gray-500">Widok wyczyszczony.</p>';
+}
+
+function passesFilter(r) {
+  if (activeFilter === 'ALL') return true;
+  return LEVEL_ORDER.indexOf(r.level) >= LEVEL_ORDER.indexOf(activeFilter);
+}
+
+function renderAll() {
+  box.innerHTML = '';
+  const filtered = allRecords.filter(passesFilter);
+  if (!filtered.length) {
+    box.innerHTML = '<p class="text-gray-500">Brak wpisów dla wybranego filtra.</p>';
+    return;
+  }
+  filtered.forEach(r => box.appendChild(makeRow(r)));
+  if (autoScroll) box.scrollTop = box.scrollHeight;
+}
+
+function makeRow(r) {
+  const cls = LEVEL_COLORS[r.level] || 'text-gray-300';
+  const el = document.createElement('div');
+  el.className = 'flex gap-2 hover:bg-white/5 px-1 rounded';
+  el.innerHTML = `<span class="text-gray-600 shrink-0">${r.time_str}</span>`
+    + `<span class="shrink-0 w-16 ${cls}">${r.level}</span>`
+    + `<span class="text-gray-500 shrink-0 hidden sm:inline truncate max-w-[120px]">${r.name}</span>`
+    + `<span class="${cls} break-all">${escHtml(r.msg)}</span>`;
+  return el;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function fetchLogs() {
+  try {
+    const r = await fetch(`/api/logs?since=${lastTs}`);
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    if (data.length) {
+      const prevLen = allRecords.length;
+      allRecords.push(...data);
+      lastTs = data[data.length - 1].ts;
+      const newFiltered = data.filter(passesFilter);
+      if (newFiltered.length) {
+        if (prevLen === 0) box.innerHTML = '';
+        newFiltered.forEach(r => box.appendChild(makeRow(r)));
+        if (autoScroll) box.scrollTop = box.scrollHeight;
+      }
+    }
+    document.getElementById('status-dot').className = 'inline-block w-2 h-2 rounded-full bg-green-400';
+    document.getElementById('status-txt').textContent = 'live';
+  } catch(e) {
+    document.getElementById('status-dot').className = 'inline-block w-2 h-2 rounded-full bg-red-400';
+    document.getElementById('status-txt').textContent = 'błąd połączenia';
+  }
+  setTimeout(fetchLogs, 2000);
+}
+
+fetchLogs();
+</script>
+{% endblock %}

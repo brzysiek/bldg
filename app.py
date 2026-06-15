@@ -1,11 +1,38 @@
 import os
+import logging as _logging
 import threading
 import time as _time
+from collections import deque
 from datetime import datetime, timedelta
-from flask import Flask, render_template
+from flask import Flask, render_template, jsonify, request as _req
 from extensions import db
 from sqlalchemy import text, inspect as sa_inspect
 from dotenv import load_dotenv
+
+
+class _RingBufferHandler(_logging.Handler):
+    def __init__(self, capacity=2000):
+        super().__init__()
+        self._buf = deque(maxlen=capacity)
+        self.setFormatter(_logging.Formatter("%(asctime)s"))
+
+    def emit(self, record):
+        try:
+            self._buf.append({
+                "ts": record.created,
+                "level": record.levelname,
+                "name": record.name,
+                "msg": record.getMessage(),
+                "time_str": self.formatTime(record, "%H:%M:%S"),
+            })
+        except Exception:
+            self.handleError(record)
+
+    def records(self, since: float = 0.0):
+        return [r for r in self._buf if r["ts"] > since]
+
+
+_log_buffer = _RingBufferHandler(2000)
 
 load_dotenv()
 
@@ -167,6 +194,14 @@ def create_app():
     app = Flask(__name__)
     app.secret_key = os.environ.get("SECRET_KEY", "grant-docs-secret-key-change-in-prod")
 
+    log_level = getattr(_logging, os.environ.get("LOG_LEVEL", "INFO").upper(), _logging.INFO)
+    _logging.basicConfig(level=log_level, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    root_logger = _logging.getLogger()
+    root_logger.setLevel(log_level)
+    if _log_buffer not in root_logger.handlers:
+        _log_buffer.setLevel(_logging.DEBUG)
+        root_logger.addHandler(_log_buffer)
+
     os.makedirs(os.path.join(BASE_DIR, "storage"), exist_ok=True)
 
     app.config["SQLALCHEMY_DATABASE_URI"] = _mysql_uri()
@@ -191,6 +226,15 @@ def create_app():
     app.register_blueprint(settings_bp)
     app.register_blueprint(comparison_bp)
     app.register_blueprint(auth_bp)
+
+    @app.route("/logs")
+    def logs_page():
+        return render_template("logs/index.html")
+
+    @app.route("/api/logs")
+    def api_logs():
+        since = float(_req.args.get("since", 0))
+        return jsonify(_log_buffer.records(since=since))
 
     @app.errorhandler(404)
     def not_found(e):

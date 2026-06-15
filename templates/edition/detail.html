@@ -81,8 +81,8 @@
 
     {% if edition.gdrive_folder_id %}
       <form method="POST" action="{{ url_for('editions.sync_drive', c_slug=competition.slug, e_slug=edition.slug) }}"
-            onsubmit="const b=this.querySelector('button'); b.disabled=true; b.textContent='Synchronizuję...';">
-        <button type="submit"
+            id="sync-form">
+        <button type="submit" id="sync-btn"
                 class="flex items-center gap-2 px-4 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors">
           🔄 Synchronizuj pliki z Drive
         </button>
@@ -194,4 +194,44 @@
   </div>
 {% endif %}
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+  const EDITION_ID = {{ edition.id }};
+  const btn = document.getElementById('sync-btn');
+  const form = document.getElementById('sync-form');
+
+  function setSyncing(active) {
+    if (!btn) return;
+    btn.disabled = active;
+    btn.innerHTML = active ? '⏳ Synchronizuję...' : '🔄 Synchronizuj pliki z Drive';
+  }
+
+  async function pollStatus() {
+    try {
+      const r = await fetch(`/api/editions/${EDITION_ID}/sync-status`);
+      const d = await r.json();
+      if (d.syncing) {
+        setSyncing(true);
+        setTimeout(pollStatus, 3000);
+      } else {
+        window.location.reload();
+      }
+    } catch (_) {
+      setTimeout(pollStatus, 5000);
+    }
+  }
+
+  fetch(`/api/editions/${EDITION_ID}/sync-status`)
+    .then(r => r.json())
+    .then(d => { if (d.syncing) { setSyncing(true); setTimeout(pollStatus, 3000); } })
+    .catch(() => {});
+
+  if (form) {
+    form.addEventListener('submit', () => setSyncing(true));
+  }
+})();
+</script>
 {% endblock %}

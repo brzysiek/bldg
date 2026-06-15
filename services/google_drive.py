@@ -177,8 +177,10 @@ def list_folder_files_public(folder_id: str, api_key: str) -> list[dict]:
         "key": api_key,
     }
     results = []
+    session = _requests.Session()
+    session.headers.update({"Connection": "close"})
     while True:
-        resp = _requests.get(url, params=params, timeout=15)
+        resp = session.get(url, params=params, timeout=20)
         resp.raise_for_status()
         data = resp.json()
         for f in data.get("files", []):
@@ -208,9 +210,11 @@ def download_file_public(file_id: str, file_name: str, mime_type: str, dest_dir:
         dest_path = os.path.join(dest_dir, file_name)
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
         params = {"alt": "media", "key": api_key}
-    resp = _requests.get(url, params=params, timeout=60, stream=True)
+    session = _requests.Session()
+    session.headers.update({"Connection": "close"})
+    resp = session.get(url, params=params, timeout=120, stream=True)
     resp.raise_for_status()
     with open(dest_path, "wb") as fh:
-        for chunk in resp.iter_content(chunk_size=8192):
+        for chunk in resp.iter_content(chunk_size=65536):
             fh.write(chunk)
     return dest_path
