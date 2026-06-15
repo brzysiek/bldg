@@ -75,7 +75,7 @@
         <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-old-file">Starsza edycja</label>
         <select id="old-file-sel"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
-          <option value="">— wybierz plik ze starszej —</option>
+          <option value="">— wybierz plik ze starszej edycji —</option>
         </select>
       </div>
       <div class="hidden sm:flex items-center pb-2 text-slate-text/25 shrink-0">
@@ -85,7 +85,7 @@
         <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-new-file">Nowsza edycja</label>
         <select id="new-file-sel"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
-          <option value="">— wybierz plik z nowszej —</option>
+          <option value="">— wybierz plik z nowszej edycji —</option>
         </select>
       </div>
       <div class="shrink-0">
@@ -230,13 +230,13 @@ function renderSelects() {
   const prevNew = newSel.value;
   const prevOld = oldSel.value;
 
-  oldSel.innerHTML = '<option value="">— wybierz plik ze starszej —</option>';
+  oldSel.innerHTML = '<option value="">— wybierz plik ze starszej edycji —</option>';
   filesOld.filter(f => !usedOldIds.has(String(f.id))).forEach(f => {
     oldSel.appendChild(new Option(_fileLabel(f), String(f.id)));
   });
   if (prevOld && !usedOldIds.has(prevOld)) oldSel.value = prevOld;
 
-  newSel.innerHTML = '<option value="">— wybierz plik z nowszej —</option>';
+  newSel.innerHTML = '<option value="">— wybierz plik z nowszej edycji —</option>';
   filesNew.filter(f => !usedNewIds.has(String(f.id))).forEach(f => {
     newSel.appendChild(new Option(_fileLabel(f), String(f.id)));
   });
