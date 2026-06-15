@@ -104,9 +104,8 @@
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-medium text-slate-text mb-1">Client ID (Google OAuth)</label>
-          <input type="text" name="google_oauth_client_id"
-                 value="{{ settings.google_oauth_client_id or '' }}"
-                 placeholder="1234....apps.googleusercontent.com"
+          <input type="password" name="google_oauth_client_id"
+                 placeholder="{{ 'pozostaw puste, aby nie zmieniać' if settings.google_oauth_client_id else '1234....apps.googleusercontent.com' }}"
                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle font-mono" />
           {% if settings.google_oauth_client_id %}
             <p class="text-xs text-green-600 mt-1">✅ Zapisano.</p>
