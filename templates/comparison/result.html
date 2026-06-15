@@ -1,6 +1,104 @@
 {% extends "base.html" %}
 {% block title %}Porównanie #{{ job.id }} – BLDG{% endblock %}
 {% block content %}
+{# ─── Macros (must be defined before use) ───────────────────────────────── #}
+{% macro _render_changes_table(changes, job) %}
+  {% if changes %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-slate-text/40 border-b border-gray-50 bg-gray-50/30">
+            <th class="text-left px-4 py-2 font-medium w-24">Sekcja</th>
+            <th class="text-left px-3 py-2 font-medium w-28">Typ</th>
+            <th class="text-left px-3 py-2 font-medium w-20">Waga</th>
+            <th class="text-left px-3 py-2 font-medium">{{ job.label_old }}</th>
+            <th class="text-left px-3 py-2 font-medium">{{ job.label_new }}</th>
+            <th class="text-left px-3 py-2 font-medium">Komentarz</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for ch in changes %}
+            {% set waga = ch.get('waga', 'NISKA') %}
+            {% set row_bg   = {'KRYTYCZNA':'bg-red-50','WYSOKA':'bg-orange-50','SREDNIA':'bg-yellow-50','NISKA':'bg-green-50'}.get(waga,'') %}
+            {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
+            <tr class="{{ row_bg }}">
+              <td class="px-4 py-2.5 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
+              <td class="px-3 py-2.5 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
+              <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
+              <td class="px-3 py-2.5 text-slate-text/60 align-top"><div class="max-h-24 overflow-y-auto">{{ ch.get('zapis_stary','') }}</div></td>
+              <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div class="max-h-24 overflow-y-auto">{{ ch.get('zapis_nowy','') }}</div></td>
+              <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">{{ ch.get('komentarz_biznesowy','') }}</div></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="px-5 py-4 text-sm text-slate-text/50">Brak zmian w tym dokumencie.</p>
+  {% endif %}
+{% endmacro %}
+
+{% macro _render_global_table(changes, job) %}
+  <div class="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
+    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+      <h2 class="font-semibold text-bottle text-sm">Globalny rejestr zmian ({{ changes | length }})</h2>
+      <div class="flex items-center gap-2 flex-wrap">
+        <select id="filter-typ" onchange="filterTable()"
+                class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
+          <option value="">Typ (wszystkie)</option>
+          {% for typ in ['ZAOSTRZENIE','ZLAGO_DZENIE','NOWA_WYMAGANIE','USUNIETE_WYMAGANIE','ZMIANA_TERMINU','ZMIANA_KWOTY','ZMIANA_REDAKCYJNA','INNE'] %}
+            <option value="{{ typ | lower }}">{{ typ }}</option>
+          {% endfor %}
+        </select>
+        <select id="filter-waga" onchange="filterTable()"
+                class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
+          <option value="">Waga (wszystkie)</option>
+          <option value="krytyczna">KRYTYCZNA</option>
+          <option value="wysoka">WYSOKA</option>
+          <option value="srednia">SREDNIA</option>
+          <option value="niska">NISKA</option>
+        </select>
+        <input type="text" id="filter-search" oninput="filterTable()" placeholder="Szukaj..."
+               class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 w-32" />
+        <button onclick="clearFilters()" class="text-xs text-slate-text/40 hover:text-bottle px-1.5 py-1.5">Resetuj</button>
+        <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
+           class="flex items-center gap-1 px-3 py-1.5 bg-lime text-bottle rounded text-xs font-bold hover:bg-lime/80">⬇️ XLSX</a>
+        <a href="{{ url_for('comparison.download_csv', job_id=job.id) }}"
+           class="flex items-center gap-1 px-3 py-1.5 border border-lime text-bottle rounded text-xs font-bold hover:bg-lime/20">⬇️ CSV</a>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table id="changes-table" class="w-full text-xs">
+        <thead>
+          <tr class="text-slate-text/40 border-b border-gray-100 bg-gray-50/50">
+            <th class="text-left px-4 py-2.5 font-medium w-24">Sekcja</th>
+            <th class="text-left px-3 py-2.5 font-medium w-28">Typ</th>
+            <th class="text-left px-3 py-2.5 font-medium w-20">Waga</th>
+            <th class="text-left px-3 py-2.5 font-medium">{{ job.label_old }}</th>
+            <th class="text-left px-3 py-2.5 font-medium">{{ job.label_new }}</th>
+            <th class="text-left px-3 py-2.5 font-medium">Komentarz biznesowy</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for ch in changes %}
+            {% set waga = ch.get('waga', 'NISKA') %}
+            {% set row_bg   = {'KRYTYCZNA':'bg-red-50 hover:bg-red-100/70','WYSOKA':'bg-orange-50 hover:bg-orange-100/70','SREDNIA':'bg-yellow-50 hover:bg-yellow-100/70','NISKA':'bg-green-50 hover:bg-green-100/70'}.get(waga,'hover:bg-gray-50') %}
+            {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
+            <tr class="{{ row_bg }} transition-colors">
+              <td class="px-4 py-3 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
+              <td class="px-3 py-3 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
+              <td class="px-3 py-3 align-top"><span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
+              <td class="px-3 py-3 text-slate-text/60 align-top"><div class="max-h-28 overflow-y-auto">{{ ch.get('zapis_stary','') }}</div></td>
+              <td class="px-3 py-3 text-slate-text align-top font-medium"><div class="max-h-28 overflow-y-auto">{{ ch.get('zapis_nowy','') }}</div></td>
+              <td class="px-3 py-3 text-slate-text/70 align-top max-w-xs"><div class="max-h-28 overflow-y-auto">{{ ch.get('komentarz_biznesowy','') }}</div></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endmacro %}
+
 <nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2">
   <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porównania</a>
   <span>›</span>
@@ -289,104 +387,6 @@
 <div class="mt-4">
   <a href="{{ url_for('comparison.index') }}" class="text-sm text-bottle hover:underline">← Wróć do listy porównań</a>
 </div>
-
-{# ─── Macros ─────────────────────────────────────────────────────────────── #}
-{% macro _render_changes_table(changes, job) %}
-  {% if changes %}
-    <div class="overflow-x-auto">
-      <table class="w-full text-xs">
-        <thead>
-          <tr class="text-slate-text/40 border-b border-gray-50 bg-gray-50/30">
-            <th class="text-left px-4 py-2 font-medium w-24">Sekcja</th>
-            <th class="text-left px-3 py-2 font-medium w-28">Typ</th>
-            <th class="text-left px-3 py-2 font-medium w-20">Waga</th>
-            <th class="text-left px-3 py-2 font-medium">{{ job.label_old }}</th>
-            <th class="text-left px-3 py-2 font-medium">{{ job.label_new }}</th>
-            <th class="text-left px-3 py-2 font-medium">Komentarz</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-50">
-          {% for ch in changes %}
-            {% set waga = ch.get('waga', 'NISKA') %}
-            {% set row_bg   = {'KRYTYCZNA':'bg-red-50','WYSOKA':'bg-orange-50','SREDNIA':'bg-yellow-50','NISKA':'bg-green-50'}.get(waga,'') %}
-            {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
-            <tr class="{{ row_bg }}">
-              <td class="px-4 py-2.5 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
-              <td class="px-3 py-2.5 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
-              <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
-              <td class="px-3 py-2.5 text-slate-text/60 align-top"><div class="max-h-24 overflow-y-auto">{{ ch.get('zapis_stary','') }}</div></td>
-              <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div class="max-h-24 overflow-y-auto">{{ ch.get('zapis_nowy','') }}</div></td>
-              <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">{{ ch.get('komentarz_biznesowy','') }}</div></td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% else %}
-    <p class="px-5 py-4 text-sm text-slate-text/50">Brak zmian w tym dokumencie.</p>
-  {% endif %}
-{% endmacro %}
-
-{% macro _render_global_table(changes, job) %}
-  <div class="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
-    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
-      <h2 class="font-semibold text-bottle text-sm">Globalny rejestr zmian ({{ changes | length }})</h2>
-      <div class="flex items-center gap-2 flex-wrap">
-        <select id="filter-typ" onchange="filterTable()"
-                class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
-          <option value="">Typ (wszystkie)</option>
-          {% for typ in ['ZAOSTRZENIE','ZLAGO_DZENIE','NOWA_WYMAGANIE','USUNIETE_WYMAGANIE','ZMIANA_TERMINU','ZMIANA_KWOTY','ZMIANA_REDAKCYJNA','INNE'] %}
-            <option value="{{ typ | lower }}">{{ typ }}</option>
-          {% endfor %}
-        </select>
-        <select id="filter-waga" onchange="filterTable()"
-                class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
-          <option value="">Waga (wszystkie)</option>
-          <option value="krytyczna">KRYTYCZNA</option>
-          <option value="wysoka">WYSOKA</option>
-          <option value="srednia">SREDNIA</option>
-          <option value="niska">NISKA</option>
-        </select>
-        <input type="text" id="filter-search" oninput="filterTable()" placeholder="Szukaj..."
-               class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 w-32" />
-        <button onclick="clearFilters()" class="text-xs text-slate-text/40 hover:text-bottle px-1.5 py-1.5">Resetuj</button>
-        <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-           class="flex items-center gap-1 px-3 py-1.5 bg-lime text-bottle rounded text-xs font-bold hover:bg-lime/80">⬇️ XLSX</a>
-        <a href="{{ url_for('comparison.download_csv', job_id=job.id) }}"
-           class="flex items-center gap-1 px-3 py-1.5 border border-lime text-bottle rounded text-xs font-bold hover:bg-lime/20">⬇️ CSV</a>
-      </div>
-    </div>
-    <div class="overflow-x-auto">
-      <table id="changes-table" class="w-full text-xs">
-        <thead>
-          <tr class="text-slate-text/40 border-b border-gray-100 bg-gray-50/50">
-            <th class="text-left px-4 py-2.5 font-medium w-24">Sekcja</th>
-            <th class="text-left px-3 py-2.5 font-medium w-28">Typ</th>
-            <th class="text-left px-3 py-2.5 font-medium w-20">Waga</th>
-            <th class="text-left px-3 py-2.5 font-medium">{{ job.label_old }}</th>
-            <th class="text-left px-3 py-2.5 font-medium">{{ job.label_new }}</th>
-            <th class="text-left px-3 py-2.5 font-medium">Komentarz biznesowy</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-50">
-          {% for ch in changes %}
-            {% set waga = ch.get('waga', 'NISKA') %}
-            {% set row_bg   = {'KRYTYCZNA':'bg-red-50 hover:bg-red-100/70','WYSOKA':'bg-orange-50 hover:bg-orange-100/70','SREDNIA':'bg-yellow-50 hover:bg-yellow-100/70','NISKA':'bg-green-50 hover:bg-green-100/70'}.get(waga,'hover:bg-gray-50') %}
-            {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
-            <tr class="{{ row_bg }} transition-colors">
-              <td class="px-4 py-3 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
-              <td class="px-3 py-3 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
-              <td class="px-3 py-3 align-top"><span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
-              <td class="px-3 py-3 text-slate-text/60 align-top"><div class="max-h-28 overflow-y-auto">{{ ch.get('zapis_stary','') }}</div></td>
-              <td class="px-3 py-3 text-slate-text align-top font-medium"><div class="max-h-28 overflow-y-auto">{{ ch.get('zapis_nowy','') }}</div></td>
-              <td class="px-3 py-3 text-slate-text/70 align-top max-w-xs"><div class="max-h-28 overflow-y-auto">{{ ch.get('komentarz_biznesowy','') }}</div></td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-{% endmacro %}
 
 {% endblock %}
 
