@@ -732,7 +732,8 @@ async function runOnePair(idx) {
 
     const stageEl = document.getElementById(`pair-stage-${idx}`);
     if (stageEl && data.sections_total > 0) {
-      stageEl.textContent = `sekcje ${data.next_offset}/${data.sections_total}`;
+      stageEl.textContent =
+        `sekcja ${data.next_offset}/${data.sections_total} (batch ${data.batch_num}/${data.total_batches})`;
     }
 
     if (data.done) break;

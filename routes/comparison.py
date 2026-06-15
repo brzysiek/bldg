@@ -269,20 +269,31 @@ def run_pair_batch(job_id):
         job.tokens_input  = (job.tokens_input  or 0) + t_in_struct
         job.tokens_output = (job.tokens_output or 0) + t_out_struct
 
+        import math as _math
         sections_total = len(all_keys)
-        batch_end  = min(section_offset + BATCH_SIZE, sections_total)
-        batch_keys = all_keys[section_offset:batch_end]
+        batch_end      = min(section_offset + BATCH_SIZE, sections_total)
+        batch_keys     = all_keys[section_offset:batch_end]
+        batch_num      = section_offset // BATCH_SIZE + 1
+        total_batches  = _math.ceil(sections_total / BATCH_SIZE) if sections_total > 0 else 1
 
         sekcje_old = struct_old.get("sekcje", {})
         sekcje_new = struct_new.get("sekcje", {})
 
-        job.status_detail = f"{pair_prefix}: sekcje {section_offset + 1}–{batch_end}/{sections_total}"
+        job.status_detail = (
+            f"{pair_prefix}: sekcja {section_offset + 1}/{sections_total}"
+            f" (batch {batch_num}/{total_batches})"
+        )
         db.session.commit()
 
         call_fn, batch_tokens = make_gemini_caller(settings)
 
         def _on_progress(stage):
-            job.status_detail = f"{pair_prefix}: {stage}"
+            # stage = "sekcja i/n: tytuł" from compare_sections_batch
+            # prefix it with batch info for the polling view
+            job.status_detail = (
+                f"{pair_prefix}: {stage}"
+                f" (batch {batch_num}/{total_batches})"
+            )
             try:
                 db.session.commit()
             except Exception:
@@ -301,9 +312,9 @@ def run_pair_batch(job_id):
         next_offset = batch_end
         done = next_offset >= sections_total
 
-        log.debug("run_pair_batch OK  job=%d  para=%d  offset=%d→%d/%d  zmian=%d  done=%s",
+        log.debug("run_pair_batch OK  job=%d  para=%d  offset=%d→%d/%d  batch=%d/%d  zmian=%d  done=%s",
                   job_id, pair_idx + 1, section_offset, next_offset, sections_total,
-                  len(changes_batch), done)
+                  batch_num, total_batches, len(changes_batch), done)
 
         db.session.commit()
 
@@ -314,6 +325,8 @@ def run_pair_batch(job_id):
             "next_offset":   next_offset,
             "done":          done,
             "changes_batch": changes_batch,
+            "batch_num":     batch_num,
+            "total_batches": total_batches,
         })
 
     except Exception as exc:
