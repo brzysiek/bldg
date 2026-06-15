@@ -77,11 +77,7 @@
       </div>
       <div>
         <div class="text-sm font-semibold text-bottle" id="status-text">
-          {% if job.status == 'extracting' %}Ekstrakcja tekstu
-          {% elif job.status == 'chunking' %}Analiza struktury dokumentow
-          {% elif job.status == 'comparing' %}Porownywanie plikow
-          {% elif job.status == 'summarizing' %}Generowanie podsumowania
-          {% else %}{{ job.status }}{% endif %}
+          {{ job.status | status_pl }}
         </div>
         <div class="text-xs text-slate-text/60 mt-0.5" id="status-detail">{{ job.status_detail or 'Inicjalizacja...' }}</div>
       </div>
@@ -118,11 +114,6 @@
     <div class="bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
       <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie calej edycji</h2>
       <div class="prose max-w-none">{{ edition_summary_html | safe }}</div>
-    </div>
-  {% elif summary_html %}
-    <div class="bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
-      <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Executive Summary</h2>
-      <div class="prose max-w-none">{{ summary_html | safe }}</div>
     </div>
   {% endif %}
 

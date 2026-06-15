@@ -1,9 +1,41 @@
 import os
+import threading
+import time as _time
+from datetime import datetime, timedelta
 from flask import Flask, render_template
 from extensions import db
 from sqlalchemy import text, inspect as sa_inspect
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+_MYSQL_COL_TYPES = {
+    "TEXT":     "TEXT",
+    "DATETIME": "DATETIME",
+    "INTEGER":  "INT",
+    "REAL":     "FLOAT",
+}
+
+STATUS_LABELS_PL = {
+    "pending":     "Oczekuje",
+    "extracting":  "Ekstrakcja tekstu",
+    "chunking":    "Analiza struktury",
+    "comparing":   "Porównywanie",
+    "summarizing": "Podsumowanie",
+    "done":        "Zakończono",
+    "error":       "Błąd analizy",
+}
+
+
+def _mysql_uri():
+    host     = os.environ.get("MYSQL_HOST",     "localhost")
+    port     = os.environ.get("MYSQL_PORT",     "3306")
+    user     = os.environ.get("MYSQL_USER",     "root")
+    password = os.environ.get("MYSQL_PASSWORD", "")
+    database = os.environ.get("MYSQL_DATABASE", "grant_docs")
+    return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
 
 
 def _migrate_db():
@@ -14,10 +46,11 @@ def _migrate_db():
         def add_cols(table, col_map):
             if table not in tables:
                 return
-            existing = [c["name"] for c in inspector.get_columns(table)]
+            existing = {c["name"] for c in inspector.get_columns(table)}
             for col, typ in col_map.items():
                 if col not in existing:
-                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))
+                    sql_type = _MYSQL_COL_TYPES.get(typ, typ)
+                    conn.execute(text(f"ALTER TABLE `{table}` ADD COLUMN `{col}` {sql_type}"))
 
         add_cols("app_settings", {
             "comparison_prompt_extraction":  "TEXT",
@@ -30,17 +63,14 @@ def _migrate_db():
             "google_token_expiry":           "DATETIME",
             "google_user_email":             "TEXT",
         })
-
         add_cols("editions", {
             "gdrive_folder_url":  "TEXT",
             "gdrive_folder_id":   "TEXT",
             "gdrive_synced_at":   "DATETIME",
         })
-
         add_cols("documents", {
             "gdrive_file_id": "TEXT",
         })
-
         add_cols("comparison_jobs", {
             "status_detail":          "TEXT",
             "started_at":             "DATETIME",
@@ -54,7 +84,6 @@ def _migrate_db():
             "per_file_results_json":  "TEXT",
             "edition_summary":        "TEXT",
         })
-
         conn.commit()
 
 
@@ -65,19 +94,64 @@ def _seed_comparison_prompts():
     if settings and not settings.comparison_prompt_extraction:
         settings.comparison_prompt_extraction = DEFAULT_PROMPT_EXTRACTION
         settings.comparison_prompt_comparison = DEFAULT_PROMPT_COMPARISON
-        settings.comparison_prompt_summary = DEFAULT_PROMPT_SUMMARY
+        settings.comparison_prompt_summary    = DEFAULT_PROMPT_SUMMARY
         db.session.commit()
+
+
+def _cleanup_stale_jobs(timeout_minutes: float) -> int:
+    """Marks in-progress jobs older than timeout_minutes as error. Requires app context."""
+    from models import ComparisonJob
+    cutoff = datetime.utcnow() - timedelta(minutes=timeout_minutes)
+    in_progress = ["pending", "comparing", "extracting", "chunking", "summarizing"]
+
+    stale = ComparisonJob.query.filter(ComparisonJob.status.in_(in_progress)).all()
+    cleaned = 0
+    for job in stale:
+        ref = job.started_at or job.created_at
+        if ref and ref < cutoff:
+            job.status = "error"
+            job.error_message = (
+                f"Przekroczono limit czasu ({timeout_minutes:.0f} min). "
+                "Proces zostal przerwany automatycznie przez monitor zadan."
+            )
+            job.finished_at = datetime.utcnow()
+            cleaned += 1
+
+    if cleaned:
+        db.session.commit()
+
+    return cleaned
+
+
+def _start_job_monitor(app):
+    """Daemon thread that sweeps stale jobs every 5 minutes."""
+    timeout_minutes = float(os.environ.get("COMPARISON_TIMEOUT_MINUTES", "60"))
+
+    def _run():
+        _time.sleep(60)  # give app time to fully start before first sweep
+        while True:
+            try:
+                with app.app_context():
+                    _cleanup_stale_jobs(timeout_minutes)
+            except Exception:
+                pass
+            _time.sleep(300)
+
+    threading.Thread(target=_run, daemon=True, name="job-monitor").start()
 
 
 def create_app():
     app = Flask(__name__)
-    app.secret_key = "grant-docs-secret-key-change-in-prod"
+    app.secret_key = os.environ.get("SECRET_KEY", "grant-docs-secret-key-change-in-prod")
 
-    os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
     os.makedirs(os.path.join(BASE_DIR, "storage"), exist_ok=True)
 
-    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(BASE_DIR, 'data', 'grants.db')}"
+    app.config["SQLALCHEMY_DATABASE_URI"] = _mysql_uri()
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_recycle": 280,
+        "pool_pre_ping": True,
+    }
 
     db.init_app(app)
 
@@ -100,6 +174,10 @@ def create_app():
     @app.errorhandler(404)
     def not_found(e):
         return render_template("404.html"), 404
+
+    @app.template_filter("status_pl")
+    def status_pl_filter(status):
+        return STATUS_LABELS_PL.get(status or "", status or "—")
 
     @app.template_filter("duration_fmt")
     def duration_fmt(seconds):
@@ -144,6 +222,11 @@ def create_app():
         from seed import run_seed
         run_seed()
         _seed_comparison_prompts()
+        # Sweep any jobs left hanging from previous server run
+        timeout_minutes = float(os.environ.get("COMPARISON_TIMEOUT_MINUTES", "60"))
+        _cleanup_stale_jobs(timeout_minutes)
+
+    _start_job_monitor(app)
 
     return app
 

@@ -1,8 +1,6 @@
 import io
 import json
-import os
 import threading
-from datetime import datetime
 
 import markdown as md_lib
 from flask import (
@@ -12,7 +10,7 @@ from flask import (
 from werkzeug.utils import secure_filename
 
 from extensions import db
-from models import AppSettings, ComparisonJob, Competition, Edition, DocumentType, Document
+from models import AppSettings, ComparisonJob, Competition, Edition, Document
 from services.comparator import run_comparison
 
 bp = Blueprint("comparison", __name__, url_prefix="/comparison")
@@ -28,7 +26,7 @@ def index():
 def setup():
     settings = db.session.get(AppSettings, 1)
     if not settings or not settings.gemini_api_key:
-        flash("Skonfiguruj klucz Gemini API w Ustawieniach przed uruchomieniem porownania.", "warning")
+        flash("Skonfiguruj klucz Gemini API w Ustawieniach.", "warning")
         return redirect(url_for("settings.index"))
 
     competitions = Competition.query.order_by(Competition.name).all()
@@ -49,7 +47,6 @@ def setup():
         edition_new = db.session.get(Edition, edition_new_id)
         competition = db.session.get(Competition, competition_id)
 
-        # Build file mappings from form
         mappings = []
         i = 0
         while True:
@@ -87,10 +84,9 @@ def setup():
         db.session.commit()
 
         flask_app = current_app._get_current_object()
-        t = threading.Thread(target=run_comparison, args=(job.id, flask_app), daemon=True)
-        t.start()
+        threading.Thread(target=run_comparison, args=(job.id, flask_app), daemon=True).start()
 
-        flash(f"Porownanie uruchomione (ID: {job.id}). Analiza {len(mappings)} par plikow — moze potrwac kilka minut.", "success")
+        flash(f"Porownanie uruchomione — analiza {len(mappings)} par plikow.", "success")
         return redirect(url_for("comparison.job_status", job_id=job.id))
 
     return render_template("comparison/setup.html", competitions=competitions, settings=settings)
@@ -100,45 +96,26 @@ def setup():
 def job_status(job_id):
     job = ComparisonJob.query.get_or_404(job_id)
 
-    changes = []
     per_file_results = []
+    all_changes = []
 
-    if job.status == "done":
-        if job.per_file_results_json:
-            try:
-                per_file_results = json.loads(job.per_file_results_json)
-                for r in per_file_results:
-                    changes.extend(r.get("changes", []))
-            except Exception:
-                pass
-        elif job.changes_json:
-            try:
-                raw = json.loads(job.changes_json)
-                if isinstance(raw, list):
-                    changes = raw
-            except Exception:
-                pass
+    if job.status == "done" and job.per_file_results_json:
+        per_file_results = json.loads(job.per_file_results_json)
+        for r in per_file_results:
+            all_changes.extend(r.get("changes", []))
+            if r.get("summary"):
+                r["summary_html"] = md_lib.markdown(r["summary"], extensions=["extra"])
 
-    # Render markdown summaries
     edition_summary_html = ""
     if job.edition_summary:
         edition_summary_html = md_lib.markdown(job.edition_summary, extensions=["extra"])
 
-    summary_html = ""
-    if job.executive_summary and not job.edition_summary:
-        summary_html = md_lib.markdown(job.executive_summary, extensions=["extra"])
-
-    for r in per_file_results:
-        if r.get("summary"):
-            r["summary_html"] = md_lib.markdown(r["summary"], extensions=["extra"])
-
     return render_template(
         "comparison/result.html",
         job=job,
-        changes=changes,
+        changes=all_changes,
         per_file_results=per_file_results,
         edition_summary_html=edition_summary_html,
-        summary_html=summary_html,
     )
 
 
@@ -165,36 +142,21 @@ def download_excel(job_id):
         flash("Porownanie jeszcze nie gotowe.", "warning")
         return redirect(url_for("comparison.job_status", job_id=job_id))
 
-    # Collect all changes
-    all_changes = []
-    per_file_results = []
-    if job.per_file_results_json:
-        try:
-            per_file_results = json.loads(job.per_file_results_json)
-        except Exception:
-            pass
-    elif job.changes_json:
-        try:
-            raw = json.loads(job.changes_json)
-            if isinstance(raw, list):
-                all_changes = raw
-        except Exception:
-            pass
+    per_file_results = json.loads(job.per_file_results_json or "[]")
 
     wb = openpyxl.Workbook()
 
-    # Sheet 1: Edition summary
-    ws_summary = wb.active
-    ws_summary.title = "Podsumowanie edycji"
-    ws_summary["A1"] = f"Porownanie edycji: {job.competition_name}"
-    ws_summary["A1"].font = Font(bold=True, size=14)
-    ws_summary["A2"] = f"{job.label_old} vs {job.label_new}"
-    ws_summary["A3"] = f"Wygenerowano: {job.created_at.strftime('%Y-%m-%d %H:%M')}"
-    ws_summary["A4"] = ""
-    ws_summary["A5"] = job.edition_summary or job.executive_summary or "(brak podsumowania)"
-    ws_summary["A5"].alignment = Alignment(wrap_text=True)
-    ws_summary.column_dimensions["A"].width = 120
-    ws_summary.row_dimensions[5].height = 600
+    # Arkusz 1: Podsumowanie edycji
+    ws_sum = wb.active
+    ws_sum.title = "Podsumowanie edycji"
+    ws_sum["A1"] = f"Porownanie: {job.competition_name}"
+    ws_sum["A1"].font = Font(bold=True, size=14)
+    ws_sum["A2"] = f"{job.label_old} vs {job.label_new}"
+    ws_sum["A3"] = f"Wygenerowano: {job.created_at.strftime('%Y-%m-%d %H:%M')}" if job.created_at else ""
+    ws_sum["A5"] = job.edition_summary or "(brak podsumowania)"
+    ws_sum["A5"].alignment = Alignment(wrap_text=True)
+    ws_sum.column_dimensions["A"].width = 120
+    ws_sum.row_dimensions[5].height = 600
 
     waga_colors = {
         "KRYTYCZNA": "FFCCCC",
@@ -202,54 +164,43 @@ def download_excel(job_id):
         "SREDNIA":   "FFFFCC",
         "NISKA":     "E5FFE5",
     }
-    headers = ["Dokument", "Sekcja", "Typ zmiany", "Waga",
-               f"Zapis — {job.label_old}", f"Zapis — {job.label_new}", "Komentarz biznesowy"]
 
-    if per_file_results:
-        for pfr in per_file_results:
-            ws = wb.create_sheet(pfr["old_name"][:28])
-            _write_changes_sheet(ws, pfr.get("changes", []), headers[1:], waga_colors, job)
-    else:
-        ws = wb.create_sheet("Rejestr Zmian")
-        _write_changes_sheet(ws, all_changes, headers[1:], waga_colors, job)
+    for pfr in per_file_results:
+        sheet_name = pfr.get("old_name", "Plik")[:28]
+        ws = wb.create_sheet(sheet_name)
+        _write_changes_sheet(ws, pfr.get("changes", []), waga_colors, job)
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    comp = job.competition_name or "konkurs"
-    filename = secure_filename(f"rejestr_zmian_{comp}_{job.label_old}_vs_{job.label_new}.xlsx")
+
+    filename = secure_filename(f"rejestr_zmian_{job.competition_name or 'konkurs'}_{job.label_old}_vs_{job.label_new}.xlsx")
     return send_file(buf, as_attachment=True, download_name=filename,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-def _write_changes_sheet(ws, changes, headers, waga_colors, job):
+def _write_changes_sheet(ws, changes, waga_colors, job):
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
-    for col_idx, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col_idx, value=header)
+    headers = ["Sekcja", "Typ zmiany", "Waga", f"Zapis — {job.label_old}", f"Zapis — {job.label_new}", "Komentarz biznesowy"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="1C4B40")
         cell.alignment = Alignment(wrap_text=True)
 
-    for row_idx, change in enumerate(changes, 2):
+    for row, change in enumerate(changes, 2):
         waga = change.get("waga", "NISKA")
-        fill_color = waga_colors.get(waga, "FFFFFF")
-        row_data = [
-            change.get("sekcja", ""),
-            change.get("typ_zmiany", ""),
-            waga,
-            change.get("zapis_stary", ""),
-            change.get("zapis_nowy", ""),
-            change.get("komentarz_biznesowy", ""),
-        ]
-        for col_idx, value in enumerate(row_data, 1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=value)
-            cell.fill = PatternFill("solid", fgColor=fill_color)
+        fill = PatternFill("solid", fgColor=waga_colors.get(waga, "FFFFFF"))
+        row_data = [change.get("sekcja",""), change.get("typ_zmiany",""), waga,
+                    change.get("zapis_stary",""), change.get("zapis_nowy",""), change.get("komentarz_biznesowy","")]
+        for col, value in enumerate(row_data, 1):
+            cell = ws.cell(row=row, column=col, value=value)
+            cell.fill = fill
             cell.alignment = Alignment(wrap_text=True)
 
-    col_widths = [15, 20, 12, 50, 50, 60]
-    for i, width in enumerate(col_widths, 1):
+    for i, width in enumerate([15, 20, 12, 50, 50, 60], 1):
         ws.column_dimensions[get_column_letter(i)].width = width
     for row in ws.iter_rows(min_row=2):
         ws.row_dimensions[row[0].row].height = 80
