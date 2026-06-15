@@ -1,16 +1,16 @@
 {% extends "base.html" %}
-{% block title %}Porownanie #{{ job.id }} – Grant Docs{% endblock %}
+{% block title %}Porównanie #{{ job.id }} – Grant Docs{% endblock %}
 {% block content %}
 <nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2">
-  <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porownania</a>
+  <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porównania</a>
   <span>›</span>
-  <span class="text-slate-text font-medium">{{ job.competition_name or 'Porownanie #' ~ job.id }}</span>
+  <span class="text-slate-text font-medium">{{ job.competition_name or 'Porównanie #' ~ job.id }}</span>
 </nav>
 
 <!-- Header -->
 <div class="flex items-start justify-between mb-6">
   <div>
-    <h1 class="text-xl font-bold text-bottle mb-1">{{ job.competition_name or 'Porownanie #' ~ job.id }}</h1>
+    <h1 class="text-xl font-bold text-bottle mb-1">{{ job.competition_name or 'Porównanie #' ~ job.id }}</h1>
     <div class="text-sm text-slate-text/70 flex items-center gap-3 flex-wrap">
       <span class="font-medium">{{ job.label_old or '?' }}</span>
       <span class="text-slate-text/40">→</span>
@@ -26,93 +26,83 @@
         ⬇️ Excel
       </a>
       <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
-            onsubmit="return confirm('Usunac porownanie?')">
+            onsubmit="return confirm('Usunąć porównanie?')">
         <button type="submit" class="px-3 py-2 border border-red-200 text-red-500 rounded-lg text-sm hover:bg-red-50 transition-colors">🗑</button>
       </form>
     </div>
   {% endif %}
 </div>
 
-{% if job.status not in ['done', 'error'] %}
+{# ═══════════════════════════════════════════════════════════
+   PENDING — browser-driven sequential comparison
+   ════════════════════════════════════════════════════════════ #}
+{% if job.status == 'pending' %}
+
   <!-- Progress panel -->
-  <div class="bg-white rounded-xl border border-gray-100 p-6 mb-6">
-    {% set stages = [
-      ('extracting',  '📂', 'Ekstrakcja'),
-      ('chunking',    '🧩', 'Analiza struktury'),
-      ('comparing',   '🔍', 'Porownanie'),
-      ('summarizing', '✍️', 'Podsumowanie'),
-    ] %}
-    <div class="flex items-start gap-0 mb-6 overflow-x-auto pb-1">
-      {% for stage_id, icon, label in stages %}
-        {% set is_active = job.status == stage_id %}
-        {% set stage_ids = ['extracting','chunking','comparing','summarizing'] %}
-        {% set is_done = stage_ids.index(job.status) > stage_ids.index(stage_id) if job.status in stage_ids and stage_id in stage_ids else false %}
-        <div class="flex-1 min-w-[80px]">
-          <div class="flex items-center">
-            <div class="flex flex-col items-center flex-1">
-              <div class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold mb-1
-                {% if is_active %}bg-lime text-bottle ring-2 ring-lime/40 ring-offset-2
-                {% elif is_done %}bg-bottle text-white
-                {% else %}bg-gray-100 text-gray-400{% endif %}">
-                {% if is_done %}✓{% else %}{{ icon }}{% endif %}
-              </div>
-              <div class="text-xs font-semibold text-center
-                {% if is_active %}text-bottle{% elif is_done %}text-bottle/70{% else %}text-slate-text/30{% endif %}">
-                {{ label }}
-              </div>
-            </div>
-            {% if not loop.last %}
-              <div class="h-0.5 flex-1 mx-1 mt-[-14px] {% if is_done %}bg-bottle{% else %}bg-gray-200{% endif %}"></div>
-            {% endif %}
-          </div>
+  <div id="progress-panel" class="bg-white rounded-xl border border-gray-100 p-5 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-3">
+        <div class="flex gap-0.5 shrink-0">
+          <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0s"></div>
+          <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0.15s"></div>
+          <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0.3s"></div>
         </div>
-      {% endfor %}
+        <span id="progress-label" class="text-sm font-semibold text-bottle">Przygotowuję porównanie...</span>
+      </div>
+      <span id="progress-fraction" class="text-xs text-slate-text/40 shrink-0"></span>
     </div>
-
-    <div class="bg-bottle/5 border border-bottle/10 rounded-lg px-4 py-3 mb-4 flex items-start gap-3">
-      <div class="flex gap-0.5 mt-1 shrink-0">
-        <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0s"></div>
-        <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0.15s"></div>
-        <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0.3s"></div>
-      </div>
-      <div>
-        <div class="text-sm font-semibold text-bottle" id="status-text">
-          {{ job.status | status_pl }}
-        </div>
-        <div class="text-xs text-slate-text/60 mt-0.5" id="status-detail">{{ job.status_detail or 'Inicjalizacja...' }}</div>
-      </div>
+    <div class="w-full bg-gray-100 rounded-full h-2 mb-2">
+      <div id="progress-bar" class="bg-lime h-2 rounded-full transition-all duration-500" style="width:0%"></div>
     </div>
-
-    <div id="progress-wrapper" class="{% if job.status != 'comparing' %}hidden{% endif %}">
-      <div class="flex justify-between text-xs text-slate-text/50 mb-1">
-        <span>Postep</span>
-        <span><span id="progress-current">{{ job.progress_current }}</span> / <span id="progress-total">{{ job.progress_total }}</span></span>
-      </div>
-      <div class="w-full bg-gray-100 rounded-full h-2">
-        <div class="bg-lime h-2 rounded-full transition-all duration-500" id="progress-bar"
-             style="width: {{ ((job.progress_current / job.progress_total * 100) | int) if job.progress_total > 0 else 0 }}%"></div>
-      </div>
-      <div class="text-xs text-slate-text/40 mt-1.5 text-right">Odswiezanie co 5 sekund</div>
-    </div>
+    <p id="progress-file" class="text-xs text-slate-text/40 truncate"></p>
   </div>
 
+  <!-- Live pair list -->
+  <div id="pairs-list" class="space-y-2 mb-5">
+    {% for m in mappings %}
+      <div id="pair-{{ loop.index0 }}" class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div class="flex items-center gap-3 px-5 py-3.5">
+          <div id="pair-icon-{{ loop.index0 }}" class="text-lg shrink-0 text-gray-300">○</div>
+          <div class="min-w-0 flex-1">
+            <div class="font-medium text-slate-text text-sm truncate">{{ m.old_name }}</div>
+            <div class="text-xs text-slate-text/40">→ {{ m.new_name }}</div>
+          </div>
+          <div id="pair-badge-{{ loop.index0 }}" class="shrink-0"></div>
+        </div>
+        <div id="pair-body-{{ loop.index0 }}" class="hidden border-t border-gray-50"></div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <!-- Edition summary placeholder -->
+  <div id="edition-summary-wrap" class="hidden bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
+    <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie całej edycji</h2>
+    <div id="edition-summary-body" class="prose max-w-none"></div>
+  </div>
+
+{# ═══════════════════════════════════════════════════════════
+   ERROR
+   ════════════════════════════════════════════════════════════ #}
 {% elif job.status == 'error' %}
   <div class="bg-red-50 border border-red-200 rounded-xl p-6 mb-6">
-    <div class="font-semibold text-red-800 mb-1">❌ Blad podczas analizy</div>
-    <p class="text-red-700 text-sm">{{ job.error_message or 'Nieznany blad.' }}</p>
+    <div class="font-semibold text-red-800 mb-1">❌ Błąd podczas analizy</div>
+    <p class="text-red-700 text-sm">{{ job.error_message or 'Nieznany błąd.' }}</p>
     <div class="mt-4 flex gap-3">
-      <a href="{{ url_for('comparison.setup') }}" class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90">Sprobuj ponownie</a>
+      <a href="{{ url_for('comparison.setup') }}" class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90">Spróbuj ponownie</a>
       <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}">
-        <button type="submit" class="px-4 py-2 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50">Usun</button>
+        <button type="submit" class="px-4 py-2 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50">Usuń</button>
       </form>
     </div>
   </div>
 
+{# ═══════════════════════════════════════════════════════════
+   DONE
+   ════════════════════════════════════════════════════════════ #}
 {% else %}
-  <!-- DONE: Edition summary -->
+
   {% if edition_summary_html %}
     <div class="bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
-      <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie calej edycji</h2>
+      <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie całej edycji</h2>
       <div class="prose max-w-none">{{ edition_summary_html | safe }}</div>
     </div>
   {% endif %}
@@ -138,21 +128,20 @@
     </div>
     <div class="bg-yellow-50 rounded-xl border border-yellow-100 p-4 text-center">
       <div class="text-2xl font-bold text-yellow-700">{{ srednie + niskie }}</div>
-      <div class="text-xs text-yellow-600 mt-1">Srednie i niskie</div>
+      <div class="text-xs text-yellow-600 mt-1">Średnie i niskie</div>
     </div>
   </div>
 
-  <!-- Per-file accordion (nowy flow) -->
+  <!-- Per-file accordion -->
   {% if per_file_results %}
     <div class="mb-5">
       <h2 class="font-semibold text-slate-text text-sm mb-3">Wyniki per dokument ({{ per_file_results | length }} par)</h2>
       <div class="space-y-2">
         {% for pfr in per_file_results %}
-          {% set n_changes = pfr.get('changes', []) | length %}
-          {% set has_critical = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
+          {% set n_ch = pfr.get('changes', []) | length %}
+          {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
           <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            <button type="button"
-                    onclick="toggleAccordion('pfr-{{ loop.index0 }}')"
+            <button type="button" onclick="toggleAccordion('pfr-{{ loop.index0 }}')"
                     class="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-gray-50/50 transition-colors">
               <div class="flex items-center gap-3 min-w-0">
                 <span class="text-base shrink-0">{{ pfr.old_name | file_icon }}</span>
@@ -161,9 +150,9 @@
                   <div class="text-xs text-slate-text/50">→ {{ pfr.new_name }}</div>
                 </div>
               </div>
-              <div class="flex items-center gap-3 ml-4 shrink-0">
-                {% if has_critical %}<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">{{ has_critical }} kryt.</span>{% endif %}
-                <span class="px-2 py-0.5 {% if n_changes > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_changes }} zmian</span>
+              <div class="flex items-center gap-2 ml-4 shrink-0">
+                {% if n_crit %}<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">{{ n_crit }} kryt.</span>{% endif %}
+                <span class="px-2 py-0.5 {% if n_ch > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_ch }} zmian</span>
                 <span class="text-slate-text/30 text-sm transition-transform duration-200" id="arrow-pfr-{{ loop.index0 }}">▼</span>
               </div>
             </button>
@@ -173,39 +162,7 @@
                   <div class="prose max-w-none text-sm">{{ pfr.summary_html | safe }}</div>
                 </div>
               {% endif %}
-              {% if pfr.get('changes') %}
-                <div class="overflow-x-auto">
-                  <table class="w-full text-xs">
-                    <thead>
-                      <tr class="text-slate-text/40 border-b border-gray-50 bg-gray-50/30">
-                        <th class="text-left px-4 py-2 font-medium w-24">Sekcja</th>
-                        <th class="text-left px-3 py-2 font-medium w-32">Typ</th>
-                        <th class="text-left px-3 py-2 font-medium w-20">Waga</th>
-                        <th class="text-left px-3 py-2 font-medium">{{ job.label_old }}</th>
-                        <th class="text-left px-3 py-2 font-medium">{{ job.label_new }}</th>
-                        <th class="text-left px-3 py-2 font-medium">Komentarz</th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-50">
-                      {% for change in pfr.changes %}
-                        {% set waga = change.get('waga', 'NISKA') %}
-                        {% set row_bg = {'KRYTYCZNA':'bg-red-50','WYSOKA':'bg-orange-50','SREDNIA':'bg-yellow-50','NISKA':'bg-green-50'}.get(waga,'') %}
-                        {% set waga_badge = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
-                        <tr class="{{ row_bg }}">
-                          <td class="px-4 py-2.5 font-medium text-bottle align-top">{{ change.get('sekcja','') }}</td>
-                          <td class="px-3 py-2.5 text-slate-text/70 align-top">{{ change.get('typ_zmiany','') }}</td>
-                          <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold {{ waga_badge }}">{{ waga }}</span></td>
-                          <td class="px-3 py-2.5 text-slate-text/60 align-top"><div class="max-h-24 overflow-y-auto">{{ change.get('zapis_stary','') }}</div></td>
-                          <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div class="max-h-24 overflow-y-auto">{{ change.get('zapis_nowy','') }}</div></td>
-                          <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">{{ change.get('komentarz_biznesowy','') }}</div></td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-              {% else %}
-                <p class="px-5 py-4 text-sm text-slate-text/50">Brak zmian w tym dokumencie.</p>
-              {% endif %}
+              {{ _render_changes_table(pfr.get('changes', []), job) }}
             </div>
           </div>
         {% endfor %}
@@ -213,72 +170,14 @@
     </div>
   {% endif %}
 
-  <!-- Global changes table (filterable) -->
+  <!-- Global changes table -->
   {% if changes %}
-    <div class="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
-      <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
-        <h2 class="font-semibold text-bottle text-sm">Globalny rejestr zmian ({{ changes | length }})</h2>
-        <div class="flex items-center gap-2 flex-wrap">
-          <select id="filter-typ" onchange="filterTable()"
-                  class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
-            <option value="">Typ (wszystkie)</option>
-            {% for typ in ['ZAOSTRZENIE','ZLAGO_DZENIE','NOWA_WYMAGANIE','USUNIETE_WYMAGANIE','ZMIANA_TERMINU','ZMIANA_KWOTY','ZMIANA_REDAKCYJNA','INNE'] %}
-              <option value="{{ typ | lower }}">{{ typ }}</option>
-            {% endfor %}
-          </select>
-          <select id="filter-waga" onchange="filterTable()"
-                  class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
-            <option value="">Waga (wszystkie)</option>
-            <option value="krytyczna">KRYTYCZNA</option>
-            <option value="wysoka">WYSOKA</option>
-            <option value="srednia">SREDNIA</option>
-            <option value="niska">NISKA</option>
-          </select>
-          <input type="text" id="filter-search" oninput="filterTable()"
-                 placeholder="Szukaj..."
-                 class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 w-32" />
-          <button onclick="clearFilters()" class="text-xs text-slate-text/40 hover:text-bottle px-1.5 py-1.5">Resetuj</button>
-          <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-             class="flex items-center gap-1 px-3 py-1.5 bg-lime text-bottle rounded text-xs font-bold hover:bg-lime/80">
-            ⬇️ Excel
-          </a>
-        </div>
-      </div>
-      <div class="overflow-x-auto">
-        <table id="changes-table" class="w-full text-xs">
-          <thead>
-            <tr class="text-slate-text/40 border-b border-gray-100 bg-gray-50/50">
-              <th class="text-left px-4 py-2.5 font-medium w-24">Sekcja</th>
-              <th class="text-left px-3 py-2.5 font-medium w-32">Typ</th>
-              <th class="text-left px-3 py-2.5 font-medium w-20">Waga</th>
-              <th class="text-left px-3 py-2.5 font-medium">{{ job.label_old }}</th>
-              <th class="text-left px-3 py-2.5 font-medium">{{ job.label_new }}</th>
-              <th class="text-left px-3 py-2.5 font-medium">Komentarz biznesowy</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-50">
-            {% for change in changes %}
-              {% set waga = change.get('waga', 'NISKA') %}
-              {% set row_bg = {'KRYTYCZNA':'bg-red-50 hover:bg-red-100/70','WYSOKA':'bg-orange-50 hover:bg-orange-100/70','SREDNIA':'bg-yellow-50 hover:bg-yellow-100/70','NISKA':'bg-green-50 hover:bg-green-100/70'}.get(waga,'hover:bg-gray-50') %}
-              {% set waga_badge = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
-              <tr class="{{ row_bg }} transition-colors">
-                <td class="px-4 py-3 font-medium text-bottle align-top">{{ change.get('sekcja','') }}</td>
-                <td class="px-3 py-3 text-slate-text/70 align-top">{{ change.get('typ_zmiany','') }}</td>
-                <td class="px-3 py-3 align-top"><span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ waga_badge }}">{{ waga }}</span></td>
-                <td class="px-3 py-3 text-slate-text/60 align-top"><div class="max-h-28 overflow-y-auto">{{ change.get('zapis_stary','') }}</div></td>
-                <td class="px-3 py-3 text-slate-text align-top font-medium"><div class="max-h-28 overflow-y-auto">{{ change.get('zapis_nowy','') }}</div></td>
-                <td class="px-3 py-3 text-slate-text/70 align-top max-w-xs"><div class="max-h-28 overflow-y-auto">{{ change.get('komentarz_biznesowy','') }}</div></td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    {{ _render_global_table(changes, job) }}
   {% else %}
     <div class="bg-green-50 border border-green-200 rounded-xl p-8 text-center mb-5">
       <div class="text-4xl mb-3">✅</div>
-      <h3 class="font-semibold text-green-800 mb-1">Brak istotnych roznic</h3>
-      <p class="text-green-700 text-sm">Dokumenty sa identyczne lub roznice maja charakter wylacznie redakcyjny.</p>
+      <h3 class="font-semibold text-green-800 mb-1">Brak istotnych różnic</h3>
+      <p class="text-green-700 text-sm">Dokumenty są identyczne lub różnice mają charakter wyłącznie redakcyjny.</p>
     </div>
   {% endif %}
 {% endif %}
@@ -287,7 +186,7 @@
 {% if job.started_at or job.tokens_input %}
   <div class="mt-4 bg-white rounded-xl border border-gray-100 p-5">
     <h3 class="text-sm font-semibold text-bottle mb-3 flex items-center gap-2">
-      🧾 Podsumowanie wywolania API
+      🧾 Podsumowanie wywołania API
       <span class="text-xs font-normal text-slate-text/50">{{ job.gemini_model_used or '' }}</span>
     </h3>
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-center">
@@ -297,10 +196,6 @@
           <div class="text-lg font-bold text-bottle">{{ secs | int | duration_fmt }}</div>
           <div class="text-xs text-slate-text/50 mt-0.5">czas wykonania</div>
           <div class="text-xs text-slate-text/30">{{ job.started_at.strftime('%H:%M:%S') }} → {{ job.finished_at.strftime('%H:%M:%S') }}</div>
-        {% elif job.started_at and job.status not in ['done','error'] %}
-          <div class="text-lg font-bold text-bottle" id="elapsed-display">—</div>
-          <div class="text-xs text-slate-text/50 mt-0.5">czas wykonania</div>
-          <div class="text-xs text-slate-text/30">start {{ job.started_at.strftime('%H:%M:%S') }}</div>
         {% else %}
           <div class="text-lg font-bold text-slate-text/30">—</div>
           <div class="text-xs text-slate-text/50 mt-0.5">czas wykonania</div>
@@ -308,95 +203,322 @@
       </div>
       <div class="bg-gray-50 rounded-lg p-3">
         <div class="text-lg font-bold text-bottle">{{ "{:,}".format(job.tokens_input or 0) }}</div>
-        <div class="text-xs text-slate-text/50 mt-0.5">tokenow wejscia</div>
+        <div class="text-xs text-slate-text/50 mt-0.5">tokenów wejścia</div>
       </div>
       <div class="bg-gray-50 rounded-lg p-3">
         <div class="text-lg font-bold text-bottle">{{ "{:,}".format(job.tokens_output or 0) }}</div>
-        <div class="text-xs text-slate-text/50 mt-0.5">tokenow wyjscia</div>
+        <div class="text-xs text-slate-text/50 mt-0.5">tokenów wyjścia</div>
       </div>
       <div class="bg-gray-50 rounded-lg p-3">
         <div class="text-lg font-bold text-bottle">{{ "{:,}".format((job.tokens_input or 0) + (job.tokens_output or 0)) }}</div>
-        <div class="text-xs text-slate-text/50 mt-0.5">tokenow lacznie</div>
+        <div class="text-xs text-slate-text/50 mt-0.5">tokenów łącznie</div>
       </div>
       <div class="bg-lime/10 border border-lime/30 rounded-lg p-3">
         <div class="text-lg font-bold text-bottle">${{ "%.4f"|format(job.estimated_cost_usd or 0) }}</div>
         <div class="text-xs text-slate-text/50 mt-0.5">koszt szac. (USD)</div>
       </div>
     </div>
-    <p class="text-xs text-slate-text/40 mt-3">
-      {% if job.status == 'error' %}* Dane czesciowe — do momentu bledu.
-      {% else %}* Szacowany koszt wg cennika Gemini (czerwiec 2026).{% endif %}
-    </p>
+    <p class="text-xs text-slate-text/40 mt-3">* Szacowany koszt wg cennika Gemini (czerwiec 2026).</p>
   </div>
 {% endif %}
 
 <div class="mt-4">
-  <a href="{{ url_for('comparison.index') }}" class="text-sm text-bottle hover:underline">← Wróc do listy porowan</a>
+  <a href="{{ url_for('comparison.index') }}" class="text-sm text-bottle hover:underline">← Wróć do listy porównań</a>
 </div>
 
-<script>
-{% if job.status not in ['done', 'error'] %}
-{% if job.started_at %}
-(function() {
-  const startedAt = new Date("{{ job.started_at.strftime('%Y-%m-%dT%H:%M:%S') }}Z");
-  function fmt(sec) { return sec < 60 ? sec + 's' : Math.floor(sec/60) + 'm ' + (sec%60) + 's'; }
-  function tick() { const el = document.getElementById('elapsed-display'); if (el) el.textContent = fmt(Math.max(0, Math.floor((Date.now()-startedAt)/1000))); }
-  tick(); setInterval(tick, 1000);
-})();
-{% endif %}
+{# ─── Jinja2 macros for the change tables ─────────────────────────────────── #}
+{% macro _render_changes_table(changes, job) %}
+  {% if changes %}
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-slate-text/40 border-b border-gray-50 bg-gray-50/30">
+            <th class="text-left px-4 py-2 font-medium w-24">Sekcja</th>
+            <th class="text-left px-3 py-2 font-medium w-28">Typ</th>
+            <th class="text-left px-3 py-2 font-medium w-20">Waga</th>
+            <th class="text-left px-3 py-2 font-medium">{{ job.label_old }}</th>
+            <th class="text-left px-3 py-2 font-medium">{{ job.label_new }}</th>
+            <th class="text-left px-3 py-2 font-medium">Komentarz</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for ch in changes %}
+            {% set waga = ch.get('waga', 'NISKA') %}
+            {% set row_bg    = {'KRYTYCZNA':'bg-red-50','WYSOKA':'bg-orange-50','SREDNIA':'bg-yellow-50','NISKA':'bg-green-50'}.get(waga,'') %}
+            {% set waga_cls  = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
+            <tr class="{{ row_bg }}">
+              <td class="px-4 py-2.5 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
+              <td class="px-3 py-2.5 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
+              <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
+              <td class="px-3 py-2.5 text-slate-text/60 align-top"><div class="max-h-24 overflow-y-auto">{{ ch.get('zapis_stary','') }}</div></td>
+              <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div class="max-h-24 overflow-y-auto">{{ ch.get('zapis_nowy','') }}</div></td>
+              <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">{{ ch.get('komentarz_biznesowy','') }}</div></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="px-5 py-4 text-sm text-slate-text/50">Brak zmian w tym dokumencie.</p>
+  {% endif %}
+{% endmacro %}
 
-const STATUS_LABELS = {
-  extracting:  'Ekstrakcja tekstu',
-  chunking:    'Analiza struktury dokumentow',
-  comparing:   'Porownywanie plikow',
-  summarizing: 'Generowanie podsumowania',
+{% macro _render_global_table(changes, job) %}
+  <div class="bg-white rounded-xl border border-gray-100 overflow-hidden mb-5">
+    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
+      <h2 class="font-semibold text-bottle text-sm">Globalny rejestr zmian ({{ changes | length }})</h2>
+      <div class="flex items-center gap-2 flex-wrap">
+        <select id="filter-typ" onchange="filterTable()"
+                class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
+          <option value="">Typ (wszystkie)</option>
+          {% for typ in ['ZAOSTRZENIE','ZLAGO_DZENIE','NOWA_WYMAGANIE','USUNIETE_WYMAGANIE','ZMIANA_TERMINU','ZMIANA_KWOTY','ZMIANA_REDAKCYJNA','INNE'] %}
+            <option value="{{ typ | lower }}">{{ typ }}</option>
+          {% endfor %}
+        </select>
+        <select id="filter-waga" onchange="filterTable()"
+                class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
+          <option value="">Waga (wszystkie)</option>
+          <option value="krytyczna">KRYTYCZNA</option>
+          <option value="wysoka">WYSOKA</option>
+          <option value="srednia">SREDNIA</option>
+          <option value="niska">NISKA</option>
+        </select>
+        <input type="text" id="filter-search" oninput="filterTable()" placeholder="Szukaj..."
+               class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 w-32" />
+        <button onclick="clearFilters()" class="text-xs text-slate-text/40 hover:text-bottle px-1.5 py-1.5">Resetuj</button>
+        <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
+           class="flex items-center gap-1 px-3 py-1.5 bg-lime text-bottle rounded text-xs font-bold hover:bg-lime/80">⬇️ Excel</a>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table id="changes-table" class="w-full text-xs">
+        <thead>
+          <tr class="text-slate-text/40 border-b border-gray-100 bg-gray-50/50">
+            <th class="text-left px-4 py-2.5 font-medium w-24">Sekcja</th>
+            <th class="text-left px-3 py-2.5 font-medium w-28">Typ</th>
+            <th class="text-left px-3 py-2.5 font-medium w-20">Waga</th>
+            <th class="text-left px-3 py-2.5 font-medium">{{ job.label_old }}</th>
+            <th class="text-left px-3 py-2.5 font-medium">{{ job.label_new }}</th>
+            <th class="text-left px-3 py-2.5 font-medium">Komentarz biznesowy</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {% for ch in changes %}
+            {% set waga = ch.get('waga', 'NISKA') %}
+            {% set row_bg   = {'KRYTYCZNA':'bg-red-50 hover:bg-red-100/70','WYSOKA':'bg-orange-50 hover:bg-orange-100/70','SREDNIA':'bg-yellow-50 hover:bg-yellow-100/70','NISKA':'bg-green-50 hover:bg-green-100/70'}.get(waga,'hover:bg-gray-50') %}
+            {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
+            <tr class="{{ row_bg }} transition-colors">
+              <td class="px-4 py-3 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
+              <td class="px-3 py-3 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
+              <td class="px-3 py-3 align-top"><span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
+              <td class="px-3 py-3 text-slate-text/60 align-top"><div class="max-h-28 overflow-y-auto">{{ ch.get('zapis_stary','') }}</div></td>
+              <td class="px-3 py-3 text-slate-text align-top font-medium"><div class="max-h-28 overflow-y-auto">{{ ch.get('zapis_nowy','') }}</div></td>
+              <td class="px-3 py-3 text-slate-text/70 align-top max-w-xs"><div class="max-h-28 overflow-y-auto">{{ ch.get('komentarz_biznesowy','') }}</div></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endmacro %}
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+{% if job.status == 'pending' %}
+/* ── Browser-driven sequential comparison ── */
+const JOB_ID      = {{ job.id }};
+const TOTAL_PAIRS = {{ mappings | length }};
+const RUN_PAIR_URL      = {{ url_for('comparison.run_pair', job_id=job.id) | tojson }};
+const GEN_SUMMARY_URL   = {{ url_for('comparison.generate_edition_summary', job_id=job.id) | tojson }};
+
+const WAGA_BADGE = {
+  KRYTYCZNA: 'bg-red-100 text-red-700',
+  WYSOKA:    'bg-orange-100 text-orange-700',
+  SREDNIA:   'bg-yellow-100 text-yellow-700',
+  NISKA:     'bg-green-100 text-green-700',
+};
+const WAGA_ROW = {
+  KRYTYCZNA: 'bg-red-50',
+  WYSOKA:    'bg-orange-50',
+  SREDNIA:   'bg-yellow-50',
+  NISKA:     'bg-green-50',
 };
 
-setInterval(async () => {
-  try {
-    const r = await fetch('{{ url_for("comparison.job_status_api", job_id=job.id) }}');
-    const data = await r.json();
-    const statusEl  = document.getElementById('status-text');
-    const detailEl  = document.getElementById('status-detail');
-    const currEl    = document.getElementById('progress-current');
-    const totalEl   = document.getElementById('progress-total');
-    const barEl     = document.getElementById('progress-bar');
-    const wrapper   = document.getElementById('progress-wrapper');
-    if (statusEl) statusEl.textContent = STATUS_LABELS[data.status] || data.status;
-    if (detailEl && data.status_detail) detailEl.textContent = data.status_detail;
-    if (data.status === 'comparing') {
-      if (wrapper) wrapper.classList.remove('hidden');
-      if (currEl)  currEl.textContent  = data.progress_current;
-      if (totalEl) totalEl.textContent = data.progress_total;
-      if (barEl && data.progress_total > 0)
-        barEl.style.width = Math.round(data.progress_current / data.progress_total * 100) + '%';
-    } else {
-      if (wrapper) wrapper.classList.add('hidden');
-    }
-    if (data.status === 'done' || data.status === 'error') window.location.reload();
-  } catch(e) {}
-}, 5000);
-{% endif %}
+function setProgress(done, total, label, fileHint) {
+  const pct = total > 0 ? Math.round(done / total * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-fraction').textContent = total ? `${done} / ${total}` : '';
+  if (label) document.getElementById('progress-label').textContent = label;
+  document.getElementById('progress-file').textContent = fileHint || '';
+}
 
+function setPairState(idx, state) {
+  const icon  = document.getElementById(`pair-icon-${idx}`);
+  const badge = document.getElementById(`pair-badge-${idx}`);
+  const card  = document.getElementById(`pair-${idx}`);
+  if (state === 'running') {
+    icon.textContent = '⏳';
+    icon.className = 'text-lg shrink-0';
+    badge.innerHTML = '<span class="text-xs text-slate-text/40 animate-pulse">analizuję...</span>';
+    card.classList.add('border-lime/40');
+  } else if (state === 'waiting') {
+    icon.textContent = '○';
+    icon.className = 'text-lg shrink-0 text-gray-300';
+    badge.innerHTML = '';
+  }
+}
+
+function setPairDone(idx, data) {
+  const icon  = document.getElementById(`pair-icon-${idx}`);
+  const badge = document.getElementById(`pair-badge-${idx}`);
+  const body  = document.getElementById(`pair-body-${idx}`);
+  const card  = document.getElementById(`pair-${idx}`);
+  const n     = data.changes ? data.changes.length : 0;
+  const nCrit = data.changes ? data.changes.filter(c => c.waga === 'KRYTYCZNA').length : 0;
+
+  icon.textContent = '✅';
+  icon.className = 'text-lg shrink-0';
+  card.classList.remove('border-lime/40');
+
+  const critBadge = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
+  const cntColor  = n > 0 ? 'bg-bottle/10 text-bottle' : 'bg-gray-100 text-gray-400';
+  badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>
+    <button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
+
+  // Build body
+  let html = '';
+  if (data.summary_html) {
+    html += `<div class="px-5 py-4 bg-lime/5 border-b border-lime/20 prose max-w-none text-sm">${data.summary_html}</div>`;
+  }
+  if (data.changes && data.changes.length) {
+    html += buildChangesTable(data.changes);
+  } else {
+    html += '<p class="px-5 py-4 text-sm text-slate-text/50">Brak zmian w tym dokumencie.</p>';
+  }
+  body.innerHTML = html;
+}
+
+function setPairError(idx, msg) {
+  const icon  = document.getElementById(`pair-icon-${idx}`);
+  const badge = document.getElementById(`pair-badge-${idx}`);
+  const card  = document.getElementById(`pair-${idx}`);
+
+  icon.textContent = '❌';
+  icon.className = 'text-lg shrink-0';
+  card.classList.remove('border-lime/40');
+  badge.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">Błąd</span>`;
+}
+
+function togglePairBody(idx) {
+  const body  = document.getElementById(`pair-body-${idx}`);
+  const shown = !body.classList.toggle('hidden');
+  const btn   = document.querySelector(`#pair-badge-${idx} button`);
+  if (btn) btn.style.transform = shown ? 'rotate(180deg)' : '';
+}
+
+function buildChangesTable(changes) {
+  const rows = changes.map(ch => {
+    const waga = ch.waga || 'NISKA';
+    const bg   = WAGA_ROW[waga] || '';
+    const bc   = WAGA_BADGE[waga] || 'bg-gray-100 text-gray-600';
+    const esc  = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<tr class="${bg}">
+      <td class="px-4 py-2.5 font-medium text-bottle align-top">${esc(ch.sekcja||'')}</td>
+      <td class="px-3 py-2.5 text-slate-text/70 align-top">${esc(ch.typ_zmiany||'')}</td>
+      <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold ${bc}">${waga}</span></td>
+      <td class="px-3 py-2.5 text-slate-text/60 align-top"><div class="max-h-24 overflow-y-auto">${esc(ch.zapis_stary||'')}</div></td>
+      <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div class="max-h-24 overflow-y-auto">${esc(ch.zapis_nowy||'')}</div></td>
+      <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">${esc(ch.komentarz_biznesowy||'')}</div></td>
+    </tr>`;
+  }).join('');
+  return `<div class="overflow-x-auto"><table class="w-full text-xs">
+    <thead><tr class="text-slate-text/40 border-b border-gray-50 bg-gray-50/30">
+      <th class="text-left px-4 py-2 font-medium w-24">Sekcja</th>
+      <th class="text-left px-3 py-2 font-medium w-28">Typ</th>
+      <th class="text-left px-3 py-2 font-medium w-20">Waga</th>
+      <th class="text-left px-3 py-2 font-medium">Edycja starsza</th>
+      <th class="text-left px-3 py-2 font-medium">Edycja nowsza</th>
+      <th class="text-left px-3 py-2 font-medium">Komentarz</th>
+    </tr></thead>
+    <tbody class="divide-y divide-gray-50">${rows}</tbody>
+  </table></div>`;
+}
+
+async function runComparison() {
+  for (let i = 0; i < TOTAL_PAIRS; i++) {
+    setProgress(i, TOTAL_PAIRS, `⏳ Para ${i + 1} z ${TOTAL_PAIRS}...`);
+    setPairState(i, 'running');
+
+    try {
+      const resp = await fetch(RUN_PAIR_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pair_idx: i}),
+      });
+      let data, raw = '';
+      try { raw = await resp.text(); data = JSON.parse(raw); } catch(_) { data = null; }
+
+      if (!resp.ok || !data?.ok) {
+        const err = data?.error || `HTTP ${resp.status}`;
+        setPairError(i, err);
+      } else {
+        setPairDone(i, data);
+      }
+    } catch (e) {
+      setPairError(i, e.message);
+    }
+  }
+
+  // Edition summary
+  setProgress(TOTAL_PAIRS, TOTAL_PAIRS, '✨ Generuję podsumowanie edycji...');
+  try {
+    const resp = await fetch(GEN_SUMMARY_URL, {method: 'POST'});
+    const data = await resp.json();
+    if (data?.ok && data.summary_html) {
+      const wrap = document.getElementById('edition-summary-wrap');
+      const body = document.getElementById('edition-summary-body');
+      body.innerHTML = data.summary_html;
+      wrap.classList.remove('hidden');
+    }
+  } catch (e) {
+    console.warn('Edition summary failed:', e);
+  }
+
+  setProgress(TOTAL_PAIRS, TOTAL_PAIRS, '✅ Porównanie zakończone!');
+  // Short delay then reload to show the stored "done" state
+  setTimeout(() => window.location.reload(), 1500);
+}
+
+// Start automatically on page load
+window.addEventListener('DOMContentLoaded', runComparison);
+
+{% else %}
+
+/* ── Done/error state helpers ── */
 function toggleAccordion(id) {
-  const el = document.getElementById(id);
+  const el    = document.getElementById(id);
   const arrow = document.getElementById('arrow-' + id);
   const hidden = el.classList.toggle('hidden');
   if (arrow) arrow.style.transform = hidden ? '' : 'rotate(180deg)';
 }
 
 function filterTable() {
-  const typ  = document.getElementById('filter-typ').value.toLowerCase();
-  const waga = document.getElementById('filter-waga').value.toLowerCase();
-  const q    = document.getElementById('filter-search').value.toLowerCase();
+  const typ  = document.getElementById('filter-typ')?.value.toLowerCase()  || '';
+  const waga = document.getElementById('filter-waga')?.value.toLowerCase() || '';
+  const q    = document.getElementById('filter-search')?.value.toLowerCase() || '';
   document.querySelectorAll('#changes-table tbody tr').forEach(row => {
-    const text = row.textContent.toLowerCase();
-    row.style.display = ((!typ || text.includes(typ)) && (!waga || text.includes(waga)) && (!q || text.includes(q))) ? '' : 'none';
+    const t = row.textContent.toLowerCase();
+    row.style.display = ((!typ || t.includes(typ)) && (!waga || t.includes(waga)) && (!q || t.includes(q))) ? '' : 'none';
   });
 }
 function clearFilters() {
-  ['filter-typ','filter-waga','filter-search'].forEach(id => document.getElementById(id).value = '');
+  ['filter-typ','filter-waga','filter-search'].forEach(id => { const el = document.getElementById(id); if (el) el.value=''; });
   filterTable();
 }
+
+{% endif %}
 </script>
 {% endblock %}

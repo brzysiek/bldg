@@ -101,6 +101,120 @@ PRICING = {
 }
 
 
+def _resolve_local_path(doc, settings):
+    """Return (local_path, tmp_dir_or_None). Caller must shutil.rmtree(tmp_dir) if set."""
+    if not doc.gdrive_file_id:
+        return doc.stored_path, None
+    import tempfile, shutil
+    tmp_dir = tempfile.mkdtemp()
+    try:
+        if settings and settings.google_access_token:
+            from services.google_drive import download_file
+            path = download_file(
+                doc.gdrive_file_id, doc.original_name,
+                doc.mime_type or "application/pdf", tmp_dir, settings,
+            )
+        elif settings and settings.google_drive_api_key:
+            from services.google_drive import download_file_public
+            path = download_file_public(
+                doc.gdrive_file_id, doc.original_name,
+                doc.mime_type or "application/pdf", tmp_dir, settings.google_drive_api_key,
+            )
+        else:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise ValueError("Brak konfiguracji Drive — nie można pobrać pliku")
+        return path, tmp_dir
+    except Exception:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+
+
+def compare_one_pair(doc_old, doc_new, job, settings):
+    """Compare one document pair in the current (main-request) thread.
+    Returns result dict: old/new names, changes list, summary text, token counts."""
+    import shutil
+    from google import genai
+
+    client    = genai.Client(api_key=settings.gemini_api_key)
+    model     = settings.gemini_model or "gemini-2.5-flash"
+    t_in = t_out = 0
+
+    def call_gemini(prompt):
+        nonlocal t_in, t_out
+        resp = client.models.generate_content(model=model, contents=prompt)
+        u = getattr(resp, "usage_metadata", None)
+        if u:
+            t_in  += getattr(u, "prompt_token_count",     0) or 0
+            t_out += getattr(u, "candidates_token_count", 0) or 0
+        return resp
+
+    old_path, old_tmp = _resolve_local_path(doc_old, settings)
+    new_path, new_tmp = _resolve_local_path(doc_new, settings)
+    try:
+        text_old = extract_text(old_path, doc_old.mime_type or "")
+        text_new = extract_text(new_path, doc_new.mime_type or "")
+    finally:
+        if old_tmp: shutil.rmtree(old_tmp, ignore_errors=True)
+        if new_tmp: shutil.rmtree(new_tmp, ignore_errors=True)
+
+    changes = _compare_pair(
+        text_old, text_new,
+        job.label_old or "Edycja starsza",
+        job.label_new or "Edycja nowsza",
+        call_gemini, lambda _: None, settings,
+    )
+    summary = _file_summary(
+        changes,
+        job.label_old or "Edycja starsza",
+        job.label_new or "Edycja nowsza",
+        job.competition_name or "konkurs",
+        call_gemini, settings,
+    )
+    return {
+        "old_doc_id": doc_old.id,
+        "new_doc_id": doc_new.id,
+        "old_name":   doc_old.original_name,
+        "new_name":   doc_new.original_name,
+        "changes":    changes,
+        "summary":    summary,
+        "tokens_in":  t_in,
+        "tokens_out": t_out,
+    }
+
+
+def generate_edition_summary_text(per_file_results, job, settings):
+    """Generate edition-wide executive summary from completed per-file results.
+    Returns (summary_text, tokens_in, tokens_out)."""
+    from google import genai
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    model  = settings.gemini_model or "gemini-2.5-flash"
+    t_in = t_out = 0
+
+    def call_gemini(prompt):
+        nonlocal t_in, t_out
+        resp = client.models.generate_content(model=model, contents=prompt)
+        u = getattr(resp, "usage_metadata", None)
+        if u:
+            t_in  += getattr(u, "prompt_token_count",     0) or 0
+            t_out += getattr(u, "candidates_token_count", 0) or 0
+        return resp
+
+    per_file_summaries = "\n\n".join(
+        f"### {r['old_name']} vs {r['new_name']}\n{r.get('summary','')[:1000]}"
+        for r in per_file_results
+    )
+    prompt = (
+        DEFAULT_PROMPT_EDITION_SUMMARY
+        .replace("{label_old}",          job.label_old or "Edycja starsza")
+        .replace("{label_new}",          job.label_new or "Edycja nowsza")
+        .replace("{competition_name}",   job.competition_name or "konkurs")
+        .replace("{n_files}",            str(len(per_file_results)))
+        .replace("{per_file_summaries}", per_file_summaries[:30_000])
+    )
+    return call_gemini(prompt).text, t_in, t_out
+
+
 def _extract_structure(text, label, call_gemini, settings):
     prompt = (settings.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION).replace(
         "{document_text}", text[:300_000]

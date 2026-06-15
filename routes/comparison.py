@@ -1,19 +1,28 @@
 import io
 import json
-import threading
+from datetime import datetime
 
-import markdown as md_lib
 from flask import (
-    Blueprint, current_app, jsonify, redirect, render_template,
+    Blueprint, jsonify, redirect, render_template,
     request, send_file, url_for, flash,
 )
 from werkzeug.utils import secure_filename
 
 from extensions import db
 from models import AppSettings, ComparisonJob, Competition, Edition, Document
-from services.comparator import run_comparison
+from services.comparator import (
+    compare_one_pair,
+    generate_edition_summary_text,
+    run_comparison,
+)
 
 bp = Blueprint("comparison", __name__, url_prefix="/comparison")
+
+PRICING = {
+    "gemini-2.5-flash":      {"input": 0.30,  "output": 2.50},
+    "gemini-2.5-pro":        {"input": 1.25,  "output": 10.00},
+    "gemini-2.5-flash-lite": {"input": 0.10,  "output": 0.40},
+}
 
 
 @bp.route("/")
@@ -40,12 +49,12 @@ def setup():
             flash("Wybierz konkurs i dwie edycje.", "error")
             return redirect(url_for("comparison.setup"))
         if edition_old_id == edition_new_id:
-            flash("Wybierz dwie rozne edycje.", "error")
+            flash("Wybierz dwie różne edycje.", "error")
             return redirect(url_for("comparison.setup"))
 
-        edition_old = db.session.get(Edition, edition_old_id)
-        edition_new = db.session.get(Edition, edition_new_id)
-        competition = db.session.get(Competition, competition_id)
+        edition_old  = db.session.get(Edition, edition_old_id)
+        edition_new  = db.session.get(Edition, edition_new_id)
+        competition  = db.session.get(Competition, competition_id)
 
         mappings = []
         i = 0
@@ -61,45 +70,162 @@ def setup():
                     mappings.append({
                         "old_doc_id": int(old_id_str),
                         "new_doc_id": int(new_id_str),
-                        "old_name": old_doc.original_name,
-                        "new_name": new_doc.original_name,
+                        "old_name":   old_doc.original_name,
+                        "new_name":   new_doc.original_name,
                     })
             i += 1
 
         if not mappings:
-            flash("Nie wybrano zadnych par plikow do porownania.", "error")
+            flash("Nie wybrano żadnych par plików do porównania.", "error")
             return redirect(url_for("comparison.setup"))
 
         job = ComparisonJob(
-            competition_name=competition.name if competition else "",
-            edition_old_id=edition_old_id,
-            edition_new_id=edition_new_id,
-            label_old=edition_old.name if edition_old else "Edycja starsza",
-            label_new=edition_new.name if edition_new else "Edycja nowsza",
-            file_mappings_json=json.dumps(mappings, ensure_ascii=False),
-            status="pending",
-            gemini_model_used=settings.gemini_model,
+            competition_name   = competition.name if competition else "",
+            edition_old_id     = edition_old_id,
+            edition_new_id     = edition_new_id,
+            label_old          = edition_old.name if edition_old else "Edycja starsza",
+            label_new          = edition_new.name if edition_new else "Edycja nowsza",
+            file_mappings_json = json.dumps(mappings, ensure_ascii=False),
+            status             = "pending",
+            progress_total     = len(mappings),
+            progress_current   = 0,
+            gemini_model_used  = settings.gemini_model,
         )
         db.session.add(job)
         db.session.commit()
 
-        flask_app = current_app._get_current_object()
-        threading.Thread(target=run_comparison, args=(job.id, flask_app), daemon=True).start()
-
-        flash(f"Porownanie uruchomione — analiza {len(mappings)} par plikow.", "success")
         return redirect(url_for("comparison.job_status", job_id=job.id))
 
     return render_template("comparison/setup.html", competitions=competitions, settings=settings)
 
 
+# ── AJAX endpoints for browser-driven comparison ───────────────────────────
+
+@bp.route("/job/<int:job_id>/run-pair", methods=["POST"])
+def run_pair(job_id):
+    """Process one file pair synchronously in the main request thread."""
+    job = ComparisonJob.query.get_or_404(job_id)
+    settings = db.session.get(AppSettings, 1)
+
+    if not settings or not settings.gemini_api_key:
+        return jsonify({"ok": False, "error": "Brak klucza Gemini API w ustawieniach"}), 400
+
+    data = request.get_json() or {}
+    pair_idx = data.get("pair_idx", 0)
+
+    mappings = json.loads(job.file_mappings_json or "[]")
+    if pair_idx >= len(mappings):
+        return jsonify({"ok": False, "error": f"Nieprawidłowy indeks pary: {pair_idx}"}), 400
+
+    mapping = mappings[pair_idx]
+    doc_old = db.session.get(Document, mapping["old_doc_id"])
+    doc_new = db.session.get(Document, mapping["new_doc_id"])
+
+    if not doc_old or not doc_new:
+        return jsonify({"ok": False, "pair_idx": pair_idx, "error": "Dokument nie istnieje"}), 404
+
+    job.status = "comparing"
+    job.status_detail = f"Para {pair_idx + 1}/{len(mappings)}: {doc_old.original_name}"
+    job.progress_current = pair_idx
+    if not job.started_at:
+        job.started_at = datetime.utcnow()
+    db.session.commit()
+
+    try:
+        result = compare_one_pair(doc_old, doc_new, job, settings)
+
+        per_file_results = json.loads(job.per_file_results_json or "[]")
+        per_file_results.append(result)
+        job.per_file_results_json = json.dumps(per_file_results, ensure_ascii=False)
+
+        all_changes = [c for r in per_file_results for c in r.get("changes", [])]
+        job.changes_json     = json.dumps(all_changes, ensure_ascii=False)
+        job.progress_current = pair_idx + 1
+        job.tokens_input     = (job.tokens_input  or 0) + result.get("tokens_in",  0)
+        job.tokens_output    = (job.tokens_output or 0) + result.get("tokens_out", 0)
+        _update_cost(job)
+        db.session.commit()
+
+        import markdown as md_lib
+        summary_html = md_lib.markdown(result.get("summary", ""), extensions=["extra"]) if result.get("summary") else ""
+
+        return jsonify({
+            "ok":          True,
+            "pair_idx":    pair_idx,
+            "old_name":    result["old_name"],
+            "new_name":    result["new_name"],
+            "changes":     result["changes"],
+            "summary":     result.get("summary", ""),
+            "summary_html": summary_html,
+        })
+    except Exception as exc:
+        job.status       = "error"
+        job.error_message = str(exc)[:1000]
+        db.session.commit()
+        return jsonify({"ok": False, "pair_idx": pair_idx, "error": str(exc)}), 500
+
+
+@bp.route("/job/<int:job_id>/generate-summary", methods=["POST"])
+def generate_edition_summary(job_id):
+    """Generate the edition-wide executive summary from completed per-file results."""
+    job = ComparisonJob.query.get_or_404(job_id)
+    settings = db.session.get(AppSettings, 1)
+
+    if not settings or not settings.gemini_api_key:
+        return jsonify({"ok": False, "error": "Brak klucza Gemini API w ustawieniach"}), 400
+
+    per_file_results = json.loads(job.per_file_results_json or "[]")
+    if not per_file_results:
+        return jsonify({"ok": False, "error": "Brak wyników do podsumowania"}), 400
+
+    job.status       = "summarizing"
+    job.status_detail = "Generuję podsumowanie całej edycji..."
+    db.session.commit()
+
+    try:
+        summary_text, t_in, t_out = generate_edition_summary_text(per_file_results, job, settings)
+
+        job.edition_summary  = summary_text
+        job.status           = "done"
+        job.status_detail    = f"Analiza zakończona — {sum(len(r.get('changes',[])) for r in per_file_results)} zmian w {len(per_file_results)} parach"
+        job.finished_at      = datetime.utcnow()
+        job.tokens_input     = (job.tokens_input  or 0) + t_in
+        job.tokens_output    = (job.tokens_output or 0) + t_out
+        _update_cost(job)
+        db.session.commit()
+
+        import markdown as md_lib
+        summary_html = md_lib.markdown(summary_text, extensions=["extra"])
+
+        return jsonify({"ok": True, "summary_html": summary_html})
+    except Exception as exc:
+        job.status        = "error"
+        job.error_message = str(exc)[:1000]
+        db.session.commit()
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+def _update_cost(job):
+    model = job.gemini_model_used or "gemini-2.5-flash"
+    price = PRICING.get(model, {"input": 0.30, "output": 2.50})
+    t_in  = job.tokens_input  or 0
+    t_out = job.tokens_output or 0
+    job.estimated_cost_usd = round(
+        (t_in / 1_000_000 * price["input"]) + (t_out / 1_000_000 * price["output"]), 6
+    )
+
+
+# ── Result / status pages ──────────────────────────────────────────────────
+
 @bp.route("/job/<int:job_id>")
 def job_status(job_id):
+    import markdown as md_lib
     job = ComparisonJob.query.get_or_404(job_id)
 
     per_file_results = []
     all_changes = []
 
-    if job.status == "done" and job.per_file_results_json:
+    if job.per_file_results_json:
         per_file_results = json.loads(job.per_file_results_json)
         for r in per_file_results:
             all_changes.extend(r.get("changes", []))
@@ -110,12 +236,15 @@ def job_status(job_id):
     if job.edition_summary:
         edition_summary_html = md_lib.markdown(job.edition_summary, extensions=["extra"])
 
+    mappings = json.loads(job.file_mappings_json or "[]") if job.status == "pending" else []
+
     return render_template(
         "comparison/result.html",
         job=job,
         changes=all_changes,
         per_file_results=per_file_results,
         edition_summary_html=edition_summary_html,
+        mappings=mappings,
     )
 
 
@@ -123,13 +252,15 @@ def job_status(job_id):
 def job_status_api(job_id):
     job = ComparisonJob.query.get_or_404(job_id)
     return jsonify({
-        "status": job.status,
-        "status_detail": job.status_detail or "",
+        "status":           job.status,
+        "status_detail":    job.status_detail or "",
         "progress_current": job.progress_current,
-        "progress_total": job.progress_total,
-        "error_message": job.error_message,
+        "progress_total":   job.progress_total,
+        "error_message":    job.error_message,
     })
 
+
+# ── Excel export ───────────────────────────────────────────────────────────
 
 @bp.route("/job/<int:job_id>/download-excel")
 def download_excel(job_id):
@@ -139,17 +270,16 @@ def download_excel(job_id):
 
     job = ComparisonJob.query.get_or_404(job_id)
     if job.status != "done":
-        flash("Porownanie jeszcze nie gotowe.", "warning")
+        flash("Porównanie jeszcze nie gotowe.", "warning")
         return redirect(url_for("comparison.job_status", job_id=job_id))
 
     per_file_results = json.loads(job.per_file_results_json or "[]")
 
     wb = openpyxl.Workbook()
 
-    # Arkusz 1: Podsumowanie edycji
     ws_sum = wb.active
     ws_sum.title = "Podsumowanie edycji"
-    ws_sum["A1"] = f"Porownanie: {job.competition_name}"
+    ws_sum["A1"] = f"Porównanie: {job.competition_name}"
     ws_sum["A1"].font = Font(bold=True, size=14)
     ws_sum["A2"] = f"{job.label_old} vs {job.label_new}"
     ws_sum["A3"] = f"Wygenerowano: {job.created_at.strftime('%Y-%m-%d %H:%M')}" if job.created_at else ""
@@ -174,7 +304,9 @@ def download_excel(job_id):
     wb.save(buf)
     buf.seek(0)
 
-    filename = secure_filename(f"rejestr_zmian_{job.competition_name or 'konkurs'}_{job.label_old}_vs_{job.label_new}.xlsx")
+    filename = secure_filename(
+        f"rejestr_zmian_{job.competition_name or 'konkurs'}_{job.label_old}_vs_{job.label_new}.xlsx"
+    )
     return send_file(buf, as_attachment=True, download_name=filename,
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
@@ -183,7 +315,8 @@ def _write_changes_sheet(ws, changes, waga_colors, job):
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
-    headers = ["Sekcja", "Typ zmiany", "Waga", f"Zapis — {job.label_old}", f"Zapis — {job.label_new}", "Komentarz biznesowy"]
+    headers = ["Sekcja", "Typ zmiany", "Waga",
+               f"Zapis — {job.label_old}", f"Zapis — {job.label_new}", "Komentarz biznesowy"]
     for col, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=header)
         cell.font = Font(bold=True, color="FFFFFF")
@@ -193,8 +326,11 @@ def _write_changes_sheet(ws, changes, waga_colors, job):
     for row, change in enumerate(changes, 2):
         waga = change.get("waga", "NISKA")
         fill = PatternFill("solid", fgColor=waga_colors.get(waga, "FFFFFF"))
-        row_data = [change.get("sekcja",""), change.get("typ_zmiany",""), waga,
-                    change.get("zapis_stary",""), change.get("zapis_nowy",""), change.get("komentarz_biznesowy","")]
+        row_data = [
+            change.get("sekcja", ""), change.get("typ_zmiany", ""), waga,
+            change.get("zapis_stary", ""), change.get("zapis_nowy", ""),
+            change.get("komentarz_biznesowy", ""),
+        ]
         for col, value in enumerate(row_data, 1):
             cell = ws.cell(row=row, column=col, value=value)
             cell.fill = fill
@@ -211,5 +347,5 @@ def delete_job(job_id):
     job = ComparisonJob.query.get_or_404(job_id)
     db.session.delete(job)
     db.session.commit()
-    flash("Porownanie usuniete.", "success")
+    flash("Porównanie usunięte.", "success")
     return redirect(url_for("comparison.index"))
