@@ -28,16 +28,12 @@
     <form method="POST" action="{{ url_for('settings.save') }}" class="space-y-4" id="form-gemini-save">
       <div>
         <label class="block text-sm font-medium text-slate-text mb-1">Klucz API Gemini</label>
-        <div class="relative">
-          <input type="password" name="gemini_api_key" id="gemini_api_key"
-                 placeholder="{{ '••••••••••••' if settings.gemini_api_key else 'AIza...' }}"
-                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm pr-10 focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle" />
-          <button type="button" onclick="togglePassword()" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-text/40 hover:text-slate-text text-sm">
-            👁
-          </button>
-        </div>
-        {% if settings.gemini_api_key %}
-          <p class="text-xs text-green-600 mt-1">✅ Klucz jest zapisany. Pozostaw puste, aby nie zmieniać.</p>
+        <input type="text" name="gemini_api_key" id="gemini_api_key"
+               value="{{ settings.gemini_api_key or '' }}"
+               placeholder="AIza..."
+               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle" />
+        {% if not settings.gemini_api_key %}
+          <p class="text-xs text-amber-600 mt-1">⚠️ Klucz nie jest jeszcze zapisany.</p>
         {% endif %}
         <p class="text-xs text-slate-text/50 mt-1">
           <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="underline hover:text-bottle">Jak uzyskać klucz API? →</a>
@@ -104,33 +100,26 @@
     <form method="POST" action="{{ url_for('settings.save_google_oauth') }}" class="space-y-3 mb-4">
       <div>
         <label class="block text-xs font-medium text-slate-text mb-1">Drive API Key <span class="text-slate-text/40 font-normal">(dostęp publiczny — bez OAuth)</span></label>
-        <input type="password" name="google_drive_api_key"
-               placeholder="{{ 'pozostaw puste, aby nie zmieniać' if settings.google_drive_api_key else 'AIza...' }}"
+        <input type="text" name="google_drive_api_key"
+               value="{{ settings.google_drive_api_key or '' }}"
+               placeholder="AIza..."
                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle font-mono" />
-        {% if settings.google_drive_api_key %}
-          <p class="text-xs text-green-600 mt-1">✅ Zapisano. Pozostaw puste, aby nie zmieniać.</p>
-        {% else %}
-          <p class="text-xs text-slate-text/40 mt-1">Klucz API z <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a> z włączonym <strong>Drive API</strong>. Pozwala synchronizować publicznie udostępnione foldery bez logowania OAuth.</p>
-        {% endif %}
+        <p class="text-xs text-slate-text/40 mt-1">Klucz API z <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a> z włączonym <strong>Drive API</strong>. Pozwala synchronizować publicznie udostępnione foldery bez logowania OAuth.</p>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-medium text-slate-text mb-1">Client ID (Google OAuth)</label>
-          <input type="password" name="google_oauth_client_id"
-                 placeholder="{{ 'pozostaw puste, aby nie zmieniać' if settings.google_oauth_client_id else '1234....apps.googleusercontent.com' }}"
+          <input type="text" name="google_oauth_client_id"
+                 value="{{ settings.google_oauth_client_id or '' }}"
+                 placeholder="1234....apps.googleusercontent.com"
                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle font-mono" />
-          {% if settings.google_oauth_client_id %}
-            <p class="text-xs text-green-600 mt-1">✅ Zapisano.</p>
-          {% endif %}
         </div>
         <div>
           <label class="block text-xs font-medium text-slate-text mb-1">Client Secret</label>
-          <input type="password" name="google_oauth_client_secret"
-                 placeholder="{{ 'pozostaw puste, aby nie zmieniać' if settings.google_oauth_client_secret else 'GOCSPX-...' }}"
+          <input type="text" name="google_oauth_client_secret"
+                 value="{{ settings.google_oauth_client_secret or '' }}"
+                 placeholder="GOCSPX-..."
                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle font-mono" />
-          {% if settings.google_oauth_client_secret %}
-            <p class="text-xs text-green-600 mt-1">✅ Zapisano. Pozostaw puste, aby nie zmieniać.</p>
-          {% endif %}
         </div>
       </div>
       <div class="flex items-center gap-3">
@@ -220,11 +209,6 @@
 </div>
 
 <script>
-function togglePassword() {
-  const el = document.getElementById('gemini_api_key');
-  if (el) el.type = el.type === 'password' ? 'text' : 'password';
-}
-
 const currentModel = "{{ settings.gemini_model or 'gemini-2.5-flash' }}";
 
 async function loadGeminiModels() {
