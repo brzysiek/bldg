@@ -146,20 +146,30 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
             except Exception:
                 pass
 
+    log.debug("compare_one_pair START  job=%d  stary=%s  nowy=%s  model=%s",
+              job.id, doc_old.original_name, doc_new.original_name,
+              settings.gemini_model or "gemini-2.5-flash")
+
     client    = genai.Client(api_key=settings.gemini_api_key)
     model     = settings.gemini_model or "gemini-2.5-flash"
     t_in = t_out = 0
 
     def call_gemini(prompt):
         nonlocal t_in, t_out
+        log.debug("Gemini call  model=%s  prompt=%d znaków", model, len(prompt))
         resp = client.models.generate_content(model=model, contents=prompt)
         u = getattr(resp, "usage_metadata", None)
         if u:
-            t_in  += getattr(u, "prompt_token_count",     0) or 0
-            t_out += getattr(u, "candidates_token_count", 0) or 0
+            tokens_in  = getattr(u, "prompt_token_count",     0) or 0
+            tokens_out = getattr(u, "candidates_token_count", 0) or 0
+            t_in  += tokens_in
+            t_out += tokens_out
+            log.debug("Gemini odpowiedź  +%d tok_wej  +%d tok_wyj  (łącznie: %d/%d)",
+                      tokens_in, tokens_out, t_in, t_out)
         return resp
 
     _status("Ekstrakcja tekstu")
+    log.debug("compare_one_pair  ekstrakcja tekstu z plików")
     old_path, old_tmp = _resolve_local_path(doc_old, settings)
     new_path, new_tmp = _resolve_local_path(doc_new, settings)
     try:
@@ -169,14 +179,20 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
         if old_tmp: shutil.rmtree(old_tmp, ignore_errors=True)
         if new_tmp: shutil.rmtree(new_tmp, ignore_errors=True)
 
+    log.debug("compare_one_pair  tekst wyekstrahowany  stary=%d znaków  nowy=%d znaków",
+              len(text_old), len(text_new))
+
     _status(f"Analiza struktury: {doc_old.original_name}")
     struct_old = _get_structure_cached(doc_old, text_old, call_gemini, settings)
+    log.debug("compare_one_pair  struktura stara: %d sekcji", len(struct_old.get("sekcje", {})))
 
     _status(f"Analiza struktury: {doc_new.original_name}")
     struct_new = _get_structure_cached(doc_new, text_new, call_gemini, settings)
+    log.debug("compare_one_pair  struktura nowa: %d sekcji", len(struct_new.get("sekcje", {})))
 
     n_sekcji = len(set(struct_old.get("sekcje", {}).keys()) | set(struct_new.get("sekcje", {}).keys()))
     _status(f"Porównywanie sekcji (0/{n_sekcji})")
+    log.debug("compare_one_pair  porównuję %d sekcji", n_sekcji)
     changes = _compare_pair(
         text_old, text_new,
         job.label_old or "Edycja starsza",
@@ -184,8 +200,10 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
         call_gemini, lambda _: None, settings,
         struct_old=struct_old, struct_new=struct_new,
     )
+    log.debug("compare_one_pair  porównanie zakończone: %d zmian", len(changes))
 
     _status("Podsumowanie pliku")
+    log.debug("compare_one_pair  generuję podsumowanie pliku")
     summary = _file_summary(
         changes,
         job.label_old or "Edycja starsza",
@@ -193,6 +211,8 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
         job.competition_name or "konkurs",
         call_gemini, settings,
     )
+    log.debug("compare_one_pair KONIEC  job=%d  stary=%s  zmian=%d  tok_wej=%d  tok_wyj=%d",
+              job.id, doc_old.original_name, len(changes), t_in, t_out)
     return {
         "old_doc_id": doc_old.id,
         "new_doc_id": doc_new.id,
@@ -239,14 +259,18 @@ def generate_edition_summary_text(per_file_results, job, settings):
 
 
 def _extract_structure(text, label, call_gemini, settings):
+    log.debug("_extract_structure  label=%s  text=%d znaków", label, len(text))
     prompt = (settings.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION).replace(
         "{document_text}", text[:300_000]
     )
     resp = call_gemini(prompt)
     raw = resp.text.strip().replace("```json", "").replace("```", "").strip()
     try:
-        return json.loads(raw)
+        result = json.loads(raw)
+        log.debug("_extract_structure  OK  label=%s  sekcji=%d", label, len(result.get("sekcje", {})))
+        return result
     except json.JSONDecodeError:
+        log.warning("_extract_structure  błąd parsowania JSON dla %s — używam fallback bloków słownych", label)
         words = text.split()
         blocks = {f"Blok {i // 500 + 1}": " ".join(words[i:i + 500]) for i in range(0, len(words), 500)}
         return {"tytul": label, "sekcje": blocks}
@@ -297,6 +321,9 @@ def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_prog
     sekcje_new = struct_new.get("sekcje", {})
     all_keys = sorted(set(list(sekcje_old.keys()) + list(sekcje_new.keys())))
 
+    log.debug("_compare_pair START  %s vs %s  sekcji do sprawdzenia: %d",
+              label_old, label_new, len(all_keys))
+
     changes = []
     found = 0
 
@@ -305,8 +332,10 @@ def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_prog
         tresc_nowa  = sekcje_new.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
 
         on_progress(f"Sekcja {idx}/{len(all_keys)}: {sekcja}" + (f" — {found} zmian" if found else ""))
+        log.debug("_compare_pair  sekcja %d/%d: %s", idx, len(all_keys), sekcja[:80])
 
         if tresc_stara == tresc_nowa:
+            log.debug("_compare_pair  sekcja %s — identyczna, pomijam", sekcja)
             continue
 
         prompt = (
@@ -320,13 +349,19 @@ def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_prog
         try:
             resp = call_gemini(prompt)
             raw = resp.text.strip()
-            if raw != "BRAK_ZMIAN":
+            if raw == "BRAK_ZMIAN":
+                log.debug("_compare_pair  sekcja %s — BRAK_ZMIAN", sekcja)
+            else:
                 raw = raw.replace("```json", "").replace("```", "").strip()
                 obj = json.loads(raw)
                 obj["sekcja"] = sekcja
                 changes.append(obj)
                 found += 1
+                log.debug("_compare_pair  sekcja %s — zmiana: typ=%s waga=%s",
+                          sekcja, obj.get("typ_zmiany", "?"), obj.get("waga", "?"))
         except Exception as e:
+            log.warning("_compare_pair  sekcja %s — błąd analizy (%s): %s",
+                        sekcja, type(e).__name__, e)
             changes.append({
                 "sekcja": sekcja,
                 "zapis_stary": tresc_stara[:500],
@@ -339,6 +374,7 @@ def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_prog
 
         time.sleep(0.5)
 
+    log.debug("_compare_pair KONIEC  znaleziono %d zmian z %d sekcji", found, len(all_keys))
     return changes
 
 

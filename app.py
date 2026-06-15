@@ -46,15 +46,16 @@ _MYSQL_COL_TYPES = {
 }
 
 STATUS_LABELS_PL = {
-    "queued":      "W kolejce",
-    "pending":     "Oczekuje",
-    "extracting":  "Ekstrakcja tekstu",
-    "chunking":    "Analiza struktury",
-    "comparing":   "Porównywanie",
-    "summarizing": "Podsumowanie",
-    "done":        "Zakończono",
-    "error":       "Błąd analizy",
-    "cancelled":   "Anulowano",
+    "queued":            "W kolejce",
+    "pending":           "Oczekuje",
+    "extracting":        "Ekstrakcja tekstu",
+    "chunking":          "Analiza struktury",
+    "comparing":         "Porównywanie",
+    "awaiting_summary":  "Gotowe do podsumowania",
+    "summarizing":       "Podsumowanie",
+    "done":              "Zakończono",
+    "error":             "Błąd analizy",
+    "cancelled":         "Anulowano",
 }
 
 
@@ -157,7 +158,7 @@ def _cleanup_stale_jobs(timeout_minutes: float) -> int:
     """Marks in-progress jobs older than timeout_minutes as error. Requires app context."""
     from models import ComparisonJob
     cutoff = datetime.utcnow() - timedelta(minutes=timeout_minutes)
-    in_progress = ["pending", "comparing", "extracting", "chunking", "summarizing"]
+    in_progress = ["pending", "comparing", "extracting", "chunking", "awaiting_summary", "summarizing"]
 
     stale = ComparisonJob.query.filter(ComparisonJob.status.in_(in_progress)).all()
     cleaned = 0

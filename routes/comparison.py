@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 from datetime import datetime
 
 from flask import (
@@ -7,6 +8,8 @@ from flask import (
     request, send_file, url_for, flash,
 )
 from werkzeug.utils import secure_filename
+
+log = logging.getLogger(__name__)
 
 from extensions import db
 from models import AppSettings, ComparisonJob, Competition, Edition, Document
@@ -147,10 +150,18 @@ def run_pair(job_id):
         job.status_detail = f"{pair_prefix}: {stage}"
         db.session.commit()
 
+    log.debug("run_pair START  job=%d  para=%d/%d  stary=%s  nowy=%s",
+              job_id, pair_idx + 1, len(mappings),
+              doc_old.original_name, doc_new.original_name)
+
     try:
         result = compare_one_pair(doc_old, doc_new, job, settings, on_status=_on_status)
 
         per_file_results = json.loads(job.per_file_results_json or "[]")
+        # Usuń poprzedni wynik tej pary (obsługa ponowień)
+        per_file_results = [r for r in per_file_results
+                            if not (r.get("old_doc_id") == doc_old.id
+                                    and r.get("new_doc_id") == doc_new.id)]
         per_file_results.append(result)
         job.per_file_results_json = json.dumps(per_file_results, ensure_ascii=False)
 
@@ -159,8 +170,12 @@ def run_pair(job_id):
         job.progress_current = pair_idx + 1
         job.tokens_input     = (job.tokens_input  or 0) + result.get("tokens_in",  0)
         job.tokens_output    = (job.tokens_output or 0) + result.get("tokens_out", 0)
+        job.error_message    = None  # Wyczyść poprzedni błąd jeśli ponowienie się udało
         _update_cost(job)
         db.session.commit()
+
+        log.debug("run_pair OK  job=%d  para=%d  zmian=%d",
+                  job_id, pair_idx + 1, len(result.get("changes", [])))
 
         import markdown as md_lib
         summary_html = md_lib.markdown(result.get("summary", ""), extensions=["extra"]) if result.get("summary") else ""
@@ -175,26 +190,51 @@ def run_pair(job_id):
             "summary_html": summary_html,
         })
     except Exception as exc:
-        job.status       = "error"
+        log.error("run_pair BŁĄD  job=%d  para=%d  %s: %s",
+                  job_id, pair_idx + 1, type(exc).__name__, exc, exc_info=True)
+        job.status        = "error"
         job.error_message = str(exc)[:1000]
         db.session.commit()
         return jsonify({"ok": False, "pair_idx": pair_idx, "error": str(exc)}), 500
 
 
+@bp.route("/job/<int:job_id>/finish-pairs", methods=["POST"])
+def finish_pairs(job_id):
+    """Mark all pairs as processed — sets status to awaiting_summary."""
+    job = ComparisonJob.query.get_or_404(job_id)
+    if job.status in ("pending", "comparing", "error"):
+        per_file_results = json.loads(job.per_file_results_json or "[]")
+        job.status           = "awaiting_summary"
+        job.progress_current = job.progress_total or 0
+        job.status_detail    = f"Analiza par zakończona — {sum(len(r.get('changes',[])) for r in per_file_results)} zmian w {len(per_file_results)} parach"
+        db.session.commit()
+    return jsonify({"ok": True})
+
+
 @bp.route("/job/<int:job_id>/generate-summary", methods=["POST"])
 def generate_edition_summary(job_id):
     """Generate the edition-wide executive summary from completed per-file results."""
+    is_ajax = (request.is_json
+               or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+               or request.accept_mimetypes.best == "application/json")
+
     job = ComparisonJob.query.get_or_404(job_id)
     settings = db.session.get(AppSettings, 1)
 
     if not settings or not settings.gemini_api_key:
-        return jsonify({"ok": False, "error": "Brak klucza Gemini API w ustawieniach"}), 400
+        if is_ajax:
+            return jsonify({"ok": False, "error": "Brak klucza Gemini API w ustawieniach"}), 400
+        flash("Brak klucza Gemini API w ustawieniach.", "error")
+        return redirect(url_for("comparison.job_status", job_id=job_id))
 
     per_file_results = json.loads(job.per_file_results_json or "[]")
     if not per_file_results:
-        return jsonify({"ok": False, "error": "Brak wyników do podsumowania"}), 400
+        if is_ajax:
+            return jsonify({"ok": False, "error": "Brak wyników do podsumowania"}), 400
+        flash("Brak wyników par plików — uruchom najpierw analizę.", "warning")
+        return redirect(url_for("comparison.job_status", job_id=job_id))
 
-    job.status       = "summarizing"
+    job.status        = "summarizing"
     job.status_detail = "Generuję podsumowanie całej edycji..."
     db.session.commit()
 
@@ -210,18 +250,25 @@ def generate_edition_summary(job_id):
         _update_cost(job)
         db.session.commit()
 
-        import markdown as md_lib
-        summary_html = md_lib.markdown(summary_text, extensions=["extra"])
-
         _promote_next_queued()
 
-        return jsonify({"ok": True, "summary_html": summary_html})
+        if is_ajax:
+            import markdown as md_lib
+            summary_html = md_lib.markdown(summary_text, extensions=["extra"])
+            return jsonify({"ok": True, "summary_html": summary_html})
+        flash("Podsumowanie edycji wygenerowane.", "success")
+        return redirect(url_for("comparison.job_status", job_id=job_id))
     except Exception as exc:
+        log.error("generate_edition_summary BŁĄD  job=%d  %s: %s",
+                  job_id, type(exc).__name__, exc, exc_info=True)
         job.status        = "error"
         job.error_message = str(exc)[:1000]
         db.session.commit()
         _promote_next_queued()
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        if is_ajax:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+        flash(f"Błąd generowania podsumowania: {exc}", "error")
+        return redirect(url_for("comparison.job_status", job_id=job_id))
 
 
 def _update_cost(job):
@@ -372,7 +419,7 @@ def _write_changes_sheet(ws, changes, waga_colors, job):
 @bp.route("/job/<int:job_id>/cancel", methods=["POST"])
 def cancel_job(job_id):
     job = ComparisonJob.query.get_or_404(job_id)
-    cancellable = {"queued", "pending", "comparing", "extracting", "chunking", "summarizing"}
+    cancellable = {"queued", "pending", "comparing", "extracting", "chunking", "awaiting_summary", "summarizing"}
     if job.status not in cancellable:
         if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return jsonify({"ok": False, "error": f"Nie można anulować statusu '{job.status}'"}), 400

@@ -81,10 +81,10 @@
     {% endfor %}
   </div>
 
-  <!-- Edition summary placeholder -->
+  <!-- Edition summary placeholder (shown after pairs complete) -->
   <div id="edition-summary-wrap" class="hidden bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
     <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie całej edycji</h2>
-    <div id="edition-summary-body" class="prose max-w-none"></div>
+    <div id="edition-summary-body"></div>
   </div>
 
 {# ═══════════════════════════════════════════════════════════
@@ -158,7 +158,7 @@
 {% elif job.status == 'error' %}
   <div class="bg-red-50 border border-red-200 rounded-xl p-6 mb-6">
     <div class="font-semibold text-red-800 mb-1">❌ Błąd podczas analizy</div>
-    <p class="text-red-700 text-sm">{{ job.error_message or 'Nieznany błąd.' }}</p>
+    <p class="text-red-700 text-sm font-mono break-all">{{ job.error_message or 'Nieznany błąd.' }}</p>
     <div class="mt-4 flex gap-3">
       <a href="{{ url_for('comparison.setup') }}" class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90">Spróbuj ponownie</a>
       <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}">
@@ -168,7 +168,65 @@
   </div>
 
 {# ═══════════════════════════════════════════════════════════
-   DONE
+   AWAITING SUMMARY — pairs done, summary not yet generated
+   ════════════════════════════════════════════════════════════ #}
+{% elif job.status == 'awaiting_summary' %}
+
+  <div class="bg-white rounded-xl border border-lime/30 p-6 mb-5">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <div class="font-semibold text-bottle mb-1">✅ Analiza par zakończona</div>
+        <p class="text-sm text-slate-text/60">{{ job.status_detail or 'Wszystkie pary zostały przeanalizowane.' }}</p>
+      </div>
+      <form method="POST" action="{{ url_for('comparison.generate_edition_summary', job_id=job.id) }}" class="shrink-0">
+        <button type="submit"
+                class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors whitespace-nowrap">
+          ✨ Generuj podsumowanie edycji
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Per-file results -->
+  {% if per_file_results %}
+    <div class="mb-5">
+      <h2 class="font-semibold text-slate-text text-sm mb-3">Wyniki par ({{ per_file_results | length }})</h2>
+      <div class="space-y-2">
+        {% for pfr in per_file_results %}
+          {% set n_ch   = pfr.get('changes', []) | length %}
+          {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
+          <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            <button type="button" onclick="toggleAccordion('pfr-{{ loop.index0 }}')"
+                    class="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-gray-50/50 transition-colors">
+              <div class="flex items-center gap-3 min-w-0">
+                <span class="text-base shrink-0">{{ pfr.old_name | file_icon }}</span>
+                <div class="min-w-0">
+                  <div class="font-medium text-bottle text-sm truncate">{{ pfr.old_name }}</div>
+                  <div class="text-xs text-slate-text/50">→ {{ pfr.new_name }}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-2 ml-4 shrink-0">
+                {% if n_crit %}<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">{{ n_crit }} kryt.</span>{% endif %}
+                <span class="px-2 py-0.5 {% if n_ch > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_ch }} zmian</span>
+                <span class="text-slate-text/30 text-sm transition-transform duration-200" id="arrow-pfr-{{ loop.index0 }}">▼</span>
+              </div>
+            </button>
+            <div id="pfr-{{ loop.index0 }}" class="hidden border-t border-gray-50">
+              {% if pfr.get('summary_html') %}
+                <div class="px-5 py-4 bg-lime/5 border-b border-lime/20">
+                  <div class="prose max-w-none text-sm">{{ pfr.summary_html | safe }}</div>
+                </div>
+              {% endif %}
+              {{ _render_changes_table(pfr.get('changes', []), job) }}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+{# ═══════════════════════════════════════════════════════════
+   DONE (and fallback for summarizing/comparing if reloaded)
    ════════════════════════════════════════════════════════════ #}
 {% else %}
 
@@ -176,6 +234,17 @@
     <div class="bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
       <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie całej edycji</h2>
       <div class="prose max-w-none">{{ edition_summary_html | safe }}</div>
+    </div>
+  {% elif per_file_results %}
+    <div class="bg-white rounded-xl border border-lime/20 p-6 mb-5">
+      <h2 class="text-base font-bold text-bottle mb-2">📊 Podsumowanie całej edycji</h2>
+      <p class="text-sm text-slate-text/60 mb-4">Podsumowanie nie zostało jeszcze wygenerowane.</p>
+      <form method="POST" action="{{ url_for('comparison.generate_edition_summary', job_id=job.id) }}">
+        <button type="submit"
+                class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+          ✨ Generuj podsumowanie edycji
+        </button>
+      </form>
     </div>
   {% endif %}
 
@@ -401,12 +470,13 @@
 <script>
 {% if job.status == 'pending' %}
 /* ── Browser-driven sequential comparison ── */
-const JOB_ID          = {{ job.id }};
-const TOTAL_PAIRS     = {{ mappings | length }};
-const RUN_PAIR_URL    = {{ url_for('comparison.run_pair', job_id=job.id) | tojson }};
-const GEN_SUMMARY_URL = {{ url_for('comparison.generate_edition_summary', job_id=job.id) | tojson }};
-const CANCEL_URL      = {{ url_for('comparison.cancel_job', job_id=job.id) | tojson }};
-const STATUS_API_URL  = {{ url_for('comparison.job_status_api', job_id=job.id) | tojson }};
+const JOB_ID           = {{ job.id }};
+const TOTAL_PAIRS      = {{ mappings | length }};
+const RUN_PAIR_URL     = {{ url_for('comparison.run_pair',                 job_id=job.id) | tojson }};
+const GEN_SUMMARY_URL  = {{ url_for('comparison.generate_edition_summary', job_id=job.id) | tojson }};
+const FINISH_PAIRS_URL = {{ url_for('comparison.finish_pairs',             job_id=job.id) | tojson }};
+const CANCEL_URL       = {{ url_for('comparison.cancel_job',               job_id=job.id) | tojson }};
+const STATUS_API_URL   = {{ url_for('comparison.job_status_api',           job_id=job.id) | tojson }};
 
 const WAGA_BADGE = {
   KRYTYCZNA: 'bg-red-100 text-red-700',
@@ -421,12 +491,13 @@ const WAGA_ROW = {
   NISKA:     'bg-green-50',
 };
 
-let cancelled        = false;
-let totalTimerIval   = null;
-let pairTimerIval    = null;
-let pairPollIval     = null;
-let totalStart       = null;
-let pairStart        = null;
+let cancelled      = false;
+let totalTimerIval = null;
+let pairTimerIval  = null;
+let pairPollIval   = null;
+let totalStart     = null;
+let pairStart      = null;
+const failedPairs  = new Set();
 
 function fmtSecs(s) {
   const m = Math.floor(s / 60), sec = s % 60;
@@ -492,6 +563,7 @@ function setProgress(done, total, label, fileHint) {
 function setPairState(idx, state) {
   const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
+  const body  = document.getElementById(`pair-body-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);
   if (state === 'running') {
     icon.textContent = '⏳';
@@ -499,6 +571,7 @@ function setPairState(idx, state) {
     badge.innerHTML = `<span class="text-xs text-slate-text/40 animate-pulse">analizuję...</span>`
       + `<span id="pair-stage-${idx}" class="ml-2 text-xs text-slate-text/40 italic truncate max-w-[220px]"></span>`
       + `<span id="pair-timer-${idx}" class="ml-2 text-xs font-mono text-slate-text/30 tabular-nums">0:00</span>`;
+    if (body) body.classList.add('hidden');
     card.classList.add('border-lime/40');
     startPairTimer(idx);
     startPairPoll(idx);
@@ -523,10 +596,10 @@ function setPairDone(idx, data) {
   icon.className = 'text-lg shrink-0';
   card.classList.remove('border-lime/40');
 
-  const critBadge  = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
-  const cntColor   = n > 0 ? 'bg-bottle/10 text-bottle' : 'bg-gray-100 text-gray-400';
-  const timeBadge  = elapsed > 0 ? `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-mono ml-1">${fmtSecs(elapsed)}</span>` : '';
-  badge.innerHTML  = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}`
+  const critBadge = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
+  const cntColor  = n > 0 ? 'bg-bottle/10 text-bottle' : 'bg-gray-100 text-gray-400';
+  const timeBadge = elapsed > 0 ? `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-mono ml-1">${fmtSecs(elapsed)}</span>` : '';
+  badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}`
     + `<button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
 
   let html = '';
@@ -546,12 +619,19 @@ function setPairError(idx, msg) {
   stopPairPoll();
   const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
+  const body  = document.getElementById(`pair-body-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);
+  const esc   = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
   icon.textContent = '❌';
   icon.className = 'text-lg shrink-0';
   card.classList.remove('border-lime/40');
-  badge.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">Błąd</span>`;
+  badge.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">Błąd</span>`
+    + `<button onclick="retryPair(${idx})" class="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Ponów</button>`;
+  body.innerHTML = `<div class="px-5 py-3 bg-red-50 border-t border-red-100">
+    <p class="text-xs font-mono text-red-700 break-all">${esc(msg)}</p>
+  </div>`;
+  body.classList.remove('hidden');
 }
 
 function togglePairBody(idx) {
@@ -605,41 +685,103 @@ async function cancelComparison() {
   setTimeout(() => window.location.reload(), 1000);
 }
 
+async function runOnePair(idx) {
+  setPairState(idx, 'running');
+  failedPairs.delete(idx);
+  setProgress(idx, TOTAL_PAIRS, `⏳ Para ${idx + 1} z ${TOTAL_PAIRS}...`);
+
+  try {
+    const resp = await fetch(RUN_PAIR_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pair_idx: idx}),
+    });
+    let data = null;
+    try { data = JSON.parse(await resp.text()); } catch(_) {}
+
+    if (data?.cancelled) {
+      stopPairTimer();
+      stopTotalTimer();
+      document.getElementById('progress-label').textContent = '⛔ Porównanie anulowane';
+      setTimeout(() => window.location.reload(), 1500);
+      return {cancelled: true};
+    }
+
+    if (!resp.ok || !data?.ok) {
+      const msg = data?.error || `HTTP ${resp.status}`;
+      setPairError(idx, msg);
+      failedPairs.add(idx);
+      return {error: true};
+    }
+    setPairDone(idx, data);
+    return {ok: true};
+  } catch (e) {
+    setPairError(idx, e.message);
+    failedPairs.add(idx);
+    return {error: true};
+  }
+}
+
+async function retryPair(idx) {
+  if (cancelled) return;
+  await runOnePair(idx);
+}
+
+async function generateSummary() {
+  const btn  = document.getElementById('gen-summary-btn');
+  const body = document.getElementById('edition-summary-body');
+  const esc  = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generuję...'; }
+
+  try {
+    const resp = await fetch(GEN_SUMMARY_URL, {
+      method: 'POST',
+      headers: {'X-Requested-With': 'XMLHttpRequest'},
+    });
+    let data = null;
+    try { data = JSON.parse(await resp.text()); } catch(_) {}
+
+    if (data?.ok && data.summary_html) {
+      body.innerHTML = data.summary_html;
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      const errMsg = data?.error || `HTTP ${resp.status}`;
+      body.innerHTML = `<p class="text-red-600 text-sm mb-3">Błąd: ${esc(errMsg)}</p>
+        <button onclick="generateSummary()" id="gen-summary-btn"
+                class="px-6 py-2.5 bg-bottle text-white rounded-lg font-medium text-sm hover:bg-bottle/90">
+          ↺ Spróbuj ponownie
+        </button>`;
+    }
+  } catch (e) {
+    body.innerHTML = `<p class="text-red-600 text-sm mb-3">Błąd połączenia: ${(e.message||'').replace(/</g,'&lt;')}</p>
+      <button onclick="generateSummary()" id="gen-summary-btn"
+              class="px-6 py-2.5 bg-bottle text-white rounded-lg font-medium text-sm hover:bg-bottle/90">
+        ↺ Spróbuj ponownie
+      </button>`;
+  }
+}
+
+function showSummaryButton() {
+  const wrap = document.getElementById('edition-summary-wrap');
+  const body = document.getElementById('edition-summary-body');
+  wrap.classList.remove('hidden');
+  const hint = failedPairs.size > 0
+    ? `<p class="text-sm text-amber-700 mb-4">⚠️ ${failedPairs.size} par nie udało się przeanalizować — możesz je ponowić przyciskiem ↺ Ponów przed wygenerowaniem podsumowania.</p>`
+    : `<p class="text-sm text-slate-text/60 mb-4">Wszystkie pary przeanalizowane. Wygeneruj podsumowanie całej edycji.</p>`;
+  body.innerHTML = hint
+    + `<button onclick="generateSummary()" id="gen-summary-btn"
+              class="px-6 py-2.5 bg-bottle text-white rounded-lg font-medium text-sm hover:bg-bottle/90 transition-colors">
+        ✨ Generuj podsumowanie edycji
+       </button>`;
+}
+
 async function runComparison() {
   startTotalTimer();
 
   for (let i = 0; i < TOTAL_PAIRS; i++) {
     if (cancelled) break;
-
-    setProgress(i, TOTAL_PAIRS, `⏳ Para ${i + 1} z ${TOTAL_PAIRS}...`);
-    setPairState(i, 'running');
-
-    try {
-      const resp = await fetch(RUN_PAIR_URL, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({pair_idx: i}),
-      });
-      let data, raw = '';
-      try { raw = await resp.text(); data = JSON.parse(raw); } catch(_) { data = null; }
-
-      if (data?.cancelled) {
-        stopPairTimer();
-        stopTotalTimer();
-        document.getElementById('progress-label').textContent = '⛔ Porównanie anulowane';
-        setTimeout(() => window.location.reload(), 1500);
-        return;
-      }
-
-      if (!resp.ok || !data?.ok) {
-        setPairError(i, data?.error || `HTTP ${resp.status}`);
-      } else {
-        setPairDone(i, data);
-      }
-    } catch (e) {
-      setPairError(i, e.message);
-    }
-
+    const result = await runOnePair(i);
+    if (result?.cancelled) return;
     if (cancelled) break;
   }
 
@@ -649,24 +791,19 @@ async function runComparison() {
     return;
   }
 
-  // Edition summary
-  setProgress(TOTAL_PAIRS, TOTAL_PAIRS, '✨ Generuję podsumowanie edycji...');
-  try {
-    const resp = await fetch(GEN_SUMMARY_URL, {method: 'POST'});
-    const data = await resp.json();
-    if (data?.ok && data.summary_html) {
-      const wrap = document.getElementById('edition-summary-wrap');
-      const body = document.getElementById('edition-summary-body');
-      body.innerHTML = data.summary_html;
-      wrap.classList.remove('hidden');
-    }
-  } catch (e) {
-    console.warn('Edition summary failed:', e);
-  }
-
   stopTotalTimer();
-  setProgress(TOTAL_PAIRS, TOTAL_PAIRS, '✅ Porównanie zakończone!');
-  setTimeout(() => window.location.reload(), 1500);
+  const errCount = failedPairs.size;
+  setProgress(TOTAL_PAIRS, TOTAL_PAIRS,
+    errCount > 0 ? `⚠️ Ukończono (${errCount} błędów)` : '✅ Analiza par zakończona');
+
+  // Ukryj przycisk anulowania
+  const cancelBtn = document.getElementById('cancel-btn');
+  if (cancelBtn) cancelBtn.classList.add('hidden');
+
+  // Oznacz job jako gotowy do podsumowania (aktualizuje status na liście)
+  try { await fetch(FINISH_PAIRS_URL, {method: 'POST'}); } catch(_) {}
+
+  showSummaryButton();
 }
 
 window.addEventListener('DOMContentLoaded', runComparison);
@@ -691,7 +828,7 @@ window.addEventListener('DOMContentLoaded', () => setTimeout(pollQueued, 3000));
 
 {% else %}
 
-/* ── Done/error/cancelled state helpers ── */
+/* ── Done/error/cancelled/awaiting_summary state helpers ── */
 function toggleAccordion(id) {
   const el    = document.getElementById(id);
   const arrow = document.getElementById('arrow-' + id);
