@@ -1,7 +1,5 @@
-from datetime import date
 from extensions import db
-from models import Competition, Edition, DocumentType, AppSettings
-from utils import slugify
+from models import AppSettings
 
 DEFAULT_PROMPT = """Jesteś ekspertem w analizie dokumentacji konkursów grantowych i programów dofinansowania w Polsce (FENG, PARP, NCBR, NCN i inne).
 
@@ -24,76 +22,11 @@ Formatuj odpowiedź w Markdown. Bądź konkretny i precyzyjny — to narzędzie 
 
 
 def run_seed():
-    if Competition.query.count() > 0:
-        return
-
-    # Seed AppSettings
     if AppSettings.query.count() == 0:
-        settings = AppSettings(
+        db.session.add(AppSettings(
             id=1,
             gemini_api_key="",
             gemini_model="gemini-2.5-flash",
             gemini_summary_prompt=DEFAULT_PROMPT,
-        )
-        db.session.add(settings)
-
-    # Competition 1
-    c1 = Competition(
-        name="FENG 2.1 – Badania przemysłowe i prace rozwojowe",
-        slug=slugify("FENG 2.1 – Badania przemysłowe i prace rozwojowe"),
-        program="FENG",
-    )
-    db.session.add(c1)
-    db.session.flush()
-
-    e1 = Edition(
-        competition_id=c1.id,
-        name="Nabór I/2025",
-        slug=slugify("Nabor I 2025"),
-        year=2025,
-        status="aktywna",
-        deadline=date(2025, 9, 30),
-    )
-    db.session.add(e1)
-    db.session.flush()
-
-    for i, name in enumerate(["Regulamin konkursu", "Kryteria oceny", "Wzory dokumentów", "FAQ"]):
-        db.session.add(DocumentType(edition_id=e1.id, name=name, slug=slugify(name), order_index=i))
-
-    e2 = Edition(
-        competition_id=c1.id,
-        name="Nabór II/2024",
-        slug=slugify("Nabor II 2024"),
-        year=2024,
-        status="archiwalna",
-    )
-    db.session.add(e2)
-    db.session.flush()
-
-    for i, name in enumerate(["Regulamin konkursu", "Kryteria oceny"]):
-        db.session.add(DocumentType(edition_id=e2.id, name=name, slug=slugify(name), order_index=i))
-
-    # Competition 2
-    c2 = Competition(
-        name="PARP – Ścieżka SMART",
-        slug=slugify("PARP – Ścieżka SMART"),
-        program="PARP",
-    )
-    db.session.add(c2)
-    db.session.flush()
-
-    e3 = Edition(
-        competition_id=c2.id,
-        name="Runda 4/2025",
-        slug=slugify("Runda 4 2025"),
-        year=2025,
-        status="planowana",
-        deadline=date(2025, 12, 1),
-    )
-    db.session.add(e3)
-    db.session.flush()
-
-    for i, name in enumerate(["Regulamin", "Instrukcja wypełniania wniosku", "Załączniki"]):
-        db.session.add(DocumentType(edition_id=e3.id, name=name, slug=slugify(name), order_index=i))
-
-    db.session.commit()
+        ))
+        db.session.commit()
