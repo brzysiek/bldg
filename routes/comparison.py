@@ -192,9 +192,16 @@ def run_pair(job_id):
     except Exception as exc:
         log.error("run_pair BŁĄD  job=%d  para=%d  %s: %s",
                   job_id, pair_idx + 1, type(exc).__name__, exc, exc_info=True)
-        job.status        = "error"
-        job.error_message = str(exc)[:1000]
-        db.session.commit()
+        try:
+            job.status        = "error"
+            job.error_message = str(exc)[:1000]
+            db.session.commit()
+        except Exception as db_err:
+            log.error("run_pair DB commit nieudany: %s", db_err)
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
         return jsonify({"ok": False, "pair_idx": pair_idx, "error": str(exc)}), 500
 
 

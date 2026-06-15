@@ -266,6 +266,19 @@ def create_app():
     def not_found(e):
         return render_template("404.html"), 404
 
+    @app.errorhandler(500)
+    def internal_error(e):
+        _logging.getLogger(__name__).error(
+            "Nieobsłużony błąd 500  path=%s  %s",
+            _req.path, e, exc_info=True,
+        )
+        if (_req.is_json
+                or _req.headers.get("X-Requested-With") == "XMLHttpRequest"
+                or "application/json" in _req.headers.get("Accept", "")):
+            from flask import jsonify as _jsonify
+            return _jsonify({"ok": False, "error": str(e)}), 500
+        return render_template("404.html"), 500  # fallback — brak osobnego szablonu 500
+
     app.jinja_env.globals["BUILD"] = BUILD
 
     @app.template_filter("status_pl")
