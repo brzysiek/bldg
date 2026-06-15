@@ -537,7 +537,15 @@ def job_status(job_id):
     if job.edition_summary:
         edition_summary_html = md_lib.markdown(job.edition_summary, extensions=["extra"])
 
-    mappings = json.loads(job.file_mappings_json or "[]") if job.status in ("pending", "queued") else []
+    all_mappings = json.loads(job.file_mappings_json or "[]")
+    done_pair_ids = {(r["old_doc_id"], r["new_doc_id"]) for r in per_file_results}
+    pending_pairs = [
+        {"idx": i, "old_name": m.get("old_name", ""), "new_name": m.get("new_name", "")}
+        for i, m in enumerate(all_mappings)
+        if (m["old_doc_id"], m["new_doc_id"]) not in done_pair_ids
+    ]
+    used_old_ids = [m["old_doc_id"] for m in all_mappings]
+    used_new_ids = [m["new_doc_id"] for m in all_mappings]
 
     return render_template(
         "comparison/result.html",
@@ -545,7 +553,9 @@ def job_status(job_id):
         changes=all_changes,
         per_file_results=per_file_results,
         edition_summary_html=edition_summary_html,
-        mappings=mappings,
+        pending_pairs=pending_pairs,
+        used_old_ids=used_old_ids,
+        used_new_ids=used_new_ids,
     )
 
 
@@ -562,6 +572,56 @@ def job_status_api(job_id):
 
 
 # ── Skip pair ─────────────────────────────────────────────────────────────
+
+@bp.route("/job/<int:job_id>/add-pair", methods=["POST"])
+def add_pair(job_id):
+    """Append a new file pair to an existing comparison job."""
+    job = ComparisonJob.query.get_or_404(job_id)
+
+    if job.status in ("cancelled", "queued"):
+        return jsonify({"ok": False, "error": "Nie można dodać pary do anulowanego lub oczekującego zadania"}), 400
+
+    data = request.get_json() or {}
+    old_doc_id = data.get("old_doc_id")
+    new_doc_id = data.get("new_doc_id")
+
+    if not old_doc_id or not new_doc_id:
+        return jsonify({"ok": False, "error": "Brak identyfikatorów dokumentów"}), 400
+
+    doc_old = db.session.get(Document, old_doc_id)
+    doc_new = db.session.get(Document, new_doc_id)
+
+    if not doc_old or not doc_new:
+        return jsonify({"ok": False, "error": "Dokument nie istnieje"}), 404
+
+    mappings = json.loads(job.file_mappings_json or "[]")
+
+    for m in mappings:
+        if m.get("old_doc_id") == old_doc_id and m.get("new_doc_id") == new_doc_id:
+            return jsonify({"ok": False, "error": "Ta para jest już w porównaniu"}), 400
+
+    new_idx = len(mappings)
+    mappings.append({
+        "old_doc_id": old_doc_id,
+        "new_doc_id": new_doc_id,
+        "old_name":   doc_old.original_name,
+        "new_name":   doc_new.original_name,
+    })
+
+    job.file_mappings_json = json.dumps(mappings, ensure_ascii=False)
+    job.progress_total     = (job.progress_total or 0) + 1
+    db.session.commit()
+
+    log.debug("add_pair OK  job=%d  pair_idx=%d  stary=%s  nowy=%s",
+              job_id, new_idx, doc_old.original_name, doc_new.original_name)
+
+    return jsonify({
+        "ok":       True,
+        "pair_idx": new_idx,
+        "old_name": doc_old.original_name,
+        "new_name": doc_new.original_name,
+    })
+
 
 @bp.route("/job/<int:job_id>/skip-pair", methods=["POST"])
 def skip_pair(job_id):

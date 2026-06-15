@@ -19,87 +19,23 @@
       {% if job.gemini_model_used %}<span class="px-2 py-0.5 bg-bottle/10 text-bottle text-xs rounded-full font-medium">{{ job.gemini_model_used }}</span>{% endif %}
     </div>
   </div>
-  {% if per_file_results or job.status == 'done' %}
-    <div class="flex items-center gap-2 ml-4 shrink-0">
-      {% if per_file_results %}
-        <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-           class="flex items-center gap-2 px-4 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors">
-          ⬇️ Excel
-        </a>
-      {% endif %}
-      <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
-            onsubmit="return confirm('Usunąć porównanie?')">
-        <button type="submit" class="px-3 py-2 border border-red-200 text-red-500 rounded-lg text-sm hover:bg-red-50 transition-colors">🗑</button>
-      </form>
-    </div>
-  {% endif %}
+  <div class="flex items-center gap-2 ml-4 shrink-0">
+    {% if per_file_results %}
+      <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
+         class="flex items-center gap-2 px-4 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors">
+        ⬇️ Excel
+      </a>
+    {% endif %}
+    <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
+          onsubmit="return confirm('Usunąć porównanie i wszystkie wyniki?')">
+      <button type="submit" class="px-3 py-2 border border-red-200 text-red-500 rounded-lg text-sm hover:bg-red-50 transition-colors">🗑</button>
+    </form>
+  </div>
 </div>
 
-{# ═══════════════════════════════════════════════════════════
-   PENDING — browser-driven sequential comparison
-   ════════════════════════════════════════════════════════════ #}
-{% if job.status == 'pending' %}
-
-  <!-- Progress panel -->
-  <div id="progress-panel" class="bg-white rounded-xl border border-gray-100 p-5 mb-5">
-    <div class="flex items-center justify-between mb-3">
-      <div class="flex items-center gap-3">
-        <div class="flex gap-0.5 shrink-0">
-          <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0s"></div>
-          <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0.15s"></div>
-          <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0.3s"></div>
-        </div>
-        <span id="progress-label" class="text-sm font-semibold text-bottle">Przygotowuję porównanie...</span>
-      </div>
-      <div class="flex items-center gap-3 shrink-0">
-        <span id="total-timer" class="text-xs font-mono text-slate-text/40 tabular-nums">0:00</span>
-        <span id="progress-fraction" class="text-xs text-slate-text/40"></span>
-        <button id="cancel-btn" onclick="cancelComparison()"
-                class="px-3 py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 transition-colors">
-          Anuluj
-        </button>
-      </div>
-    </div>
-    <div class="w-full bg-gray-100 rounded-full h-2 mb-2">
-      <div id="progress-bar" class="bg-lime h-2 rounded-full transition-all duration-500" style="width:0%"></div>
-    </div>
-    <p id="progress-file" class="text-xs text-slate-text/40 truncate"></p>
-  </div>
-
-  <!-- Live pair list -->
-  <div id="pairs-list" class="space-y-2 mb-5">
-    {% for m in mappings %}
-      <div id="pair-{{ loop.index0 }}" class="bg-white rounded-xl border border-gray-100 overflow-hidden transition-colors duration-300">
-        <div class="flex items-center gap-3 px-5 py-3.5">
-          <div id="pair-icon-{{ loop.index0 }}" class="text-lg shrink-0 text-gray-300">○</div>
-          <div class="min-w-0 flex-1">
-            <div class="font-medium text-slate-text text-sm truncate">{{ m.old_name }}</div>
-            <div class="text-xs text-slate-text/40">→ {{ m.new_name }}</div>
-          </div>
-          <div id="pair-badge-{{ loop.index0 }}" class="shrink-0 flex items-center gap-1">
-            <button onclick="skipPair({{ loop.index0 }})"
-                    class="px-2 py-0.5 text-xs text-slate-text/35 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors">
-              ⏭ Pomiń
-            </button>
-          </div>
-        </div>
-        <div id="pair-body-{{ loop.index0 }}" class="hidden border-t border-gray-50"></div>
-      </div>
-    {% endfor %}
-  </div>
-
-  <!-- Edition summary placeholder (shown after pairs complete) -->
-  <div id="edition-summary-wrap" class="hidden bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
-    <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie całej edycji</h2>
-    <div id="edition-summary-body"></div>
-  </div>
-
-{# ═══════════════════════════════════════════════════════════
-   QUEUED — waiting for active comparison to finish
-   ════════════════════════════════════════════════════════════ #}
-{% elif job.status == 'queued' %}
-
-  <div class="bg-white rounded-xl border border-yellow-100 p-5 mb-5">
+{# ── Status notices ─────────────────────────────────────────────────────── #}
+{% if job.status == 'queued' %}
+  <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-5 mb-5">
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
         <div class="flex gap-0.5 shrink-0">
@@ -121,86 +57,90 @@
       </form>
     </div>
   </div>
+{% endif %}
 
-  <!-- File pairs preview -->
-  <div class="space-y-2 mb-5">
-    {% for m in mappings %}
-      <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
-        <div class="flex items-center gap-3 px-5 py-3.5">
-          <div class="text-lg shrink-0 text-gray-300">○</div>
-          <div class="min-w-0 flex-1">
-            <div class="font-medium text-slate-text text-sm truncate">{{ m.old_name }}</div>
-            <div class="text-xs text-slate-text/40">→ {{ m.new_name }}</div>
-          </div>
-        </div>
-      </div>
-    {% endfor %}
-  </div>
-
-{# ═══════════════════════════════════════════════════════════
-   CANCELLED
-   ════════════════════════════════════════════════════════════ #}
-{% elif job.status == 'cancelled' %}
-
-  <div class="bg-gray-50 border border-gray-200 rounded-xl p-6 mb-6">
-    <div class="font-semibold text-gray-700 mb-1">⛔ Porównanie anulowane</div>
-    <p class="text-gray-600 text-sm">To porównanie zostało anulowane i nie zostanie ukończone.</p>
-    <div class="mt-4 flex gap-3">
-      <a href="{{ url_for('comparison.setup') }}"
-         class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90">
-        Nowe porównanie
-      </a>
-      <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}">
-        <button type="submit"
-                class="px-4 py-2 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50">
-          Usuń
-        </button>
-      </form>
-    </div>
-  </div>
-
-{# ═══════════════════════════════════════════════════════════
-   ERROR
-   ════════════════════════════════════════════════════════════ #}
-{% elif job.status == 'error' %}
-  <div class="bg-red-50 border border-red-200 rounded-xl p-6 mb-6">
+{% if job.status == 'error' %}
+  <div class="bg-red-50 border border-red-200 rounded-xl p-5 mb-5">
     <div class="font-semibold text-red-800 mb-1">❌ Błąd podczas analizy</div>
-    <p class="text-red-700 text-sm font-mono break-all">{{ job.error_message or 'Nieznany błąd.' }}</p>
-    <div class="mt-4 flex gap-3">
-      <a href="{{ url_for('comparison.setup') }}" class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90">Spróbuj ponownie</a>
-      <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}">
-        <button type="submit" class="px-4 py-2 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50">Usuń</button>
-      </form>
-    </div>
+    <p class="text-red-700 text-sm font-mono break-all mb-3">{{ job.error_message or 'Nieznany błąd.' }}</p>
+    <a href="{{ url_for('comparison.setup') }}" class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90">Nowe porównanie</a>
   </div>
+{% endif %}
 
-{# ═══════════════════════════════════════════════════════════
-   AWAITING SUMMARY — pairs done, summary not yet generated
-   ════════════════════════════════════════════════════════════ #}
-{% elif job.status == 'awaiting_summary' %}
+{% if job.status == 'cancelled' %}
+  <div class="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-5">
+    <div class="font-semibold text-gray-700 mb-1">⛔ Porównanie anulowane</div>
+    <p class="text-gray-600 text-sm mb-3">To porównanie zostało anulowane.</p>
+    <a href="{{ url_for('comparison.setup') }}" class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90">Nowe porównanie</a>
+  </div>
+{% endif %}
 
-  <div class="bg-white rounded-xl border border-lime/30 p-6 mb-5">
-    <div class="flex items-start justify-between gap-4">
-      <div>
-        <div class="font-semibold text-bottle mb-1">✅ Analiza par zakończona</div>
-        <p class="text-sm text-slate-text/60">{{ job.status_detail or 'Wszystkie pary zostały przeanalizowane.' }}</p>
+{# ── Progress panel (hidden by default, JS shows it when processing) ─────── #}
+<div id="progress-panel" class="hidden bg-white rounded-xl border border-gray-100 p-5 mb-5">
+  <div class="flex items-center justify-between mb-3">
+    <div class="flex items-center gap-3">
+      <div class="flex gap-0.5 shrink-0">
+        <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0s"></div>
+        <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0.15s"></div>
+        <div class="w-1.5 h-1.5 rounded-full bg-lime animate-bounce" style="animation-delay:0.3s"></div>
       </div>
-      <form method="POST" action="{{ url_for('comparison.generate_edition_summary', job_id=job.id) }}" class="shrink-0">
-        <button type="submit"
-                class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors whitespace-nowrap">
-          ✨ Generuj podsumowanie edycji
-        </button>
-      </form>
+      <span id="progress-label" class="text-sm font-semibold text-bottle">Przygotowuję porównanie...</span>
+    </div>
+    <div class="flex items-center gap-3 shrink-0">
+      <span id="total-timer" class="text-xs font-mono text-slate-text/40 tabular-nums">0:00</span>
+      <span id="progress-fraction" class="text-xs text-slate-text/40"></span>
+      <button id="cancel-btn" onclick="cancelComparison()"
+              class="px-3 py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 transition-colors">
+        Anuluj
+      </button>
     </div>
   </div>
+  <div class="w-full bg-gray-100 rounded-full h-2">
+    <div id="progress-bar" class="bg-lime h-2 rounded-full transition-all duration-500" style="width:0%"></div>
+  </div>
+</div>
 
-  <!-- Per-file results -->
-  {% if per_file_results %}
-    <div class="mb-5">
-      <h2 class="font-semibold text-slate-text text-sm mb-3">Wyniki par ({{ per_file_results | length }})</h2>
-      <div class="space-y-2">
-        {% for pfr in per_file_results %}
-          {% if not pfr.get('skipped') %}
+{# ── Add pair form (shown when job has editions and is not cancelled/queued) #}
+{% if job.edition_old_id and job.edition_new_id and job.status not in ('cancelled', 'queued') %}
+  <div id="add-pair-panel" class="bg-white rounded-xl border border-gray-100 p-5 mb-5">
+    <h2 class="text-sm font-semibold text-bottle mb-3">➕ Dodaj parę plików do porównania</h2>
+    <div class="flex flex-wrap items-end gap-3">
+      <div class="flex-1 min-w-[200px]">
+        <label class="block text-xs text-slate-text/50 mb-1">Plik ze starszej edycji ({{ job.label_old }})</label>
+        <select id="add-pair-old"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20">
+          <option value="">— ładowanie plików... —</option>
+        </select>
+      </div>
+      <div class="flex-1 min-w-[200px]">
+        <label class="block text-xs text-slate-text/50 mb-1">Plik z nowszej edycji ({{ job.label_new }})</label>
+        <select id="add-pair-new"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20">
+          <option value="">— ładowanie plików... —</option>
+        </select>
+      </div>
+      <button id="add-pair-btn" onclick="addAndRunPair()"
+              class="px-5 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors whitespace-nowrap">
+        Dodaj i porównaj
+      </button>
+    </div>
+    <p id="add-pair-msg" class="mt-2 text-xs text-slate-text/40 hidden"></p>
+  </div>
+{% endif %}
+
+{# ── Live pair cards (JS-managed, initially hidden) ─────────────────────── #}
+<div id="live-pairs" class="space-y-2 mb-5 hidden"></div>
+
+{# ── Completed pairs accordion (server-rendered) ─────────────────────────── #}
+{% if per_file_results %}
+  <div class="mb-5">
+    <h2 class="font-semibold text-slate-text text-sm mb-3">Przeanalizowane pary
+      ({{ per_file_results | rejectattr('skipped') | list | length }}
+       {%- if per_file_results | selectattr('skipped') | list %}, {{ per_file_results | selectattr('skipped') | list | length }} pominięto{% endif %})
+    </h2>
+    <div class="space-y-2">
+      {% for pfr in per_file_results %}
+        {% if not pfr.get('skipped') %}
           {% set n_ch   = pfr.get('changes', []) | length %}
           {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
           <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -219,7 +159,7 @@
                 <a href="{{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=loop.index0) }}"
                    class="px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors"
                    title="Pobierz Excel dla tej pary">⬇️</a>
-                <span class="text-slate-text/30 text-sm transition-transform duration-200 cursor-pointer"
+                <span class="text-slate-text/30 text-sm transition-transform duration-200"
                       id="arrow-pfr-{{ loop.index0 }}"
                       onclick="toggleAccordion('pfr-{{ loop.index0 }}'); event.stopPropagation()">▼</span>
               </div>
@@ -233,36 +173,37 @@
               {{ _render_changes_table(pfr.get('changes', []), job) }}
             </div>
           </div>
-          {% endif %}
-        {% endfor %}
-      </div>
+        {% endif %}
+      {% endfor %}
     </div>
-  {% endif %}
+  </div>
+{% endif %}
 
-{# ═══════════════════════════════════════════════════════════
-   DONE (and fallback for summarizing/comparing if reloaded)
-   ════════════════════════════════════════════════════════════ #}
-{% else %}
+{# ── Edition summary panel ────────────────────────────────────────────────── #}
+{% if per_file_results or pending_pairs %}
+  <div id="edition-summary-section" class="bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
+    <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie całej edycji</h2>
+    {% if edition_summary_html %}
+      <div class="prose max-w-none" id="edition-summary-html-div">{{ edition_summary_html | safe }}</div>
+      <button onclick="generateSummary()" id="gen-summary-btn"
+              class="mt-5 px-4 py-2 border border-bottle/30 text-bottle rounded-lg text-sm hover:bg-bottle/5 transition-colors">
+        ↺ Zaktualizuj podsumowanie
+      </button>
+      <div id="gen-summary-result" class="mt-3"></div>
+    {% else %}
+      <div id="edition-summary-html-div"></div>
+      <p class="text-sm text-slate-text/60 mb-4" id="edition-summary-placeholder">Podsumowanie nie zostało jeszcze wygenerowane.</p>
+      <button onclick="generateSummary()" id="gen-summary-btn"
+              class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+        ✨ Generuj podsumowanie edycji
+      </button>
+      <div id="gen-summary-result" class="mt-3"></div>
+    {% endif %}
+  </div>
+{% endif %}
 
-  {% if edition_summary_html %}
-    <div class="bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
-      <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie całej edycji</h2>
-      <div class="prose max-w-none">{{ edition_summary_html | safe }}</div>
-    </div>
-  {% elif per_file_results %}
-    <div class="bg-white rounded-xl border border-lime/20 p-6 mb-5">
-      <h2 class="text-base font-bold text-bottle mb-2">📊 Podsumowanie całej edycji</h2>
-      <p class="text-sm text-slate-text/60 mb-4">Podsumowanie nie zostało jeszcze wygenerowane.</p>
-      <form method="POST" action="{{ url_for('comparison.generate_edition_summary', job_id=job.id) }}">
-        <button type="submit"
-                class="px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-          ✨ Generuj podsumowanie edycji
-        </button>
-      </form>
-    </div>
-  {% endif %}
-
-  <!-- Stats -->
+{# ── Stats and global changes ─────────────────────────────────────────────── #}
+{% if changes %}
   {% set krytyczne = changes | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
   {% set wysokie   = changes | selectattr('waga', 'equalto', 'WYSOKA')    | list | length %}
   {% set srednie   = changes | selectattr('waga', 'equalto', 'SREDNIA')   | list | length %}
@@ -287,63 +228,17 @@
     </div>
   </div>
 
-  <!-- Per-file accordion -->
-  {% if per_file_results %}
-    <div class="mb-5">
-      <h2 class="font-semibold text-slate-text text-sm mb-3">Wyniki per dokument ({{ per_file_results | length }} par)</h2>
-      <div class="space-y-2">
-        {% for pfr in per_file_results %}
-          {% if pfr.get('skipped') %}{% continue %}{% endif %}
-          {% set n_ch = pfr.get('changes', []) | length %}
-          {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
-          <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            <div class="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-gray-50/50 transition-colors"
-                 onclick="toggleAccordion('pfr-{{ loop.index0 }}')">
-              <div class="flex items-center gap-3 min-w-0">
-                <span class="text-base shrink-0">{{ pfr.old_name | file_icon }}</span>
-                <div class="min-w-0">
-                  <div class="font-medium text-bottle text-sm truncate">{{ pfr.old_name }}</div>
-                  <div class="text-xs text-slate-text/50">→ {{ pfr.new_name }}</div>
-                </div>
-              </div>
-              <div class="flex items-center gap-2 ml-4 shrink-0" onclick="event.stopPropagation()">
-                {% if n_crit %}<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">{{ n_crit }} kryt.</span>{% endif %}
-                <span class="px-2 py-0.5 {% if n_ch > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_ch }} zmian</span>
-                <a href="{{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=loop.index0) }}"
-                   class="px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors"
-                   title="Pobierz Excel dla tej pary">⬇️</a>
-                <span class="text-slate-text/30 text-sm transition-transform duration-200 cursor-pointer"
-                      id="arrow-pfr-{{ loop.index0 }}"
-                      onclick="toggleAccordion('pfr-{{ loop.index0 }}'); event.stopPropagation()">▼</span>
-              </div>
-            </div>
-            <div id="pfr-{{ loop.index0 }}" class="hidden border-t border-gray-50">
-              {% if pfr.get('summary_html') %}
-                <div class="px-5 py-4 bg-lime/5 border-b border-lime/20">
-                  <div class="prose max-w-none text-sm">{{ pfr.summary_html | safe }}</div>
-                </div>
-              {% endif %}
-              {{ _render_changes_table(pfr.get('changes', []), job) }}
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    </div>
-  {% endif %}
+  {{ _render_global_table(changes, job) }}
 
-  <!-- Global changes table -->
-  {% if changes %}
-    {{ _render_global_table(changes, job) }}
-  {% else %}
-    <div class="bg-green-50 border border-green-200 rounded-xl p-8 text-center mb-5">
-      <div class="text-4xl mb-3">✅</div>
-      <h3 class="font-semibold text-green-800 mb-1">Brak istotnych różnic</h3>
-      <p class="text-green-700 text-sm">Dokumenty są identyczne lub różnice mają charakter wyłącznie redakcyjny.</p>
-    </div>
-  {% endif %}
+{% elif per_file_results %}
+  <div class="bg-green-50 border border-green-200 rounded-xl p-8 text-center mb-5">
+    <div class="text-4xl mb-3">✅</div>
+    <h3 class="font-semibold text-green-800 mb-1">Brak istotnych różnic</h3>
+    <p class="text-green-700 text-sm">Dokumenty są identyczne lub różnice mają charakter wyłącznie redakcyjny.</p>
+  </div>
 {% endif %}
 
-<!-- API usage summary -->
+{# ── API usage summary ────────────────────────────────────────────────────── #}
 {% if job.started_at or job.tokens_input %}
   <div class="mt-4 bg-white rounded-xl border border-gray-100 p-5">
     <h3 class="text-sm font-semibold text-bottle mb-3 flex items-center gap-2">
@@ -387,7 +282,7 @@
   <a href="{{ url_for('comparison.index') }}" class="text-sm text-bottle hover:underline">← Wróć do listy porównań</a>
 </div>
 
-{# ─── Jinja2 macros for the change tables ─────────────────────────────────── #}
+{# ─── Macros ─────────────────────────────────────────────────────────────── #}
 {% macro _render_changes_table(changes, job) %}
   {% if changes %}
     <div class="overflow-x-auto">
@@ -405,8 +300,8 @@
         <tbody class="divide-y divide-gray-50">
           {% for ch in changes %}
             {% set waga = ch.get('waga', 'NISKA') %}
-            {% set row_bg    = {'KRYTYCZNA':'bg-red-50','WYSOKA':'bg-orange-50','SREDNIA':'bg-yellow-50','NISKA':'bg-green-50'}.get(waga,'') %}
-            {% set waga_cls  = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
+            {% set row_bg   = {'KRYTYCZNA':'bg-red-50','WYSOKA':'bg-orange-50','SREDNIA':'bg-yellow-50','NISKA':'bg-green-50'}.get(waga,'') %}
+            {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
             <tr class="{{ row_bg }}">
               <td class="px-4 py-2.5 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
               <td class="px-3 py-2.5 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
@@ -486,20 +381,29 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-{% if job.status == 'pending' %}
-/* ── Browser-driven sequential comparison ── */
-const JOB_ID                 = {{ job.id }};
-const TOTAL_PAIRS            = {{ mappings | length }};
-const RUN_PAIR_BATCH_URL     = {{ url_for('comparison.run_pair_batch',            job_id=job.id) | tojson }};
-const FINALIZE_PAIR_URL      = {{ url_for('comparison.finalize_pair',             job_id=job.id) | tojson }};
-const SKIP_PAIR_URL          = {{ url_for('comparison.skip_pair',                 job_id=job.id) | tojson }};
-const GEN_SUMMARY_URL        = {{ url_for('comparison.generate_edition_summary',  job_id=job.id) | tojson }};
-const FINISH_PAIRS_URL       = {{ url_for('comparison.finish_pairs',              job_id=job.id) | tojson }};
-const CANCEL_URL             = {{ url_for('comparison.cancel_job',                job_id=job.id) | tojson }};
-const STATUS_API_URL         = {{ url_for('comparison.job_status_api',            job_id=job.id) | tojson }};
-const DOWNLOAD_PAIR_URL_TPL  = {{ url_for('comparison.download_pair_excel',       job_id=job.id, pair_idx=0) | tojson }};
+const JOB_ID            = {{ job.id }};
+const JOB_STATUS        = {{ job.status | tojson }};
+const PENDING_PAIRS     = {{ pending_pairs | tojson }};
+const USED_OLD_IDS      = new Set({{ used_old_ids | tojson }});
+const USED_NEW_IDS      = new Set({{ used_new_ids | tojson }});
+
+const RUN_PAIR_BATCH_URL   = {{ url_for('comparison.run_pair_batch',           job_id=job.id) | tojson }};
+const FINALIZE_PAIR_URL    = {{ url_for('comparison.finalize_pair',            job_id=job.id) | tojson }};
+const SKIP_PAIR_URL        = {{ url_for('comparison.skip_pair',                job_id=job.id) | tojson }};
+const GEN_SUMMARY_URL      = {{ url_for('comparison.generate_edition_summary', job_id=job.id) | tojson }};
+const FINISH_PAIRS_URL     = {{ url_for('comparison.finish_pairs',             job_id=job.id) | tojson }};
+const CANCEL_URL           = {{ url_for('comparison.cancel_job',               job_id=job.id) | tojson }};
+const STATUS_API_URL       = {{ url_for('comparison.job_status_api',           job_id=job.id) | tojson }};
+const ADD_PAIR_URL         = {{ url_for('comparison.add_pair',                 job_id=job.id) | tojson }};
+const DOWNLOAD_PAIR_URL_TPL = {{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=0) | tojson }};
+{% if job.edition_old_id and job.edition_new_id %}
+const ED_OLD_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_old_id) | tojson }};
+const ED_NEW_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_new_id) | tojson }};
+{% else %}
+const ED_OLD_FILES_URL  = null;
+const ED_NEW_FILES_URL  = null;
+{% endif %}
 
 function pairDownloadUrl(idx) {
   return DOWNLOAD_PAIR_URL_TPL.replace(/\/pair\/0\//, `/pair/${idx}/`);
@@ -518,37 +422,43 @@ const WAGA_ROW = {
   NISKA:     'bg-green-50',
 };
 
+/* ── State ─────────────────────────────────────────────────────────────── */
 let cancelled      = false;
+let isProcessing   = false;
 let totalTimerIval = null;
 let pairTimerIval  = null;
 let pairPollIval   = null;
 let totalStart     = null;
 let pairStart      = null;
+let sessionTotal   = PENDING_PAIRS.length;
+let sessionDone    = 0;
 const failedPairs  = new Set();
 const skippedPairs = new Set();
+
+/* ── Helpers ────────────────────────────────────────────────────────────── */
+const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 function fmtSecs(s) {
   const m = Math.floor(s / 60), sec = s % 60;
   return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
-
 function fmtClock(ms) {
   const s = Math.floor(ms / 1000), m = Math.floor(s / 60);
   return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/* ── Timers ─────────────────────────────────────────────────────────────── */
 function startTotalTimer() {
+  if (totalTimerIval) return;
   totalStart = Date.now();
   totalTimerIval = setInterval(() => {
     const el = document.getElementById('total-timer');
     if (el) el.textContent = fmtClock(Date.now() - totalStart);
   }, 1000);
 }
-
 function stopTotalTimer() {
   if (totalTimerIval) { clearInterval(totalTimerIval); totalTimerIval = null; }
 }
-
 function startPairTimer(idx) {
   pairStart = Date.now();
   if (pairTimerIval) clearInterval(pairTimerIval);
@@ -557,12 +467,10 @@ function startPairTimer(idx) {
     if (el) el.textContent = fmtClock(Date.now() - pairStart);
   }, 1000);
 }
-
 function stopPairTimer() {
   if (pairTimerIval) { clearInterval(pairTimerIval); pairTimerIval = null; }
   return pairStart ? Math.floor((Date.now() - pairStart) / 1000) : 0;
 }
-
 function startPairPoll(idx) {
   if (pairPollIval) clearInterval(pairPollIval);
   pairPollIval = setInterval(async () => {
@@ -572,20 +480,49 @@ function startPairPoll(idx) {
       const d = await r.json();
       const el = document.getElementById(`pair-stage-${idx}`);
       if (el && d.status_detail) el.textContent = d.status_detail;
-    } catch(e) { /* serwer zajęty — pominięcie */ }
+    } catch(e) {}
   }, 5000);
 }
-
 function stopPairPoll() {
   if (pairPollIval) { clearInterval(pairPollIval); pairPollIval = null; }
 }
 
-function setProgress(done, total, label, fileHint) {
-  const pct = total > 0 ? Math.round(done / total * 100) : 0;
-  document.getElementById('progress-bar').style.width = pct + '%';
-  document.getElementById('progress-fraction').textContent = total ? `${done} / ${total}` : '';
-  if (label) document.getElementById('progress-label').textContent = label;
-  document.getElementById('progress-file').textContent = fileHint || '';
+/* ── Progress panel ─────────────────────────────────────────────────────── */
+function showProgressPanel() {
+  document.getElementById('progress-panel').classList.remove('hidden');
+  document.getElementById('live-pairs').classList.remove('hidden');
+}
+
+function setProgress(done, total, label) {
+  const pct  = total > 0 ? Math.round(done / total * 100) : 0;
+  const bar  = document.getElementById('progress-bar');
+  const frac = document.getElementById('progress-fraction');
+  const lbl  = document.getElementById('progress-label');
+  if (bar)  bar.style.width = pct + '%';
+  if (frac) frac.textContent = total ? `${done} / ${total}` : '';
+  if (lbl && label) lbl.textContent = label;
+}
+
+/* ── Live pair card management ──────────────────────────────────────────── */
+function createLivePairCard(idx, oldName, newName) {
+  const container = document.getElementById('live-pairs');
+  if (!container || document.getElementById(`pair-${idx}`)) return;
+  const div = document.createElement('div');
+  div.id = `pair-${idx}`;
+  div.className = 'bg-white rounded-xl border border-gray-100 overflow-hidden transition-colors duration-300';
+  div.innerHTML =
+    `<div class="flex items-center gap-3 px-5 py-3.5">` +
+      `<div id="pair-icon-${idx}" class="text-lg shrink-0 text-gray-300">○</div>` +
+      `<div class="min-w-0 flex-1">` +
+        `<div class="font-medium text-slate-text text-sm truncate">${esc(oldName)}</div>` +
+        `<div class="text-xs text-slate-text/40">→ ${esc(newName)}</div>` +
+      `</div>` +
+      `<div id="pair-badge-${idx}" class="shrink-0 flex items-center gap-1">` +
+        `<button onclick="skipPair(${idx})" class="px-2 py-0.5 text-xs text-slate-text/35 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors">⏭ Pomiń</button>` +
+      `</div>` +
+    `</div>` +
+    `<div id="pair-body-${idx}" class="hidden border-t border-gray-50"></div>`;
+  container.appendChild(div);
 }
 
 function setPairState(idx, state) {
@@ -593,14 +530,16 @@ function setPairState(idx, state) {
   const badge = document.getElementById(`pair-badge-${idx}`);
   const body  = document.getElementById(`pair-body-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);
+  if (!icon || !badge) return;
   if (state === 'running') {
     icon.textContent = '⏳';
     icon.className = 'text-lg shrink-0';
-    badge.innerHTML = `<span class="text-xs text-slate-text/40 animate-pulse">analizuję...</span>`
-      + `<span id="pair-stage-${idx}" class="ml-2 text-xs text-slate-text/40 italic truncate max-w-[220px]"></span>`
-      + `<span id="pair-timer-${idx}" class="ml-2 text-xs font-mono text-slate-text/30 tabular-nums">0:00</span>`;
+    badge.innerHTML =
+      `<span class="text-xs text-slate-text/40 animate-pulse">analizuję...</span>` +
+      `<span id="pair-stage-${idx}" class="ml-2 text-xs text-slate-text/40 italic truncate max-w-[220px]"></span>` +
+      `<span id="pair-timer-${idx}" class="ml-2 text-xs font-mono text-slate-text/30 tabular-nums">0:00</span>`;
     if (body) body.classList.add('hidden');
-    card.classList.add('border-lime/40');
+    if (card) card.classList.add('border-lime/40');
     startPairTimer(idx);
     startPairPoll(idx);
   } else if (state === 'waiting') {
@@ -617,32 +556,33 @@ function setPairDone(idx, data) {
   const badge = document.getElementById(`pair-badge-${idx}`);
   const body  = document.getElementById(`pair-body-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);
+  if (!icon || !badge) return;
   const n     = data.changes ? data.changes.length : 0;
   const nCrit = data.changes ? data.changes.filter(c => c.waga === 'KRYTYCZNA').length : 0;
 
   icon.textContent = '✅';
   icon.className = 'text-lg shrink-0';
-  card.classList.remove('border-lime/40', 'border-gray-100');
-  card.classList.add('bg-green-50', 'border-green-200');
+  if (card) {
+    card.classList.remove('border-lime/40', 'border-gray-100');
+    card.classList.add('bg-green-50', 'border-green-200');
+  }
 
   const critBadge = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
   const cntColor  = n > 0 ? 'bg-bottle/10 text-bottle' : 'bg-gray-100 text-gray-400';
   const timeBadge = elapsed > 0 ? `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-mono ml-1">${fmtSecs(elapsed)}</span>` : '';
   const dlUrl     = pairDownloadUrl(idx);
-  badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}`
-    + `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors" title="Excel">⬇️</a>`
-    + `<button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
+  badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}` +
+    `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors" title="Excel">⬇️</a>` +
+    `<button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
 
-  let html = '';
-  if (data.summary_html) {
-    html += `<div class="px-5 py-4 bg-lime/5 border-b border-lime/20 prose max-w-none text-sm">${data.summary_html}</div>`;
+  if (body) {
+    let html = '';
+    if (data.summary_html) {
+      html += `<div class="px-5 py-4 bg-lime/5 border-b border-lime/20 prose max-w-none text-sm">${data.summary_html}</div>`;
+    }
+    html += data.changes && data.changes.length ? buildChangesTable(data.changes) : '<p class="px-5 py-4 text-sm text-slate-text/50">Brak zmian w tym dokumencie.</p>';
+    body.innerHTML = html;
   }
-  if (data.changes && data.changes.length) {
-    html += buildChangesTable(data.changes);
-  } else {
-    html += '<p class="px-5 py-4 text-sm text-slate-text/50">Brak zmian w tym dokumencie.</p>';
-  }
-  body.innerHTML = html;
 }
 
 function setPairError(idx, msg) {
@@ -652,32 +592,38 @@ function setPairError(idx, msg) {
   const badge = document.getElementById(`pair-badge-${idx}`);
   const body  = document.getElementById(`pair-body-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);
-  const esc   = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  if (!icon || !badge) return;
 
   icon.textContent = '❌';
   icon.className = 'text-lg shrink-0';
-  card.classList.remove('border-lime/40', 'border-gray-100');
-  card.classList.add('bg-red-50', 'border-red-200');
-  badge.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">Błąd</span>`
-    + `<button onclick="retryPair(${idx})" class="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Ponów</button>`
-    + `<button onclick="skipPair(${idx})" class="ml-1 px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-medium hover:bg-gray-200 transition-colors">⏭ Pomiń</button>`;
-  body.innerHTML = `<div class="px-5 py-3 bg-red-50 border-t border-red-100">
-    <p class="text-xs font-mono text-red-700 break-all">${esc(msg)}</p>
-  </div>`;
-  body.classList.remove('hidden');
+  if (card) {
+    card.classList.remove('border-lime/40', 'border-gray-100');
+    card.classList.add('bg-red-50', 'border-red-200');
+  }
+  badge.innerHTML =
+    `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">Błąd</span>` +
+    `<button onclick="retryPair(${idx})" class="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Ponów</button>` +
+    `<button onclick="skipPair(${idx})" class="ml-1 px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-medium hover:bg-gray-200 transition-colors">⏭ Pomiń</button>`;
+  if (body) {
+    body.innerHTML = `<div class="px-5 py-3 bg-red-50 border-t border-red-100"><p class="text-xs font-mono text-red-700 break-all">${esc(msg)}</p></div>`;
+    body.classList.remove('hidden');
+  }
 }
 
 function setPairSkipped(idx) {
   stopPairTimer();
   stopPairPoll();
-  const icon = document.getElementById(`pair-icon-${idx}`);
+  const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);
+  if (!icon || !badge) return;
   icon.textContent = '⏭';
   icon.className = 'text-lg shrink-0 opacity-40';
   badge.innerHTML = `<span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full font-medium">Pominięto</span>`;
-  card.classList.remove('border-lime/40', 'border-gray-100');
-  card.classList.add('opacity-50');
+  if (card) {
+    card.classList.remove('border-lime/40', 'border-gray-100');
+    card.classList.add('opacity-50');
+  }
 }
 
 async function skipPair(idx) {
@@ -691,14 +637,15 @@ async function skipPair(idx) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({pair_idx: idx}),
     });
-  } catch(e) { /* nie krytyczny — para jest już oznaczona lokalnie */ }
+  } catch(e) {}
 }
 
 function togglePairBody(idx) {
-  const body  = document.getElementById(`pair-body-${idx}`);
+  const body = document.getElementById(`pair-body-${idx}`);
+  if (!body) return;
   const shown = !body.classList.toggle('hidden');
-  const btn   = document.querySelector(`#pair-badge-${idx} button`);
-  if (btn) btn.style.transform = shown ? 'rotate(180deg)' : '';
+  const btns  = document.querySelectorAll(`#pair-badge-${idx} button`);
+  btns.forEach(b => { if (b.textContent.trim() === '▼' || b.textContent.trim() === '▲') b.style.transform = shown ? 'rotate(180deg)' : ''; });
 }
 
 function buildChangesTable(changes) {
@@ -706,14 +653,13 @@ function buildChangesTable(changes) {
     const waga = ch.waga || 'NISKA';
     const bg   = WAGA_ROW[waga] || '';
     const bc   = WAGA_BADGE[waga] || 'bg-gray-100 text-gray-600';
-    const esc  = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     return `<tr class="${bg}">
-      <td class="px-4 py-2.5 font-medium text-bottle align-top">${esc(ch.sekcja||'')}</td>
-      <td class="px-3 py-2.5 text-slate-text/70 align-top">${esc(ch.typ_zmiany||'')}</td>
+      <td class="px-4 py-2.5 font-medium text-bottle align-top">${esc(ch.sekcja || '')}</td>
+      <td class="px-3 py-2.5 text-slate-text/70 align-top">${esc(ch.typ_zmiany || '')}</td>
       <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold ${bc}">${waga}</span></td>
-      <td class="px-3 py-2.5 text-slate-text/60 align-top"><div class="max-h-24 overflow-y-auto">${esc(ch.zapis_stary||'')}</div></td>
-      <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div class="max-h-24 overflow-y-auto">${esc(ch.zapis_nowy||'')}</div></td>
-      <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">${esc(ch.komentarz_biznesowy||'')}</div></td>
+      <td class="px-3 py-2.5 text-slate-text/60 align-top"><div class="max-h-24 overflow-y-auto">${esc(ch.zapis_stary || '')}</div></td>
+      <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div class="max-h-24 overflow-y-auto">${esc(ch.zapis_nowy || '')}</div></td>
+      <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">${esc(ch.komentarz_biznesowy || '')}</div></td>
     </tr>`;
   }).join('');
   return `<div class="overflow-x-auto"><table class="w-full text-xs">
@@ -729,6 +675,34 @@ function buildChangesTable(changes) {
   </table></div>`;
 }
 
+/* ── Accordion for completed pairs ──────────────────────────────────────── */
+function toggleAccordion(id) {
+  const el    = document.getElementById(id);
+  const arrow = document.getElementById('arrow-' + id);
+  if (!el) return;
+  const hidden = el.classList.toggle('hidden');
+  if (arrow) arrow.style.transform = hidden ? '' : 'rotate(180deg)';
+}
+
+/* ── Global changes table filters ───────────────────────────────────────── */
+function filterTable() {
+  const typ  = document.getElementById('filter-typ')?.value.toLowerCase()  || '';
+  const waga = document.getElementById('filter-waga')?.value.toLowerCase() || '';
+  const q    = document.getElementById('filter-search')?.value.toLowerCase() || '';
+  document.querySelectorAll('#changes-table tbody tr').forEach(row => {
+    const t = row.textContent.toLowerCase();
+    row.style.display = ((!typ || t.includes(typ)) && (!waga || t.includes(waga)) && (!q || t.includes(q))) ? '' : 'none';
+  });
+}
+function clearFilters() {
+  ['filter-typ', 'filter-waga', 'filter-search'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  filterTable();
+}
+
+/* ── Cancel ─────────────────────────────────────────────────────────────── */
 async function cancelComparison() {
   if (!confirm('Anulować to porównanie?')) return;
   cancelled = true;
@@ -736,27 +710,27 @@ async function cancelComparison() {
   if (btn) { btn.disabled = true; btn.textContent = 'Anulowanie...'; }
   try {
     await fetch(CANCEL_URL, {method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}});
-  } catch (e) {
-    console.warn('Cancel request failed:', e);
-  }
+  } catch(e) {}
   stopTotalTimer();
   stopPairTimer();
-  document.getElementById('progress-label').textContent = '⛔ Anulowanie...';
+  const lbl = document.getElementById('progress-label');
+  if (lbl) lbl.textContent = '⛔ Anulowanie...';
   setTimeout(() => window.location.reload(), 1000);
 }
 
+/* ── Core processing: one pair ──────────────────────────────────────────── */
 async function runOnePair(idx) {
   setPairState(idx, 'running');
   failedPairs.delete(idx);
-  setProgress(idx, TOTAL_PAIRS, `⏳ Para ${idx + 1} z ${TOTAL_PAIRS}...`);
 
   let allChanges = [], offset = 0;
 
-  // Phase 1: section batches — each request processes GEMINI_BATCH_SECTIONS sections
+  /* Phase 1: section batches */
   while (true) {
     if (cancelled) {
       stopPairTimer(); stopTotalTimer();
-      document.getElementById('progress-label').textContent = '⛔ Porównanie anulowane';
+      const lbl = document.getElementById('progress-label');
+      if (lbl) lbl.textContent = '⛔ Porównanie anulowane';
       setTimeout(() => window.location.reload(), 1500);
       return {cancelled: true};
     }
@@ -769,7 +743,7 @@ async function runOnePair(idx) {
         body: JSON.stringify({pair_idx: idx, section_offset: offset}),
       });
       try { data = JSON.parse(await resp.text()); } catch(_) {}
-    } catch (e) {
+    } catch(e) {
       setPairError(idx, e.message);
       failedPairs.add(idx);
       return {error: true};
@@ -777,7 +751,8 @@ async function runOnePair(idx) {
 
     if (data?.cancelled) {
       stopPairTimer(); stopTotalTimer();
-      document.getElementById('progress-label').textContent = '⛔ Porównanie anulowane';
+      const lbl = document.getElementById('progress-label');
+      if (lbl) lbl.textContent = '⛔ Porównanie anulowane';
       setTimeout(() => window.location.reload(), 1500);
       return {cancelled: true};
     }
@@ -799,7 +774,7 @@ async function runOnePair(idx) {
     offset = data.next_offset;
   }
 
-  // Phase 2: finalize — generate per-file summary and persist to DB
+  /* Phase 2: finalize (summary + persist) */
   {
     const stageEl = document.getElementById(`pair-stage-${idx}`);
     if (stageEl) stageEl.textContent = 'podsumowanie pliku...';
@@ -812,7 +787,7 @@ async function runOnePair(idx) {
         body: JSON.stringify({pair_idx: idx, changes: allChanges}),
       });
       try { data2 = JSON.parse(await resp2.text()); } catch(_) {}
-    } catch (e) {
+    } catch(e) {
       setPairError(idx, e.message);
       failedPairs.add(idx);
       return {error: true};
@@ -834,10 +809,56 @@ async function retryPair(idx) {
   await runOnePair(idx);
 }
 
+/* ── Post-processing callbacks ──────────────────────────────────────────── */
+function onAllPairsComplete() {
+  stopTotalTimer();
+  const errCount = failedPairs.size;
+  setProgress(sessionTotal, sessionTotal,
+    errCount > 0 ? `⚠️ Ukończono (${errCount} błędów)` : '✅ Analiza par zakończona');
+
+  const bar   = document.getElementById('progress-bar');
+  const panel = document.getElementById('progress-panel');
+  if (bar && panel) {
+    if (errCount > 0) {
+      bar.classList.replace('bg-lime', 'bg-red-400');
+      panel.classList.add('bg-red-50', 'border-red-200');
+    } else {
+      bar.classList.replace('bg-lime', 'bg-green-500');
+      panel.classList.add('bg-green-50', 'border-green-200');
+    }
+  }
+  const cancelBtn = document.getElementById('cancel-btn');
+  if (cancelBtn) cancelBtn.classList.add('hidden');
+
+  try { fetch(FINISH_PAIRS_URL, {method: 'POST'}); } catch(_) {}
+
+  isProcessing = false;
+}
+
+/* ── Auto-run initial pending pairs ─────────────────────────────────────── */
+async function runPendingPairs() {
+  if (isProcessing) return;
+  isProcessing = true;
+  startTotalTimer();
+
+  for (const p of PENDING_PAIRS) {
+    if (cancelled) break;
+    if (skippedPairs.has(p.idx)) { sessionDone++; continue; }
+
+    setProgress(sessionDone, sessionTotal, `⏳ Para ${sessionDone + 1} z ${sessionTotal}...`);
+    const result = await runOnePair(p.idx);
+    if (result?.cancelled) return;
+    sessionDone++;
+    if (cancelled) break;
+  }
+
+  if (!cancelled) onAllPairsComplete();
+}
+
+/* ── Edition summary generation ─────────────────────────────────────────── */
 async function generateSummary() {
-  const btn  = document.getElementById('gen-summary-btn');
-  const body = document.getElementById('edition-summary-body');
-  const esc  = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const btn    = document.getElementById('gen-summary-btn');
+  const result = document.getElementById('gen-summary-result');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Generuję...'; }
 
   try {
@@ -849,128 +870,140 @@ async function generateSummary() {
     try { data = JSON.parse(await resp.text()); } catch(_) {}
 
     if (data?.ok && data.summary_html) {
-      body.innerHTML = data.summary_html;
-      setTimeout(() => window.location.reload(), 1500);
+      const htmlDiv = document.getElementById('edition-summary-html-div');
+      const placeholder = document.getElementById('edition-summary-placeholder');
+      if (htmlDiv) htmlDiv.innerHTML = data.summary_html;
+      if (placeholder) placeholder.classList.add('hidden');
+      if (result) result.innerHTML = '';
+      if (btn) { btn.disabled = false; btn.textContent = '↺ Zaktualizuj podsumowanie'; btn.className = 'mt-5 px-4 py-2 border border-bottle/30 text-bottle rounded-lg text-sm hover:bg-bottle/5 transition-colors'; }
     } else {
       const errMsg = data?.error || `HTTP ${resp.status}`;
-      body.innerHTML = `<p class="text-red-600 text-sm mb-3">Błąd: ${esc(errMsg)}</p>
-        <button onclick="generateSummary()" id="gen-summary-btn"
-                class="px-6 py-2.5 bg-bottle text-white rounded-lg font-medium text-sm hover:bg-bottle/90">
-          ↺ Spróbuj ponownie
-        </button>`;
+      if (result) result.innerHTML = `<p class="text-red-600 text-sm mt-2">Błąd: ${esc(errMsg)}</p>`;
+      if (btn) { btn.disabled = false; btn.textContent = '↺ Spróbuj ponownie'; }
     }
-  } catch (e) {
-    body.innerHTML = `<p class="text-red-600 text-sm mb-3">Błąd połączenia: ${(e.message||'').replace(/</g,'&lt;')}</p>
-      <button onclick="generateSummary()" id="gen-summary-btn"
-              class="px-6 py-2.5 bg-bottle text-white rounded-lg font-medium text-sm hover:bg-bottle/90">
-        ↺ Spróbuj ponownie
-      </button>`;
+  } catch(e) {
+    if (result) result.innerHTML = `<p class="text-red-600 text-sm mt-2">Błąd połączenia: ${esc(e.message)}</p>`;
+    if (btn) { btn.disabled = false; btn.textContent = '↺ Spróbuj ponownie'; }
   }
 }
 
-function showSummaryButton() {
-  const wrap = document.getElementById('edition-summary-wrap');
-  const body = document.getElementById('edition-summary-body');
-  wrap.classList.remove('hidden');
-  const hint = failedPairs.size > 0
-    ? `<p class="text-sm text-amber-700 mb-4">⚠️ ${failedPairs.size} par nie udało się przeanalizować — możesz je ponowić przyciskiem ↺ Ponów przed wygenerowaniem podsumowania.</p>`
-    : `<p class="text-sm text-slate-text/60 mb-4">Wszystkie pary przeanalizowane. Wygeneruj podsumowanie całej edycji.</p>`;
-  body.innerHTML = hint
-    + `<button onclick="generateSummary()" id="gen-summary-btn"
-              class="px-6 py-2.5 bg-bottle text-white rounded-lg font-medium text-sm hover:bg-bottle/90 transition-colors">
-        ✨ Generuj podsumowanie edycji
-       </button>`;
+/* ── Add pair form ───────────────────────────────────────────────────────── */
+async function loadAddPairFiles() {
+  if (!ED_OLD_FILES_URL || !ED_NEW_FILES_URL) return;
+  try {
+    const [rOld, rNew] = await Promise.all([fetch(ED_OLD_FILES_URL), fetch(ED_NEW_FILES_URL)]);
+    const oldFiles = await rOld.json();
+    const newFiles = await rNew.json();
+
+    const selOld = document.getElementById('add-pair-old');
+    const selNew = document.getElementById('add-pair-new');
+    if (!selOld || !selNew) return;
+
+    const avOld = oldFiles.filter(f => !USED_OLD_IDS.has(f.id));
+    const avNew = newFiles.filter(f => !USED_NEW_IDS.has(f.id));
+
+    selOld.innerHTML = avOld.length
+      ? '<option value="">— wybierz plik starszej edycji —</option>' + avOld.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('')
+      : '<option value="">— brak dostępnych plików —</option>';
+    selNew.innerHTML = avNew.length
+      ? '<option value="">— wybierz plik nowszej edycji —</option>' + avNew.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('')
+      : '<option value="">— brak dostępnych plików —</option>';
+
+    const msg = document.getElementById('add-pair-msg');
+    if (avOld.length === 0 || avNew.length === 0) {
+      if (msg) { msg.textContent = 'Wszystkie pliki z obu edycji są już w porównaniu.'; msg.classList.remove('hidden'); }
+      const btn = document.getElementById('add-pair-btn');
+      if (btn) btn.disabled = true;
+    } else {
+      if (msg) msg.classList.add('hidden');
+      const btn = document.getElementById('add-pair-btn');
+      if (btn) btn.disabled = false;
+    }
+  } catch(e) {
+    console.warn('Błąd ładowania plików:', e);
+  }
 }
 
-async function runComparison() {
-  startTotalTimer();
+async function addAndRunPair() {
+  const selOld = document.getElementById('add-pair-old');
+  const selNew = document.getElementById('add-pair-new');
+  const btn    = document.getElementById('add-pair-btn');
 
-  for (let i = 0; i < TOTAL_PAIRS; i++) {
-    if (cancelled) break;
-    if (skippedPairs.has(i)) continue;
-    const result = await runOnePair(i);
-    if (result?.cancelled) return;
-    if (cancelled) break;
-  }
+  const oldId = parseInt(selOld?.value);
+  const newId = parseInt(selNew?.value);
 
-  if (cancelled) {
-    stopTotalTimer();
-    setTimeout(() => window.location.reload(), 1500);
+  if (!oldId || !newId) {
+    alert('Wybierz oba pliki przed dodaniem pary.');
     return;
   }
 
-  stopTotalTimer();
-  const errCount = failedPairs.size;
-  setProgress(TOTAL_PAIRS, TOTAL_PAIRS,
-    errCount > 0 ? `⚠️ Ukończono (${errCount} błędów)` : '✅ Analiza par zakończona');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Dodaję...'; }
 
-  // Koloruj pasek i panel zależnie od wyniku
-  const bar   = document.getElementById('progress-bar');
-  const panel = document.getElementById('progress-panel');
-  if (errCount > 0) {
-    bar.classList.replace('bg-lime', 'bg-red-400');
-    panel.classList.replace('border-gray-100', 'border-red-200');
-    panel.classList.add('bg-red-50');
-  } else {
-    bar.classList.replace('bg-lime', 'bg-green-500');
-    panel.classList.replace('border-gray-100', 'border-green-200');
-    panel.classList.add('bg-green-50');
+  try {
+    const resp = await fetch(ADD_PAIR_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({old_doc_id: oldId, new_doc_id: newId}),
+    });
+    const data = await resp.json();
+
+    if (!data.ok) {
+      alert(data.error || 'Błąd dodawania pary.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Dodaj i porównaj'; }
+      return;
+    }
+
+    const idx = data.pair_idx;
+    USED_OLD_IDS.add(oldId);
+    USED_NEW_IDS.add(newId);
+    sessionTotal++;
+
+    showProgressPanel();
+    startTotalTimer();
+
+    createLivePairCard(idx, data.old_name, data.new_name);
+
+    if (selOld) selOld.value = '';
+    if (selNew) selNew.value = '';
+    loadAddPairFiles();
+
+    if (btn) { btn.disabled = false; btn.textContent = 'Dodaj i porównaj'; }
+
+    setProgress(sessionDone, sessionTotal, `⏳ Para ${sessionDone + 1} z ${sessionTotal}...`);
+    const result = await runOnePair(idx);
+    sessionDone++;
+
+    if (!cancelled && !isProcessing) {
+      onAllPairsComplete();
+    }
+
+  } catch(e) {
+    alert('Błąd połączenia: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Dodaj i porównaj'; }
   }
-
-  // Ukryj przycisk anulowania
-  const cancelBtn = document.getElementById('cancel-btn');
-  if (cancelBtn) cancelBtn.classList.add('hidden');
-
-  // Oznacz job jako gotowy do podsumowania (aktualizuje status na liście)
-  try { await fetch(FINISH_PAIRS_URL, {method: 'POST'}); } catch(_) {}
-
-  showSummaryButton();
 }
 
-window.addEventListener('DOMContentLoaded', runComparison);
-
-{% elif job.status == 'queued' %}
-/* ── Queued: poll status-api, reload when slot becomes available ── */
-const STATUS_API_URL = {{ url_for('comparison.job_status_api', job_id=job.id) | tojson }};
-
+/* ── Queued polling ──────────────────────────────────────────────────────── */
 async function pollQueued() {
   try {
     const r = await fetch(STATUS_API_URL);
     const d = await r.json();
-    if (d.status !== 'queued') {
-      window.location.reload();
-      return;
-    }
-  } catch(e) { /* ignore */ }
+    if (d.status !== 'queued') { window.location.reload(); return; }
+  } catch(e) {}
   setTimeout(pollQueued, 3000);
 }
 
-window.addEventListener('DOMContentLoaded', () => setTimeout(pollQueued, 3000));
-
-{% else %}
-
-/* ── Done/error/cancelled/awaiting_summary state helpers ── */
-function toggleAccordion(id) {
-  const el    = document.getElementById(id);
-  const arrow = document.getElementById('arrow-' + id);
-  const hidden = el.classList.toggle('hidden');
-  if (arrow) arrow.style.transform = hidden ? '' : 'rotate(180deg)';
-}
-
-function filterTable() {
-  const typ  = document.getElementById('filter-typ')?.value.toLowerCase()  || '';
-  const waga = document.getElementById('filter-waga')?.value.toLowerCase() || '';
-  const q    = document.getElementById('filter-search')?.value.toLowerCase() || '';
-  document.querySelectorAll('#changes-table tbody tr').forEach(row => {
-    const t = row.textContent.toLowerCase();
-    row.style.display = ((!typ || t.includes(typ)) && (!waga || t.includes(waga)) && (!q || t.includes(q))) ? '' : 'none';
-  });
-}
-function clearFilters() {
-  ['filter-typ','filter-waga','filter-search'].forEach(id => { const el = document.getElementById(id); if (el) el.value=''; });
-  filterTable();
-}
-
-{% endif %}
+/* ── Initialisation ─────────────────────────────────────────────────────── */
+window.addEventListener('DOMContentLoaded', () => {
+  if (PENDING_PAIRS.length > 0 && !['cancelled', 'queued'].includes(JOB_STATUS)) {
+    showProgressPanel();
+    PENDING_PAIRS.forEach(p => createLivePairCard(p.idx, p.old_name, p.new_name));
+    runPendingPairs();
+  }
+  if (JOB_STATUS === 'queued') {
+    setTimeout(pollQueued, 3000);
+  }
+  loadAddPairFiles();
+});
 </script>
 {% endblock %}

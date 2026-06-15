@@ -26,10 +26,6 @@
     </div>
   </div>
   <div class="flex items-center gap-2 ml-4 shrink-0 flex-wrap">
-    <a href="{{ url_for('comparison.setup') }}?edition_old={{ edition.id }}"
-       class="flex items-center gap-1.5 px-3 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors">
-      ⚖️ Porownaj
-    </a>
     <a href="{{ url_for('editions.edit', c_slug=competition.slug, e_slug=edition.slug) }}"
        class="px-3 py-2 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
       ✏️ Edytuj
