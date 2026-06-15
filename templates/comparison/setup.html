@@ -65,30 +65,43 @@
     <p id="editions-error" class="hidden mt-3 text-xs text-red-600 font-medium"></p>
   </div>
 
-  <!-- Krok 3: Mapowanie plikow -->
+  <!-- Krok 3: Pary do porownania -->
   <div class="bg-white rounded-xl border border-gray-100 p-5 mb-5" id="mapping-panel" style="display:none">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="font-semibold text-bottle text-sm">3. Mapowanie plikow</h2>
-      <button type="button" onclick="autoMatch()"
-              class="px-3 py-1.5 bg-bottle/10 text-bottle rounded-lg text-xs font-semibold hover:bg-bottle/20 transition-colors">
-        ✨ Auto-dopasuj
-      </button>
+    <h2 class="font-semibold text-bottle text-sm mb-4">3. Pary do porównania</h2>
+
+    <!-- Kreator par -->
+    <div class="flex flex-col sm:flex-row gap-3 items-end mb-4 pb-4 border-b border-gray-100">
+      <div class="flex-1 min-w-0">
+        <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-new-file">Nowsza edycja</label>
+        <select id="new-file-sel"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
+          <option value="">— wybierz plik z nowszej —</option>
+        </select>
+      </div>
+      <div class="hidden sm:flex items-center pb-2 text-slate-text/25 shrink-0">
+        <span class="text-xl">→</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-old-file">Starsza edycja</label>
+        <select id="old-file-sel"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
+          <option value="">— wybierz plik ze starszej —</option>
+        </select>
+      </div>
+      <div class="shrink-0">
+        <button type="button" onclick="addPair()"
+                class="w-full sm:w-auto px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+          + Dodaj parę
+        </button>
+      </div>
     </div>
 
-    <div class="grid grid-cols-2 text-xs font-semibold text-slate-text/50 mb-2 px-1">
-      <span id="label-old">Edycja starsza</span>
-      <span id="label-new">Porownaj z (edycja nowsza)</span>
+    <!-- Lista par -->
+    <div id="pairs-empty" class="py-5 text-center text-sm text-slate-text/40">
+      Brak par — dodaj pierwszą parę powyżej.
     </div>
-
-    <div id="mapping-rows" class="space-y-2">
-      <p class="text-sm text-slate-text/40 py-4 text-center">Wybierz obie edycje, aby zobaczyc pliki.</p>
-    </div>
-
-    <!-- Pliki z edycji B bez pary -->
-    <div id="unmatched-panel" class="mt-4" style="display:none">
-      <p class="text-xs font-semibold text-slate-text/50 mb-2">Pliki z nowej edycji bez pary (nie beda porownane):</p>
-      <div id="unmatched-new" class="flex flex-wrap gap-1.5"></div>
-    </div>
+    <div id="pairs-list" class="hidden space-y-1.5"></div>
+    <div id="hidden-inputs"></div>
   </div>
 
   <!-- Submit -->
@@ -109,6 +122,7 @@ const edFilesUrl    = id => _ED_FILES_TPL.replace('/0', '/' + id);
 
 let filesOld = [];
 let filesNew = [];
+let pairs    = [];
 
 async function loadEditions() {
   const compId = document.getElementById('competition-select').value;
@@ -182,127 +196,91 @@ async function loadFiles(oldId, newId) {
   ]);
   filesOld = await rOld.json();
   filesNew = await rNew.json();
+  pairs = [];
 
   const oldName = document.getElementById('edition-old-select').selectedOptions[0].text;
   const newName = document.getElementById('edition-new-select').selectedOptions[0].text;
-  document.getElementById('label-old').textContent = oldName;
-  document.getElementById('label-new').textContent = `Porównaj z: ${newName}`;
+  document.getElementById('lbl-old-file').textContent = oldName;
+  document.getElementById('lbl-new-file').textContent = newName;
 
-  renderMappingRows();
+  renderSelects();
+  renderPairsList();
   document.getElementById('mapping-panel').style.display = '';
-  document.getElementById('submit-panel').style.display  = '';
 }
 
-function renderMappingRows(currentMappings = {}) {
-  const container = document.getElementById('mapping-rows');
-  container.innerHTML = '';
+function renderSelects() {
+  const usedNewIds = new Set(pairs.map(p => String(p.new_id)));
+  const usedOldIds = new Set(pairs.map(p => String(p.old_id)));
+  const newSel = document.getElementById('new-file-sel');
+  const oldSel = document.getElementById('old-file-sel');
+  const prevNew = newSel.value;
+  const prevOld = oldSel.value;
 
-  if (filesOld.length === 0) {
-    container.innerHTML = '<p class="text-sm text-slate-text/40 py-4 text-center">Edycja starsza nie ma dokumentow.</p>';
+  newSel.innerHTML = '<option value="">— wybierz plik z nowszej —</option>';
+  filesNew.filter(f => !usedNewIds.has(String(f.id))).forEach(f => {
+    newSel.appendChild(new Option((f.from_gdrive ? '☁️ ' : '') + f.name, String(f.id)));
+  });
+  if (prevNew && !usedNewIds.has(prevNew)) newSel.value = prevNew;
+
+  oldSel.innerHTML = '<option value="">— wybierz plik ze starszej —</option>';
+  filesOld.filter(f => !usedOldIds.has(String(f.id))).forEach(f => {
+    oldSel.appendChild(new Option((f.from_gdrive ? '☁️ ' : '') + f.name, String(f.id)));
+  });
+  if (prevOld && !usedOldIds.has(prevOld)) oldSel.value = prevOld;
+}
+
+function renderPairsList() {
+  const list   = document.getElementById('pairs-list');
+  const empty  = document.getElementById('pairs-empty');
+  const hidden = document.getElementById('hidden-inputs');
+  list.innerHTML = hidden.innerHTML = '';
+
+  if (pairs.length === 0) {
+    list.classList.add('hidden');
+    empty.classList.remove('hidden');
+    document.getElementById('submit-panel').style.display = 'none';
     return;
   }
+  empty.classList.add('hidden');
+  list.classList.remove('hidden');
+  document.getElementById('submit-panel').style.display = '';
 
-  filesOld.forEach((f, idx) => {
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  pairs.forEach((p, i) => {
+    hidden.appendChild(Object.assign(document.createElement('input'), {type:'hidden', name:`mapping_${i}_new`, value:p.new_id}));
+    hidden.appendChild(Object.assign(document.createElement('input'), {type:'hidden', name:`mapping_${i}_old`, value:p.old_id}));
     const row = document.createElement('div');
-    row.className = 'grid grid-cols-2 gap-3 items-center py-2 border-b border-gray-50 last:border-0';
-
-    const fileIcon = f.name.endsWith('.pdf') ? '📄' : f.name.endsWith('.docx') ? '📝' : '📎';
-    const sourceTag = f.from_gdrive ? '<span class="text-xs text-blue-500">☁️</span>' : '';
-
-    const leftDiv = document.createElement('div');
-    leftDiv.className = 'flex items-center gap-2 min-w-0';
-    leftDiv.innerHTML = `<span>${fileIcon}</span><span class="truncate text-sm font-medium text-slate-text" title="${f.name}">${f.name}</span>${sourceTag}`;
-
-    const sel = document.createElement('select');
-    sel.name = `mapping_${idx}_new`;
-    sel.className = 'w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 bg-gray-50';
-    sel.onchange = updateUnmatched;
-
-    const skipOpt = document.createElement('option');
-    skipOpt.value = '__skip__';
-    skipOpt.textContent = '(pomin)';
-    sel.appendChild(skipOpt);
-
-    filesNew.forEach(fn => {
-      const opt = document.createElement('option');
-      opt.value = fn.id;
-      const fnIcon = fn.from_gdrive ? '☁️ ' : '';
-      opt.textContent = `${fnIcon}${fn.name}`;
-      sel.appendChild(opt);
-    });
-
-    if (currentMappings[f.id] !== undefined) {
-      sel.value = currentMappings[f.id];
-    }
-
-    const hiddenOld = document.createElement('input');
-    hiddenOld.type = 'hidden';
-    hiddenOld.name = `mapping_${idx}_old`;
-    hiddenOld.value = f.id;
-
-    const rightDiv = document.createElement('div');
-    rightDiv.appendChild(sel);
-
-    row.appendChild(leftDiv);
-    row.appendChild(rightDiv);
-    row.appendChild(hiddenOld);
-    container.appendChild(row);
+    row.className = 'flex items-center gap-3 py-2.5 px-3 bg-gray-50 rounded-lg';
+    row.innerHTML =
+      `<span class="flex-1 text-sm font-medium text-slate-text truncate min-w-0" title="${esc(p.new_name)}">${esc(p.new_name)}</span>` +
+      `<span class="text-slate-text/30 shrink-0">→</span>` +
+      `<span class="flex-1 text-sm text-slate-text/60 truncate min-w-0" title="${esc(p.old_name)}">${esc(p.old_name)}</span>` +
+      `<button type="button" onclick="removePair(${i})" title="Usuń parę"` +
+      ` class="shrink-0 w-6 h-6 flex items-center justify-center rounded text-slate-text/30 hover:text-red-400 hover:bg-red-50 transition-colors text-lg leading-none">×</button>`;
+    list.appendChild(row);
   });
-
-  autoMatch();
 }
 
-function autoMatch() {
-  const selects = document.querySelectorAll('[name^="mapping_"][name$="_new"]');
-  selects.forEach((sel, idx) => {
-    if (!filesOld[idx]) return;
-    const oldBase = filesOld[idx].name.replace(/[_\-\s]+/g, ' ').toLowerCase().replace(/\.[^.]+$/, '');
-
-    let bestScore = 0;
-    let bestVal = '__skip__';
-
-    filesNew.forEach(fn => {
-      const newBase = fn.name.replace(/[_\-\s]+/g, ' ').toLowerCase().replace(/\.[^.]+$/, '');
-      const score = similarity(oldBase, newBase);
-      if (score > bestScore) {
-        bestScore = score;
-        bestVal = String(fn.id);
-      }
-    });
-
-    if (bestScore > 0.4) sel.value = bestVal;
-  });
-
-  updateUnmatched();
+function addPair() {
+  const newSel = document.getElementById('new-file-sel');
+  const oldSel = document.getElementById('old-file-sel');
+  const newId  = newSel.value;
+  const oldId  = oldSel.value;
+  if (!newId || !oldId) return;
+  const newFile = filesNew.find(f => String(f.id) === newId);
+  const oldFile = filesOld.find(f => String(f.id) === oldId);
+  if (!newFile || !oldFile) return;
+  pairs.push({new_id: newId, new_name: newFile.name, old_id: oldId, old_name: oldFile.name});
+  newSel.value = '';
+  oldSel.value = '';
+  renderSelects();
+  renderPairsList();
 }
 
-function similarity(a, b) {
-  const longer = a.length > b.length ? a : b;
-  const shorter = a.length > b.length ? b : a;
-  if (longer.length === 0) return 1.0;
-  const matches = shorter.split('').filter((c, i) => longer.includes(c)).length;
-  return matches / longer.length;
-}
-
-function updateUnmatched() {
-  const usedIds = new Set();
-  document.querySelectorAll('[name^="mapping_"][name$="_new"]').forEach(sel => {
-    if (sel.value && sel.value !== '__skip__') usedIds.add(sel.value);
-  });
-
-  const unmatchedNew = filesNew.filter(fn => !usedIds.has(String(fn.id)));
-  const panel = document.getElementById('unmatched-panel');
-  const container = document.getElementById('unmatched-new');
-
-  if (unmatchedNew.length > 0) {
-    panel.style.display = '';
-    container.innerHTML = unmatchedNew.map(fn => {
-      const icon = fn.name.endsWith('.pdf') ? '📄' : fn.name.endsWith('.docx') ? '📝' : '📎';
-      return `<span class="px-2 py-1 bg-yellow-50 border border-yellow-100 text-yellow-800 text-xs rounded-lg">${icon} ${fn.name}</span>`;
-    }).join('');
-  } else {
-    panel.style.display = 'none';
-  }
+function removePair(idx) {
+  pairs.splice(idx, 1);
+  renderSelects();
+  renderPairsList();
 }
 
 // Pre-select edition if passed via URL
