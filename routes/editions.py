@@ -1,9 +1,7 @@
 import logging
 import os
-import threading
-import time as _time
 from datetime import date, datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from extensions import db
 from models import Competition, Edition, Document, AppSettings
 from utils import slugify
@@ -134,80 +132,46 @@ def sync_drive(c_slug, e_slug):
         flash("Ustaw link do folderu Google Drive dla tej edycji.", "warning")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
-    app = current_app._get_current_object()
-    edition_id = edition.id
-    folder_id = edition.gdrive_folder_id
-    comp_slug = competition.slug
-    ed_slug = edition.slug
-    drive_api_key = settings.google_drive_api_key if mode == "public" else None
+    _logger.info("sync_drive: listing folder=%s mode=%s", edition.gdrive_folder_id, mode)
+    try:
+        if mode == "oauth":
+            from services.google_drive import list_folder_files
+            files = list_folder_files(edition.gdrive_folder_id, settings)
+        else:
+            from services.google_drive import list_folder_files_public
+            files = list_folder_files_public(edition.gdrive_folder_id, settings.google_drive_api_key)
+    except Exception as exc:
+        _logger.error("sync_drive: list error: %s", exc)
+        flash(f"Błąd pobierania listy plików z Drive: {exc}", "error")
+        return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
-    def _sync_bg():
-        with app.app_context():
-            try:
-                _logger.info("sync_drive: start edition=%s folder=%s mode=%s", edition_id, folder_id, mode)
-                try:
-                    if mode == "oauth":
-                        from services.google_drive import list_folder_files, download_file as _dl
-                        files = list_folder_files(folder_id, AppSettings.query.first())
-                    else:
-                        from services.google_drive import list_folder_files_public, download_file_public as _dl
-                        files = list_folder_files_public(folder_id, drive_api_key)
-                except Exception as exc:
-                    _logger.error("sync_drive: list error: %s", exc)
-                    return
+    added = 0
+    updated = 0
+    for f in files:
+        gid = f["id"]
+        drive_url = f"https://drive.google.com/file/d/{gid}/view"
+        existing = Document.query.filter_by(gdrive_file_id=gid).first()
+        if existing:
+            existing.original_name = f["name"]
+            existing.file_size = f.get("size") or 0
+            existing.mime_type = f["mime_type"]
+            existing.stored_path = drive_url
+            updated += 1
+        else:
+            db.session.add(Document(
+                edition_id=edition.id,
+                original_name=f["name"],
+                stored_path=drive_url,
+                file_size=f.get("size") or 0,
+                mime_type=f["mime_type"],
+                gdrive_file_id=gid,
+            ))
+            added += 1
 
-                _logger.info("sync_drive: found %d files", len(files))
-                dest_dir = os.path.join(BASE_DIR, "storage", comp_slug, ed_slug, "gdrive")
-                os.makedirs(dest_dir, exist_ok=True)
-
-                for f in files:
-                    gid = f["id"]
-                    existing = Document.query.filter_by(gdrive_file_id=gid).first()
-                    last_exc = None
-                    dest_path = None
-                    for attempt in range(3):
-                        try:
-                            if mode == "oauth":
-                                dest_path = _dl(gid, f["name"], f["mime_type"], dest_dir, AppSettings.query.first())
-                            else:
-                                dest_path = _dl(gid, f["name"], f["mime_type"], dest_dir, drive_api_key)
-                            last_exc = None
-                            break
-                        except Exception as exc:
-                            last_exc = exc
-                            _logger.warning("sync_drive: attempt %d failed for %s: %s", attempt + 1, f["name"], exc)
-                            _time.sleep(2 * (attempt + 1))
-
-                    if last_exc:
-                        _logger.error("sync_drive: download failed %s: %s", f["name"], last_exc)
-                        continue
-
-                    size = os.path.getsize(dest_path)
-                    if existing:
-                        existing.stored_path = dest_path
-                        existing.file_size = size
-                    else:
-                        db.session.add(Document(
-                            edition_id=edition_id,
-                            original_name=f["name"],
-                            stored_path=dest_path,
-                            file_size=size,
-                            mime_type=f["mime_type"],
-                            gdrive_file_id=gid,
-                        ))
-                    _logger.info("sync_drive: saved %s (%s bytes)", f["name"], size)
-
-                ed = db.session.get(Edition, edition_id)
-                if ed:
-                    ed.gdrive_synced_at = datetime.utcnow()
-                db.session.commit()
-                _logger.info("sync_drive: done edition=%s", edition_id)
-            finally:
-                _sync_in_progress.pop(edition_id, None)
-
-    _sync_in_progress[edition_id] = True
-    threading.Thread(target=_sync_bg, daemon=True, name=f"sync-drive-{edition_id}").start()
-    flash("Synchronizacja uruchomiona w tle. Strona odświeży się automatycznie.", "info")
+    edition.gdrive_synced_at = datetime.utcnow()
+    db.session.commit()
+    _logger.info("sync_drive: done +%d updated=%d", added, updated)
+    flash(f"Zsynchronizowano: +{added} nowych, {updated} zaktualizowanych.", "success")
     return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
 

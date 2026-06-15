@@ -155,25 +155,32 @@
               </td>
               <td class="px-5 py-3">
                 <div class="flex items-center justify-end gap-1.5 flex-wrap">
-                  {% if doc.ai_summary_status == 'done' %}
-                    <a href="{{ url_for('files.summary', file_id=doc.id) }}"
-                       class="px-2.5 py-1.5 border border-bottle text-bottle rounded text-xs font-medium hover:bg-bottle/5 transition-colors">
-                      👁 Podglad
+                  {% if doc.gdrive_file_id %}
+                    <a href="https://drive.google.com/file/d/{{ doc.gdrive_file_id }}/view" target="_blank" rel="noopener"
+                       class="px-2.5 py-1.5 bg-bottle text-white rounded text-xs font-medium hover:bg-bottle/80 transition-colors">
+                      ☁️ Otwórz
+                    </a>
+                  {% else %}
+                    {% if doc.ai_summary_status == 'done' %}
+                      <a href="{{ url_for('files.summary', file_id=doc.id) }}"
+                         class="px-2.5 py-1.5 border border-bottle text-bottle rounded text-xs font-medium hover:bg-bottle/5 transition-colors">
+                        👁 Podglad
+                      </a>
+                    {% endif %}
+                    {% if has_gemini and doc.ai_summary_status != 'pending' %}
+                      <form method="POST" action="{{ url_for('files.summarize', file_id=doc.id) }}"
+                            onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳...'">
+                        <button type="submit"
+                                class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors">
+                          🤖 Podsumuj
+                        </button>
+                      </form>
+                    {% endif %}
+                    <a href="{{ url_for('files.download', file_id=doc.id) }}"
+                       class="px-2.5 py-1.5 bg-bottle text-white rounded text-xs font-medium hover:bg-bottle/80 transition-colors">
+                      ⬇
                     </a>
                   {% endif %}
-                  {% if has_gemini and doc.ai_summary_status != 'pending' %}
-                    <form method="POST" action="{{ url_for('files.summarize', file_id=doc.id) }}"
-                          onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳...'">
-                      <button type="submit"
-                              class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors">
-                        🤖 Podsumuj
-                      </button>
-                    </form>
-                  {% endif %}
-                  <a href="{{ url_for('files.download', file_id=doc.id) }}"
-                     class="px-2.5 py-1.5 bg-bottle text-white rounded text-xs font-medium hover:bg-bottle/80 transition-colors">
-                    ⬇
-                  </a>
                   <form method="POST" action="{{ url_for('files.delete', file_id=doc.id) }}"
                         onsubmit="return confirm('Usunac plik {{ doc.original_name|e }}?')">
                     <button type="submit" class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded text-xs hover:bg-red-50 transition-colors">🗑</button>
@@ -198,40 +205,12 @@
 
 {% block scripts %}
 <script>
-(function() {
-  const EDITION_ID = {{ edition.id }};
-  const btn = document.getElementById('sync-btn');
-  const form = document.getElementById('sync-form');
-
-  function setSyncing(active) {
-    if (!btn) return;
-    btn.disabled = active;
-    btn.innerHTML = active ? '⏳ Synchronizuję...' : '🔄 Synchronizuj pliki z Drive';
+  const syncForm = document.getElementById('sync-form');
+  if (syncForm) {
+    syncForm.addEventListener('submit', function() {
+      const btn = document.getElementById('sync-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Synchronizuję...'; }
+    });
   }
-
-  async function pollStatus() {
-    try {
-      const r = await fetch(`/api/editions/${EDITION_ID}/sync-status`);
-      const d = await r.json();
-      if (d.syncing) {
-        setSyncing(true);
-        setTimeout(pollStatus, 3000);
-      } else {
-        window.location.reload();
-      }
-    } catch (_) {
-      setTimeout(pollStatus, 5000);
-    }
-  }
-
-  fetch(`/api/editions/${EDITION_ID}/sync-status`)
-    .then(r => r.json())
-    .then(d => { if (d.syncing) { setSyncing(true); setTimeout(pollStatus, 3000); } })
-    .catch(() => {});
-
-  if (form) {
-    form.addEventListener('submit', () => setSyncing(true));
-  }
-})();
 </script>
 {% endblock %}
