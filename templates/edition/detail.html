@@ -160,14 +160,29 @@
               </td>
               <td class="px-3 py-3">
                 <div class="flex items-center gap-2">
-                  {{ doc.original_name | file_icon | safe }}
+                  <span>{{ doc.original_name | file_icon }}</span>
                   <span class="font-medium text-slate-text max-w-[240px] truncate" title="{{ doc.original_name }}">{{ doc.original_name }}</span>
                   {% if doc.gdrive_file_id %}<span class="text-xs text-blue-400">☁️</span>{% endif %}
                 </div>
               </td>
               <td class="px-3 py-3">
-                {%- set ext = doc.original_name.rsplit('.', 1)[-1].upper() if '.' in doc.original_name else '' -%}
-                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">{{ ext or '?' }}</span>
+                {%- set ext = doc.original_name.rsplit('.', 1)[-1].lower() if '.' in doc.original_name else '' -%}
+                {%- set _ec = {
+                  'pdf':  'bg-red-100 text-red-700',
+                  'doc':  'bg-blue-100 text-blue-700',
+                  'docx': 'bg-blue-100 text-blue-700',
+                  'xls':  'bg-green-100 text-green-700',
+                  'xlsx': 'bg-green-100 text-green-700',
+                  'xlsm': 'bg-green-100 text-green-700',
+                  'ppt':  'bg-orange-100 text-orange-700',
+                  'pptx': 'bg-orange-100 text-orange-700',
+                  'txt':  'bg-slate-100 text-slate-500',
+                  'csv':  'bg-teal-100 text-teal-700',
+                  'png':  'bg-violet-100 text-violet-700',
+                  'jpg':  'bg-violet-100 text-violet-700',
+                  'jpeg': 'bg-violet-100 text-violet-700',
+                } -%}
+                <span class="px-2 py-0.5 {{ _ec.get(ext, 'bg-gray-100 text-gray-500') }} text-xs rounded font-mono">{{ ext.upper() or '?' }}</span>
               </td>
               <td id="desc-{{ doc.id }}" class="px-3 py-3 text-slate-text/70 text-xs max-w-[160px]">
                 {{ doc.ai_description or '—' }}

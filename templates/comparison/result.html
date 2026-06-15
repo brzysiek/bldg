@@ -155,7 +155,7 @@
                     onclick="toggleAccordion('pfr-{{ loop.index0 }}')"
                     class="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-gray-50/50 transition-colors">
               <div class="flex items-center gap-3 min-w-0">
-                {{ pfr.old_name | file_icon | safe }}
+                <span class="text-base shrink-0">{{ pfr.old_name | file_icon }}</span>
                 <div class="min-w-0">
                   <div class="font-medium text-bottle text-sm truncate">{{ pfr.old_name }}</div>
                   <div class="text-xs text-slate-text/50">→ {{ pfr.new_name }}</div>
