@@ -1,14 +1,17 @@
+import logging
 import os
 import time
 import tempfile
 from datetime import datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file, abort, Response
+from flask import Blueprint, jsonify, render_template, request, redirect, url_for, flash, send_file, abort, Response
 from werkzeug.utils import secure_filename
 import markdown as md_lib
 from extensions import db
 from models import Competition, Edition, Document, AppSettings
 from services.text_extractor import extract_text
 from services.gemini import summarize_document
+
+_logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -167,26 +170,34 @@ def summarize(file_id):
 
 @bp.route("/files/<int:file_id>/summarize-json", methods=["POST"])
 def summarize_json(file_id):
-    from flask import jsonify
-    doc = Document.query.get_or_404(file_id)
-    settings = AppSettings.query.first()
+    try:
+        doc = db.session.get(Document, file_id)
+        if doc is None:
+            return jsonify({"ok": False, "file_id": file_id, "error": f"Dokument {file_id} nie istnieje"}), 404
 
-    if not settings or not settings.gemini_api_key:
-        return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
+        settings = AppSettings.query.first()
+        if not settings or not settings.gemini_api_key:
+            return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API w ustawieniach"})
 
-    doc.ai_summary_status = "pending"
-    db.session.commit()
+        _logger.info("summarize_json: start file_id=%s name=%s", file_id, doc.original_name)
+        doc.ai_summary_status = "pending"
+        db.session.commit()
 
-    ok, err = _run_summarize(doc, settings)
-    if ok:
-        return jsonify({
-            "ok": True,
-            "file_id": file_id,
-            "description": doc.ai_description or "",
-            "summary": doc.ai_summary or "",
-        })
-    else:
-        return jsonify({"ok": False, "file_id": file_id, "error": err})
+        ok, err = _run_summarize(doc, settings)
+        if ok:
+            _logger.info("summarize_json: done file_id=%s", file_id)
+            return jsonify({
+                "ok": True,
+                "file_id": file_id,
+                "description": doc.ai_description or "",
+                "summary": doc.ai_summary or "",
+            })
+        else:
+            _logger.warning("summarize_json: failed file_id=%s err=%s", file_id, err)
+            return jsonify({"ok": False, "file_id": file_id, "error": err})
+    except Exception as exc:
+        _logger.error("summarize_json: unhandled exception file_id=%s: %s", file_id, exc, exc_info=True)
+        return jsonify({"ok": False, "file_id": file_id, "error": str(exc)}), 500
 
 
 @bp.route("/files/<int:file_id>/summary")

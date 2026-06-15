@@ -126,6 +126,7 @@
     <div id="progress-bar" class="bg-bottle h-2 rounded-full transition-all duration-500" style="width:0%"></div>
   </div>
   <p id="progress-file" class="text-xs text-slate-text/50 mt-1.5 truncate"></p>
+  <div id="error-log" class="hidden mt-2 max-h-28 overflow-y-auto space-y-0.5"></div>
 </div>
 
 {% if all_docs %}
@@ -315,13 +316,13 @@ async function bulkSummarize() {
         const msg = `HTTP ${resp.status}${data?.error ? ': ' + data.error : ''}`;
         console.error(`[bulk] file ${file.id} (${file.name}):`, msg, data);
         setRowError(file.id, msg);
-        showProgressError(msg);
+        showProgressError(file.id, file.name, msg);
         errors++;
       } else if (!data?.ok) {
         const msg = data?.error || 'Nieznany błąd';
         console.error(`[bulk] file ${file.id} (${file.name}):`, msg);
         setRowError(file.id, msg);
-        showProgressError(msg);
+        showProgressError(file.id, file.name, msg);
         errors++;
       } else {
         setRowDone(file.id, data.description, data.summary);
@@ -329,7 +330,7 @@ async function bulkSummarize() {
     } catch (e) {
       console.error(`[bulk] file ${file.id} (${file.name}): fetch error`, e);
       setRowError(file.id, e.message);
-      showProgressError(e.message);
+      showProgressError(file.id, file.name, e.message);
       errors++;
     }
     done++;
@@ -347,9 +348,15 @@ async function bulkSummarize() {
   });
 }
 
-function showProgressError(msg) {
-  const el = document.getElementById('progress-file');
-  if (el) { el.textContent = '❌ ' + msg; el.classList.add('text-red-500'); }
+function showProgressError(fileId, fileName, msg) {
+  const log = document.getElementById('error-log');
+  if (log) {
+    log.classList.remove('hidden');
+    const line = document.createElement('div');
+    line.className = 'text-xs text-red-600 font-mono';
+    line.textContent = `❌ [${fileId}] ${fileName}: ${msg}`;
+    log.appendChild(line);
+  }
 }
 
 function setProgress(done, total, filename, state) {
