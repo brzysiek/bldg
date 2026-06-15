@@ -102,6 +102,11 @@
 </form>
 
 <script>
+const _EDITIONS_TPL = {{ url_for('editions.api_editions', comp_id=0)|tojson }};
+const _ED_FILES_TPL = {{ url_for('editions.api_edition_files', edition_id=0)|tojson }};
+const editionsUrl   = id => _EDITIONS_TPL.replace('/0', '/' + id);
+const edFilesUrl    = id => _ED_FILES_TPL.replace('/0', '/' + id);
+
 let filesOld = [];
 let filesNew = [];
 
@@ -114,7 +119,7 @@ async function loadEditions() {
     return;
   }
 
-  const r = await fetch(`/api/competitions/${compId}/editions`);
+  const r = await fetch(editionsUrl(compId));
   const editions = await r.json();
 
   const oldSel = document.getElementById('edition-old-select');
@@ -172,8 +177,8 @@ function onEditionChange() {
 
 async function loadFiles(oldId, newId) {
   const [rOld, rNew] = await Promise.all([
-    fetch(`/api/editions/${oldId}/files`),
-    fetch(`/api/editions/${newId}/files`),
+    fetch(edFilesUrl(oldId)),
+    fetch(edFilesUrl(newId)),
   ]);
   filesOld = await rOld.json();
   filesNew = await rNew.json();
@@ -310,7 +315,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     const compSel = document.getElementById('competition-select');
     for (const opt of compSel.options) {
       if (!opt.value) continue;
-      const r = await fetch(`/api/competitions/${opt.value}/editions`);
+      const r = await fetch(editionsUrl(opt.value));
       const editions = await r.json();
       const found = editions.find(e => String(e.id) === editionOldParam);
       if (found) {

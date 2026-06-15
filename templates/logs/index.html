@@ -31,6 +31,7 @@
 
 {% block scripts %}
 <script>
+const API_LOGS_URL = {{ url_for('api_logs')|tojson }};
 const LEVEL_COLORS = {
   DEBUG:    'text-gray-400',
   INFO:     'text-blue-300',
@@ -97,7 +98,7 @@ function escHtml(s) {
 
 async function fetchLogs() {
   try {
-    const r = await fetch(`/api/logs?since=${lastTs}`);
+    const r = await fetch(`${API_LOGS_URL}?since=${lastTs}`);
     if (!r.ok) throw new Error(r.status);
     const data = await r.json();
     if (data.length) {
