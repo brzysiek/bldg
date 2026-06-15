@@ -1,9 +1,11 @@
 import os
 import re
 import io
+import ssl
 from datetime import datetime, timezone
 
 import requests as _requests
+from requests.adapters import HTTPAdapter
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import Flow
@@ -27,6 +29,38 @@ DOWNLOADABLE_MIME = {
     "application/vnd.ms-excel",
     "text/plain",
 }
+
+
+def _make_public_session() -> _requests.Session:
+    """Session with a permissive SSL context — needed on CloudLinux/cPanel hosts
+    where Python 3.13's default TLS context causes SSLEOFError during handshake."""
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.check_hostname = True
+    ctx.verify_mode = ssl.CERT_REQUIRED
+    try:
+        ctx.set_ciphers("DEFAULT@SECLEVEL=1")
+    except ssl.SSLError:
+        pass
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except Exception:
+        ctx.load_default_certs()
+
+    class _TLSAdapter(HTTPAdapter):
+        def init_poolmanager(self, *args, **kwargs):
+            kwargs["ssl_context"] = ctx
+            super().init_poolmanager(*args, **kwargs)
+
+        def proxy_manager_for(self, proxy, **kwargs):
+            kwargs["ssl_context"] = ctx
+            return super().proxy_manager_for(proxy, **kwargs)
+
+    session = _requests.Session()
+    session.headers["Connection"] = "close"
+    session.mount("https://", _TLSAdapter())
+    return session
 
 
 def extract_folder_id(url: str) -> str | None:
@@ -177,8 +211,7 @@ def list_folder_files_public(folder_id: str, api_key: str) -> list[dict]:
         "key": api_key,
     }
     results = []
-    session = _requests.Session()
-    session.headers.update({"Connection": "close"})
+    session = _make_public_session()
     while True:
         resp = session.get(url, params=params, timeout=20)
         resp.raise_for_status()
@@ -210,8 +243,7 @@ def download_file_public(file_id: str, file_name: str, mime_type: str, dest_dir:
         dest_path = os.path.join(dest_dir, file_name)
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
         params = {"alt": "media", "key": api_key}
-    session = _requests.Session()
-    session.headers.update({"Connection": "close"})
+    session = _make_public_session()
     resp = session.get(url, params=params, timeout=120, stream=True)
     resp.raise_for_status()
     with open(dest_path, "wb") as fh:

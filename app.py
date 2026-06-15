@@ -23,10 +23,10 @@ class _RingBufferHandler(_logging.Handler):
                 "level": record.levelname,
                 "name": record.name,
                 "msg": record.getMessage(),
-                "time_str": self.formatTime(record, "%H:%M:%S"),
+                "time_str": datetime.fromtimestamp(record.created).strftime("%H:%M:%S"),
             })
         except Exception:
-            self.handleError(record)
+            pass  # never raise from a log handler
 
     def records(self, since: float = 0.0):
         return [r for r in self._buf if r["ts"] > since]
