@@ -277,7 +277,13 @@ def create_app():
                 or "application/json" in _req.headers.get("Accept", "")):
             from flask import jsonify as _jsonify
             return _jsonify({"ok": False, "error": str(e)}), 500
-        return render_template("404.html"), 500  # fallback — brak osobnego szablonu 500
+        # Fallback HTML — pokazuje rzeczywisty komunikat błędu
+        msg = _logging.escape(str(e)) if hasattr(_logging, "escape") else str(e).replace("<", "&lt;")
+        return (
+            f'<h1>Błąd serwera (500)</h1>'
+            f'<p style="font-family:monospace;color:red">{msg}</p>'
+            f'<p><a href="/">Powrót</a></p>'
+        ), 500
 
     app.jinja_env.globals["BUILD"] = BUILD
 
