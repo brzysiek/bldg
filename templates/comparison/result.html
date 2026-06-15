@@ -406,6 +406,7 @@ const TOTAL_PAIRS     = {{ mappings | length }};
 const RUN_PAIR_URL    = {{ url_for('comparison.run_pair', job_id=job.id) | tojson }};
 const GEN_SUMMARY_URL = {{ url_for('comparison.generate_edition_summary', job_id=job.id) | tojson }};
 const CANCEL_URL      = {{ url_for('comparison.cancel_job', job_id=job.id) | tojson }};
+const STATUS_API_URL  = {{ url_for('comparison.job_status_api', job_id=job.id) | tojson }};
 
 const WAGA_BADGE = {
   KRYTYCZNA: 'bg-red-100 text-red-700',
@@ -423,6 +424,7 @@ const WAGA_ROW = {
 let cancelled        = false;
 let totalTimerIval   = null;
 let pairTimerIval    = null;
+let pairPollIval     = null;
 let totalStart       = null;
 let pairStart        = null;
 
@@ -462,6 +464,23 @@ function stopPairTimer() {
   return pairStart ? Math.floor((Date.now() - pairStart) / 1000) : 0;
 }
 
+function startPairPoll(idx) {
+  if (pairPollIval) clearInterval(pairPollIval);
+  pairPollIval = setInterval(async () => {
+    try {
+      const r = await fetch(STATUS_API_URL);
+      if (!r.ok) return;
+      const d = await r.json();
+      const el = document.getElementById(`pair-stage-${idx}`);
+      if (el && d.status_detail) el.textContent = d.status_detail;
+    } catch(e) { /* serwer zajęty — pominięcie */ }
+  }, 5000);
+}
+
+function stopPairPoll() {
+  if (pairPollIval) { clearInterval(pairPollIval); pairPollIval = null; }
+}
+
 function setProgress(done, total, label, fileHint) {
   const pct = total > 0 ? Math.round(done / total * 100) : 0;
   document.getElementById('progress-bar').style.width = pct + '%';
@@ -478,9 +497,11 @@ function setPairState(idx, state) {
     icon.textContent = '⏳';
     icon.className = 'text-lg shrink-0';
     badge.innerHTML = `<span class="text-xs text-slate-text/40 animate-pulse">analizuję...</span>`
+      + `<span id="pair-stage-${idx}" class="ml-2 text-xs text-slate-text/40 italic truncate max-w-[220px]"></span>`
       + `<span id="pair-timer-${idx}" class="ml-2 text-xs font-mono text-slate-text/30 tabular-nums">0:00</span>`;
     card.classList.add('border-lime/40');
     startPairTimer(idx);
+    startPairPoll(idx);
   } else if (state === 'waiting') {
     icon.textContent = '○';
     icon.className = 'text-lg shrink-0 text-gray-300';
@@ -490,6 +511,7 @@ function setPairState(idx, state) {
 
 function setPairDone(idx, data) {
   const elapsed = stopPairTimer();
+  stopPairPoll();
   const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
   const body  = document.getElementById(`pair-body-${idx}`);
@@ -521,6 +543,7 @@ function setPairDone(idx, data) {
 
 function setPairError(idx, msg) {
   stopPairTimer();
+  stopPairPoll();
   const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);

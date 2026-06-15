@@ -133,11 +133,18 @@ def _resolve_local_path(doc, settings):
         raise
 
 
-def compare_one_pair(doc_old, doc_new, job, settings):
+def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
     """Compare one document pair in the current (main-request) thread.
     Returns result dict: old/new names, changes list, summary text, token counts."""
     import shutil
     from google import genai
+
+    def _status(msg):
+        if on_status:
+            try:
+                on_status(msg)
+            except Exception:
+                pass
 
     client    = genai.Client(api_key=settings.gemini_api_key)
     model     = settings.gemini_model or "gemini-2.5-flash"
@@ -152,6 +159,7 @@ def compare_one_pair(doc_old, doc_new, job, settings):
             t_out += getattr(u, "candidates_token_count", 0) or 0
         return resp
 
+    _status("Ekstrakcja tekstu")
     old_path, old_tmp = _resolve_local_path(doc_old, settings)
     new_path, new_tmp = _resolve_local_path(doc_new, settings)
     try:
@@ -161,9 +169,14 @@ def compare_one_pair(doc_old, doc_new, job, settings):
         if old_tmp: shutil.rmtree(old_tmp, ignore_errors=True)
         if new_tmp: shutil.rmtree(new_tmp, ignore_errors=True)
 
+    _status(f"Analiza struktury: {doc_old.original_name}")
     struct_old = _get_structure_cached(doc_old, text_old, call_gemini, settings)
+
+    _status(f"Analiza struktury: {doc_new.original_name}")
     struct_new = _get_structure_cached(doc_new, text_new, call_gemini, settings)
 
+    n_sekcji = len(set(struct_old.get("sekcje", {}).keys()) | set(struct_new.get("sekcje", {}).keys()))
+    _status(f"Porównywanie sekcji (0/{n_sekcji})")
     changes = _compare_pair(
         text_old, text_new,
         job.label_old or "Edycja starsza",
@@ -171,6 +184,8 @@ def compare_one_pair(doc_old, doc_new, job, settings):
         call_gemini, lambda _: None, settings,
         struct_old=struct_old, struct_new=struct_new,
     )
+
+    _status("Podsumowanie pliku")
     summary = _file_summary(
         changes,
         job.label_old or "Edycja starsza",

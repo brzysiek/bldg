@@ -196,6 +196,7 @@ def _start_job_monitor(app):
 
 
 def create_app():
+    from _build import BUILD
     app = Flask(__name__)
     app.secret_key = os.environ.get("SECRET_KEY", "grant-docs-secret-key-change-in-prod")
 
@@ -263,6 +264,8 @@ def create_app():
     @app.errorhandler(404)
     def not_found(e):
         return render_template("404.html"), 404
+
+    app.jinja_env.globals["BUILD"] = BUILD
 
     @app.template_filter("status_pl")
     def status_pl_filter(status):

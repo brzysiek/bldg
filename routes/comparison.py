@@ -141,8 +141,14 @@ def run_pair(job_id):
         job.started_at = datetime.utcnow()
     db.session.commit()
 
+    pair_prefix = f"Para {pair_idx + 1}/{len(mappings)}"
+
+    def _on_status(stage):
+        job.status_detail = f"{pair_prefix}: {stage}"
+        db.session.commit()
+
     try:
-        result = compare_one_pair(doc_old, doc_new, job, settings)
+        result = compare_one_pair(doc_old, doc_new, job, settings, on_status=_on_status)
 
         per_file_results = json.loads(job.per_file_results_json or "[]")
         per_file_results.append(result)
