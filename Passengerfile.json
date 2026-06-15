@@ -1,4 +1,5 @@
 {
     "max_pool_size": 3,
-    "min_instances": 2
+    "min_instances": 2,
+    "max_request_time": 600
 }
