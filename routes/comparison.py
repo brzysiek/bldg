@@ -5,7 +5,7 @@ from datetime import datetime
 
 from flask import (
     Blueprint, jsonify, redirect, render_template,
-    request, send_file, url_for, flash,
+    request, url_for, flash,
 )
 from werkzeug.utils import secure_filename
 
@@ -87,6 +87,20 @@ def setup():
             flash("Nie wybrano żadnych par plików do porównania.", "error")
             return redirect(url_for("comparison.setup"))
 
+        # Enforce uniqueness: one active comparison per edition pair
+        existing = ComparisonJob.query.filter(
+            ComparisonJob.edition_old_id == edition_old_id,
+            ComparisonJob.edition_new_id == edition_new_id,
+            ComparisonJob.status != "cancelled",
+        ).first()
+        if existing:
+            flash(
+                f"Porównanie tych edycji już istnieje (#{existing.id}, status: {existing.status}). "
+                "Przejdź do niego lub usuń je, aby utworzyć nowe.",
+                "info",
+            )
+            return redirect(url_for("comparison.job_status", job_id=existing.id))
+
         active_statuses = ["pending", "comparing", "extracting", "chunking", "summarizing"]
         is_busy = ComparisonJob.query.filter(ComparisonJob.status.in_(active_statuses)).first() is not None
         initial_status = "queued" if is_busy else "pending"
@@ -161,6 +175,7 @@ def run_pair(job_id):
 
     try:
         result = compare_one_pair(doc_old, doc_new, job, settings, on_status=_on_status)
+        result.setdefault("compared_at", datetime.utcnow().strftime("%d.%m.%Y %H:%M"))
 
         per_file_results = json.loads(job.per_file_results_json or "[]")
         # Usuń poprzedni wynik tej pary (obsługa ponowień)
@@ -382,14 +397,15 @@ def finalize_pair(job_id):
         )
 
         result = {
-            "old_doc_id": doc_old.id,
-            "new_doc_id": doc_new.id,
-            "old_name":   doc_old.original_name or mapping.get("old_name", ""),
-            "new_name":   doc_new.original_name or mapping.get("new_name", ""),
-            "changes":    all_changes,
-            "summary":    summary_text,
-            "tokens_in":  t_in,
-            "tokens_out": t_out,
+            "old_doc_id":  doc_old.id,
+            "new_doc_id":  doc_new.id,
+            "old_name":    doc_old.original_name or mapping.get("old_name", ""),
+            "new_name":    doc_new.original_name or mapping.get("new_name", ""),
+            "changes":     all_changes,
+            "summary":     summary_text,
+            "tokens_in":   t_in,
+            "tokens_out":  t_out,
+            "compared_at": datetime.utcnow().strftime("%d.%m.%Y %H:%M"),
         }
 
         per_file_results = json.loads(job.per_file_results_json or "[]")
@@ -643,13 +659,14 @@ def skip_pair(job_id):
                         if not (r.get("old_doc_id") == old_doc_id
                                 and r.get("new_doc_id") == new_doc_id)]
     per_file_results.append({
-        "old_doc_id": old_doc_id,
-        "new_doc_id": new_doc_id,
-        "old_name":   mapping.get("old_name", ""),
-        "new_name":   mapping.get("new_name", ""),
-        "changes":    [],
-        "summary":    "",
-        "skipped":    True,
+        "old_doc_id":  old_doc_id,
+        "new_doc_id":  new_doc_id,
+        "old_name":    mapping.get("old_name", ""),
+        "new_name":    mapping.get("new_name", ""),
+        "changes":     [],
+        "summary":     "",
+        "skipped":     True,
+        "compared_at": datetime.utcnow().strftime("%d.%m.%Y %H:%M"),
     })
     job.per_file_results_json = json.dumps(per_file_results, ensure_ascii=False)
     db.session.commit()
@@ -826,6 +843,88 @@ def _write_pair_sheet(ws, pfr, job):
     _xl_col_widths(ws, [20, 20, 12, 50, 50, 60])
 
 
+def _send_excel(wb, filename):
+    """Serialize workbook to bytes and return as a response (avoids BytesIO.fileno issue)."""
+    from flask import make_response as _make_response
+    buf = io.BytesIO()
+    wb.save(buf)
+    resp = _make_response(buf.getvalue())
+    resp.headers["Content-Type"] = (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
+def _send_csv(content_str, filename):
+    """Return CSV string as a download response with UTF-8 BOM for Excel compatibility."""
+    from flask import make_response as _make_response
+    resp = _make_response(content_str.encode("utf-8-sig"))
+    resp.headers["Content-Type"] = "text/csv; charset=utf-8"
+    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
+def _csv_filename(job, suffix=""):
+    import re
+    dt = job.created_at.strftime("%Y-%m-%d %H-%M") if job.created_at else "export"
+    parts = [job.competition_name or "konkurs", job.label_new or "edycja", dt]
+    if suffix:
+        parts.append(suffix)
+    slug = "-".join(re.sub(r"[^\w\s\-]", "", p or "").strip() for p in parts)
+    return f"Rejestr zmian-{slug}.csv"
+
+
+def _build_pair_csv(pfr, job):
+    import csv as _csv
+    import io as _sio
+    changes = pfr.get("changes", [])
+    buf = _sio.StringIO()
+    w = _csv.writer(buf)
+    w.writerow([
+        "Sekcja", "Typ zmiany", "Waga",
+        f"Zapis — {job.label_old}", f"Zapis — {job.label_new}",
+        "Komentarz biznesowy",
+    ])
+    for ch in changes:
+        w.writerow([
+            ch.get("sekcja", ""),
+            ch.get("typ_zmiany", ""),
+            ch.get("waga", ""),
+            ch.get("zapis_stary", ""),
+            ch.get("zapis_nowy", ""),
+            ch.get("komentarz_biznesowy", ""),
+        ])
+    return buf.getvalue()
+
+
+def _build_all_csv(per_file_results, job):
+    import csv as _csv
+    import io as _sio
+    active = [p for p in per_file_results if not p.get("skipped")]
+    buf = _sio.StringIO()
+    w = _csv.writer(buf)
+    w.writerow([
+        "Para (stary plik)", "Para (nowy plik)",
+        "Sekcja", "Typ zmiany", "Waga",
+        f"Zapis — {job.label_old}", f"Zapis — {job.label_new}",
+        "Komentarz biznesowy",
+    ])
+    for pfr in active:
+        for ch in pfr.get("changes", []):
+            w.writerow([
+                pfr.get("old_name", ""),
+                pfr.get("new_name", ""),
+                ch.get("sekcja", ""),
+                ch.get("typ_zmiany", ""),
+                ch.get("waga", ""),
+                ch.get("zapis_stary", ""),
+                ch.get("zapis_nowy", ""),
+                ch.get("komentarz_biznesowy", ""),
+            ])
+    return buf.getvalue()
+
+
 @bp.route("/job/<int:job_id>/download-excel")
 def download_excel(job_id):
     import openpyxl
@@ -847,12 +946,19 @@ def download_excel(job_id):
         ws = wb.create_sheet(_safe_sheet_name(pfr.get("old_name", "Para")))
         _write_pair_sheet(ws, pfr, job)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return send_file(buf, as_attachment=True,
-                     download_name=_excel_filename(job),
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return _send_excel(wb, _excel_filename(job))
+
+
+@bp.route("/job/<int:job_id>/download-csv")
+def download_csv(job_id):
+    job = ComparisonJob.query.get_or_404(job_id)
+    per_file_results = json.loads(job.per_file_results_json or "[]")
+
+    if not per_file_results:
+        flash("Brak wyników do eksportu.", "warning")
+        return redirect(url_for("comparison.job_status", job_id=job_id))
+
+    return _send_csv(_build_all_csv(per_file_results, job), _csv_filename(job))
 
 
 @bp.route("/job/<int:job_id>/pair/<int:pair_idx>/download-excel")
@@ -871,12 +977,23 @@ def download_pair_excel(job_id, pair_idx):
     ws.title = _safe_sheet_name(pfr.get("old_name", "Para"))
     _write_pair_sheet(ws, pfr, job)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return send_file(buf, as_attachment=True,
-                     download_name=_excel_filename(job, suffix=pfr.get("old_name", f"para-{pair_idx + 1}")),
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return _send_excel(wb, _excel_filename(job, suffix=pfr.get("old_name", f"para-{pair_idx + 1}")))
+
+
+@bp.route("/job/<int:job_id>/pair/<int:pair_idx>/download-csv")
+def download_pair_csv(job_id, pair_idx):
+    job = ComparisonJob.query.get_or_404(job_id)
+    per_file_results = json.loads(job.per_file_results_json or "[]")
+
+    if pair_idx >= len(per_file_results):
+        flash("Nie znaleziono wyników tej pary.", "warning")
+        return redirect(url_for("comparison.job_status", job_id=job_id))
+
+    pfr = per_file_results[pair_idx]
+    return _send_csv(
+        _build_pair_csv(pfr, job),
+        _csv_filename(job, suffix=pfr.get("old_name", f"para-{pair_idx + 1}")),
+    )
 
 
 @bp.route("/job/<int:job_id>/cancel", methods=["POST"])

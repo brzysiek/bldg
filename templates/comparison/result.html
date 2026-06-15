@@ -23,7 +23,11 @@
     {% if per_file_results %}
       <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
          class="flex items-center gap-2 px-4 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors">
-        ⬇️ Excel
+        ⬇️ XLSX
+      </a>
+      <a href="{{ url_for('comparison.download_csv', job_id=job.id) }}"
+         class="flex items-center gap-2 px-4 py-2 border border-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/20 transition-colors">
+        ⬇️ CSV
       </a>
     {% endif %}
     <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
@@ -151,6 +155,7 @@
                 <div class="min-w-0">
                   <div class="font-medium text-bottle text-sm truncate">{{ pfr.old_name }}</div>
                   <div class="text-xs text-slate-text/50">→ {{ pfr.new_name }}</div>
+                  {% if pfr.get('compared_at') %}<div class="text-xs text-slate-text/30 mt-0.5">{{ pfr.compared_at }}</div>{% endif %}
                 </div>
               </div>
               <div class="flex items-center gap-2 ml-4 shrink-0" onclick="event.stopPropagation()">
@@ -158,7 +163,10 @@
                 <span class="px-2 py-0.5 {% if n_ch > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_ch }} zmian</span>
                 <a href="{{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=loop.index0) }}"
                    class="px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors"
-                   title="Pobierz Excel dla tej pary">⬇️</a>
+                   title="Pobierz XLSX">⬇️ XLSX</a>
+                <a href="{{ url_for('comparison.download_pair_csv', job_id=job.id, pair_idx=loop.index0) }}"
+                   class="px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded font-medium hover:bg-lime/20 transition-colors"
+                   title="Pobierz CSV">⬇️ CSV</a>
                 <span class="text-slate-text/30 text-sm transition-transform duration-200"
                       id="arrow-pfr-{{ loop.index0 }}"
                       onclick="toggleAccordion('pfr-{{ loop.index0 }}'); event.stopPropagation()">▼</span>
@@ -343,7 +351,9 @@
                class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 w-32" />
         <button onclick="clearFilters()" class="text-xs text-slate-text/40 hover:text-bottle px-1.5 py-1.5">Resetuj</button>
         <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-           class="flex items-center gap-1 px-3 py-1.5 bg-lime text-bottle rounded text-xs font-bold hover:bg-lime/80">⬇️ Excel</a>
+           class="flex items-center gap-1 px-3 py-1.5 bg-lime text-bottle rounded text-xs font-bold hover:bg-lime/80">⬇️ XLSX</a>
+        <a href="{{ url_for('comparison.download_csv', job_id=job.id) }}"
+           class="flex items-center gap-1 px-3 py-1.5 border border-lime text-bottle rounded text-xs font-bold hover:bg-lime/20">⬇️ CSV</a>
       </div>
     </div>
     <div class="overflow-x-auto">
@@ -396,7 +406,8 @@ const FINISH_PAIRS_URL     = {{ url_for('comparison.finish_pairs',             j
 const CANCEL_URL           = {{ url_for('comparison.cancel_job',               job_id=job.id) | tojson }};
 const STATUS_API_URL       = {{ url_for('comparison.job_status_api',           job_id=job.id) | tojson }};
 const ADD_PAIR_URL         = {{ url_for('comparison.add_pair',                 job_id=job.id) | tojson }};
-const DOWNLOAD_PAIR_URL_TPL = {{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=0) | tojson }};
+const DOWNLOAD_PAIR_XLSX_TPL = {{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=0) | tojson }};
+const DOWNLOAD_PAIR_CSV_TPL  = {{ url_for('comparison.download_pair_csv',   job_id=job.id, pair_idx=0) | tojson }};
 {% if job.edition_old_id and job.edition_new_id %}
 const ED_OLD_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_old_id) | tojson }};
 const ED_NEW_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_new_id) | tojson }};
@@ -406,7 +417,10 @@ const ED_NEW_FILES_URL  = null;
 {% endif %}
 
 function pairDownloadUrl(idx) {
-  return DOWNLOAD_PAIR_URL_TPL.replace(/\/pair\/0\//, `/pair/${idx}/`);
+  return DOWNLOAD_PAIR_XLSX_TPL.replace(/\/pair\/0\//, `/pair/${idx}/`);
+}
+function pairCsvUrl(idx) {
+  return DOWNLOAD_PAIR_CSV_TPL.replace(/\/pair\/0\//, `/pair/${idx}/`);
 }
 
 const WAGA_BADGE = {
@@ -570,9 +584,11 @@ function setPairDone(idx, data) {
   const critBadge = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
   const cntColor  = n > 0 ? 'bg-bottle/10 text-bottle' : 'bg-gray-100 text-gray-400';
   const timeBadge = elapsed > 0 ? `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-mono ml-1">${fmtSecs(elapsed)}</span>` : '';
-  const dlUrl     = pairDownloadUrl(idx);
+  const dlUrl  = pairDownloadUrl(idx);
+  const csvUrl = pairCsvUrl(idx);
   badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}` +
-    `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors" title="Excel">⬇️</a>` +
+    `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors" title="XLSX">⬇️ XLSX</a>` +
+    `<a href="${csvUrl}" class="ml-1 px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded font-medium hover:bg-lime/20 transition-colors" title="CSV">⬇️ CSV</a>` +
     `<button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
 
   if (body) {
