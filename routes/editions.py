@@ -2,30 +2,10 @@ import os
 from datetime import date, datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from extensions import db
-from models import Competition, Edition, DocumentType, Document, AppSettings
+from models import Competition, Edition, Document, AppSettings
 from utils import slugify
 
 bp = Blueprint("editions", __name__)
-
-GDRIVE_DT_NAME = "Google Drive"
-GDRIVE_DT_SLUG = "google-drive"
-
-
-def _get_or_create_gdrive_dt(edition):
-    dt = DocumentType.query.filter_by(edition_id=edition.id, slug=GDRIVE_DT_SLUG).first()
-    if not dt:
-        dt = DocumentType(edition_id=edition.id, name=GDRIVE_DT_NAME, slug=GDRIVE_DT_SLUG, order_index=0)
-        db.session.add(dt)
-        db.session.flush()
-    return dt
-
-
-def _all_edition_docs(edition):
-    docs = []
-    for dt in edition.document_types:
-        for doc in dt.documents:
-            docs.append(doc)
-    return docs
 
 
 @bp.route("/competition/<c_slug>/edition/new", methods=["GET", "POST"])
@@ -77,7 +57,7 @@ def detail(c_slug, e_slug):
     settings = AppSettings.query.first()
     has_gemini = bool(settings and settings.gemini_api_key)
     has_gdrive = bool(settings and settings.google_access_token)
-    all_docs = sorted(_all_edition_docs(edition), key=lambda d: d.uploaded_at or datetime.min, reverse=True)
+    all_docs = sorted(edition.documents, key=lambda d: d.uploaded_at or datetime.min, reverse=True)
     return render_template(
         "edition/detail.html",
         competition=competition,
@@ -134,19 +114,17 @@ def sync_drive(c_slug, e_slug):
         flash("Polacz konto Google Drive w Ustawieniach.", "warning")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
-    folder_id = edition.gdrive_folder_id
-    if not folder_id:
+    if not edition.gdrive_folder_id:
         flash("Ustaw link do folderu Google Drive dla tej edycji.", "warning")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
     try:
         from services.google_drive import list_folder_files, download_file as gdrive_download
-        files = list_folder_files(folder_id, settings)
+        files = list_folder_files(edition.gdrive_folder_id, settings)
     except Exception as e:
         flash(f"Blad pobierania listy plikow z Drive: {e}", "error")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
-    dt = _get_or_create_gdrive_dt(edition)
     dest_dir = os.path.join("storage", competition.slug, edition.slug, "gdrive")
     os.makedirs(dest_dir, exist_ok=True)
 
@@ -167,7 +145,7 @@ def sync_drive(c_slug, e_slug):
                 updated += 1
             else:
                 doc = Document(
-                    document_type_id=dt.id,
+                    edition_id=edition.id,
                     original_name=file_meta["name"],
                     stored_path=dest_path,
                     file_size=size,
@@ -211,7 +189,6 @@ def set_drive_url(c_slug, e_slug):
     return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
 
-# AJAX endpoints for comparison setup
 @bp.route("/api/competitions/<int:comp_id>/editions")
 def api_editions(comp_id):
     editions = Edition.query.filter_by(competition_id=comp_id).order_by(Edition.year.desc(), Edition.name).all()
@@ -223,9 +200,9 @@ def api_edition_files(edition_id):
     edition = db.session.get(Edition, edition_id)
     if not edition:
         return jsonify([])
-    docs = []
-    for dt in edition.document_types:
-        for doc in dt.documents:
-            docs.append({"id": doc.id, "name": doc.original_name, "size": doc.file_size or 0, "from_gdrive": bool(doc.gdrive_file_id)})
+    docs = [
+        {"id": doc.id, "name": doc.original_name, "size": doc.file_size or 0, "from_gdrive": bool(doc.gdrive_file_id)}
+        for doc in edition.documents
+    ]
     docs.sort(key=lambda d: d["name"])
     return jsonify(docs)

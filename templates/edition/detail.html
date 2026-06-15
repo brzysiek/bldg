@@ -91,9 +91,9 @@
         ⚠️ <a href="{{ url_for('settings.index') }}" class="underline">Skonfiguruj Gemini</a>
       </span>
     {% endif %}
-    <a href="{{ url_for('document_types.new', c_slug=competition.slug, e_slug=edition.slug) }}"
+    <a href="{{ url_for('files.upload', c_slug=competition.slug, e_slug=edition.slug) }}"
        class="px-3 py-1.5 border border-gray-200 text-slate-text rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
-      + Nowy typ / wgraj plik
+      + Wgraj plik
     </a>
   </div>
 </div>

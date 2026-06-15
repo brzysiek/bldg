@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from werkzeug.utils import secure_filename
 import markdown as md_lib
 from extensions import db
-from models import Competition, Edition, DocumentType, Document, AppSettings
+from models import Competition, Edition, Document, AppSettings
 from services.text_extractor import extract_text
 from services.gemini import summarize_document
 
@@ -18,11 +18,10 @@ def _allowed(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-@bp.route("/competition/<c_slug>/edition/<e_slug>/doctype/<int:dt_id>/upload", methods=["GET", "POST"])
-def upload(c_slug, e_slug, dt_id):
+@bp.route("/competition/<c_slug>/edition/<e_slug>/upload", methods=["GET", "POST"])
+def upload(c_slug, e_slug):
     competition = Competition.query.filter_by(slug=c_slug).first_or_404()
     edition = Edition.query.filter_by(competition_id=competition.id, slug=e_slug).first_or_404()
-    doc_type = DocumentType.query.get_or_404(dt_id)
 
     if request.method == "POST":
         f = request.files.get("file")
@@ -40,12 +39,7 @@ def upload(c_slug, e_slug, dt_id):
         ts = str(int(time.time()))
         stored_name = f"{base}_{ts}.{ext}" if ext else f"{base}_{ts}"
 
-        storage_dir = os.path.join(
-            "storage",
-            competition.slug,
-            edition.slug,
-            doc_type.slug,
-        )
+        storage_dir = os.path.join("storage", competition.slug, edition.slug)
         os.makedirs(storage_dir, exist_ok=True)
         stored_path = os.path.join(storage_dir, stored_name)
         f.save(stored_path)
@@ -54,7 +48,7 @@ def upload(c_slug, e_slug, dt_id):
         mime = f.content_type or ""
 
         doc = Document(
-            document_type_id=dt_id,
+            edition_id=edition.id,
             original_name=original_name,
             stored_path=stored_path,
             file_size=size,
@@ -67,7 +61,7 @@ def upload(c_slug, e_slug, dt_id):
         flash(f'Plik "{original_name}" zostal wgrany.', "success")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
-    return render_template("file/upload.html", competition=competition, edition=edition, doc_type=doc_type)
+    return render_template("file/upload.html", competition=competition, edition=edition)
 
 
 @bp.route("/files/<int:file_id>/download")
@@ -75,18 +69,13 @@ def download(file_id):
     doc = Document.query.get_or_404(file_id)
     if not os.path.exists(doc.stored_path):
         abort(404)
-    return send_file(
-        doc.stored_path,
-        as_attachment=True,
-        download_name=doc.original_name,
-    )
+    return send_file(doc.stored_path, as_attachment=True, download_name=doc.original_name)
 
 
 @bp.route("/files/<int:file_id>/delete", methods=["POST"])
 def delete(file_id):
     doc = Document.query.get_or_404(file_id)
-    dt = doc.document_type
-    edition = dt.edition
+    edition = doc.edition
     competition = edition.competition
 
     if os.path.exists(doc.stored_path):
@@ -101,8 +90,7 @@ def delete(file_id):
 @bp.route("/files/<int:file_id>/summarize", methods=["POST"])
 def summarize(file_id):
     doc = Document.query.get_or_404(file_id)
-    dt = doc.document_type
-    edition = dt.edition
+    edition = doc.edition
     competition = edition.competition
 
     settings = AppSettings.query.first()
@@ -115,12 +103,6 @@ def summarize(file_id):
 
     try:
         text = extract_text(doc.stored_path, doc.mime_type or "")
-    except ValueError as e:
-        doc.ai_summary_status = "error"
-        doc.ai_summary_error = str(e)
-        db.session.commit()
-        flash(f"Błąd ekstrakcji tekstu: {e}", "error")
-        return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
     except Exception as e:
         doc.ai_summary_status = "error"
         doc.ai_summary_error = str(e)
@@ -159,8 +141,7 @@ def summarize(file_id):
 @bp.route("/files/<int:file_id>/summary")
 def summary(file_id):
     doc = Document.query.get_or_404(file_id)
-    dt = doc.document_type
-    edition = dt.edition
+    edition = doc.edition
     competition = edition.competition
 
     summary_html = None
@@ -170,7 +151,6 @@ def summary(file_id):
     return render_template(
         "file/summary.html",
         doc=doc,
-        doc_type=dt,
         edition=edition,
         competition=competition,
         summary_html=summary_html,
@@ -182,10 +162,9 @@ def summary_download(file_id):
     doc = Document.query.get_or_404(file_id)
     if not doc.ai_summary:
         abort(404)
-    content = doc.ai_summary
     filename = f"podsumowanie_{doc.original_name}.md"
     return Response(
-        content,
+        doc.ai_summary,
         mimetype="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

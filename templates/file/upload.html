@@ -8,12 +8,11 @@
   <span>›</span>
   <a href="{{ url_for('editions.detail', c_slug=competition.slug, e_slug=edition.slug) }}" class="hover:text-bottle">{{ edition.name }}</a>
   <span>›</span>
-  <span class="text-slate-text font-medium">Wgraj plik do „{{ doc_type.name }}"</span>
+  <span class="text-slate-text font-medium">Wgraj plik</span>
 </nav>
 
 <div class="max-w-xl">
   <h1 class="text-2xl font-bold text-bottle mb-6">Wgraj plik</h1>
-  <p class="text-sm text-slate-text/60 mb-5">Typ dokumentu: <strong class="text-bottle">{{ doc_type.name }}</strong></p>
 
   <form method="POST" enctype="multipart/form-data" class="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
     <div>

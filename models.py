@@ -28,32 +28,18 @@ class Edition(db.Model):
     description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Google Drive
     gdrive_folder_url = db.Column(db.Text)
     gdrive_folder_id = db.Column(db.Text)
     gdrive_synced_at = db.Column(db.DateTime)
 
-    document_types = db.relationship("DocumentType", backref="edition", cascade="all, delete-orphan", lazy=True)
-
-
-class DocumentType(db.Model):
-    __tablename__ = "document_types"
-
-    id = db.Column(db.Integer, primary_key=True)
-    edition_id = db.Column(db.Integer, db.ForeignKey("editions.id", ondelete="CASCADE"), nullable=False)
-    name = db.Column(db.Text, nullable=False)
-    slug = db.Column(db.Text)
-    order_index = db.Column(db.Integer, default=0)
-    description = db.Column(db.Text)
-
-    documents = db.relationship("Document", backref="document_type", cascade="all, delete-orphan", lazy=True)
+    documents = db.relationship("Document", backref="edition", cascade="all, delete-orphan", lazy=True)
 
 
 class Document(db.Model):
     __tablename__ = "documents"
 
     id = db.Column(db.Integer, primary_key=True)
-    document_type_id = db.Column(db.Integer, db.ForeignKey("document_types.id", ondelete="CASCADE"), nullable=False)
+    edition_id = db.Column(db.Integer, db.ForeignKey("editions.id", ondelete="CASCADE"), nullable=False)
     original_name = db.Column(db.Text, nullable=False)
     stored_path = db.Column(db.Text, nullable=False)
     file_size = db.Column(db.Integer)
@@ -62,7 +48,6 @@ class Document(db.Model):
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
     notes = db.Column(db.Text)
 
-    # Google Drive
     gdrive_file_id = db.Column(db.Text)
 
     ai_summary = db.Column(db.Text)
@@ -81,12 +66,10 @@ class AppSettings(db.Model):
     gemini_summary_prompt = db.Column(db.Text)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Comparison prompts
     comparison_prompt_extraction = db.Column(db.Text)
     comparison_prompt_comparison = db.Column(db.Text)
     comparison_prompt_summary = db.Column(db.Text)
 
-    # Google Drive OAuth
     google_oauth_client_id = db.Column(db.Text)
     google_oauth_client_secret = db.Column(db.Text)
     google_access_token = db.Column(db.Text)
@@ -101,14 +84,12 @@ class ComparisonJob(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Edition-based (new flow)
     edition_old_id = db.Column(db.Integer, db.ForeignKey("editions.id", ondelete="SET NULL"), nullable=True)
     edition_new_id = db.Column(db.Integer, db.ForeignKey("editions.id", ondelete="SET NULL"), nullable=True)
-    file_mappings_json = db.Column(db.Text)    # [{old_doc_id, new_doc_id, old_name, new_name}, ...]
-    per_file_results_json = db.Column(db.Text) # [{idx, old_name, new_name, changes, summary}, ...]
+    file_mappings_json = db.Column(db.Text)
+    per_file_results_json = db.Column(db.Text)
     edition_summary = db.Column(db.Text)
 
-    # Legacy (single file pair)
     competition_name = db.Column(db.Text)
     doc_old_name = db.Column(db.Text)
     doc_new_name = db.Column(db.Text)

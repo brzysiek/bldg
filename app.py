@@ -157,7 +157,6 @@ def create_app():
 
     from routes.competitions import bp as comp_bp
     from routes.editions import bp as ed_bp
-    from routes.document_types import bp as dt_bp
     from routes.files import bp as files_bp
     from routes.settings import bp as settings_bp
     from routes.comparison import bp as comparison_bp
@@ -165,7 +164,6 @@ def create_app():
 
     app.register_blueprint(comp_bp)
     app.register_blueprint(ed_bp)
-    app.register_blueprint(dt_bp)
     app.register_blueprint(files_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(comparison_bp)

@@ -44,21 +44,9 @@ CREATE TABLE IF NOT EXISTS editions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
-CREATE TABLE IF NOT EXISTS document_types (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    edition_id  INT NOT NULL,
-    name        TEXT NOT NULL,
-    slug        TEXT,
-    order_index INT DEFAULT 0,
-    description TEXT,
-    CONSTRAINT fk_document_types_edition
-        FOREIGN KEY (edition_id) REFERENCES editions(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-
 CREATE TABLE IF NOT EXISTS documents (
     id                  INT AUTO_INCREMENT PRIMARY KEY,
-    document_type_id    INT NOT NULL,
+    edition_id          INT NOT NULL,
     original_name       TEXT NOT NULL,
     stored_path         TEXT NOT NULL,
     file_size           INT,
@@ -72,26 +60,26 @@ CREATE TABLE IF NOT EXISTS documents (
     ai_summarized_at    DATETIME,
     ai_summary_status   TEXT,
     ai_summary_error    TEXT,
-    CONSTRAINT fk_documents_document_type
-        FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE
+    CONSTRAINT fk_documents_edition
+        FOREIGN KEY (edition_id) REFERENCES editions(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 CREATE TABLE IF NOT EXISTS app_settings (
-    id                          INT AUTO_INCREMENT PRIMARY KEY,
-    gemini_api_key              TEXT,
-    gemini_model                TEXT DEFAULT 'gemini-2.5-flash',
-    gemini_summary_prompt       LONGTEXT,
-    updated_at                  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    id                           INT AUTO_INCREMENT PRIMARY KEY,
+    gemini_api_key               TEXT,
+    gemini_model                 TEXT DEFAULT 'gemini-2.5-flash',
+    gemini_summary_prompt        LONGTEXT,
+    updated_at                   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     comparison_prompt_extraction LONGTEXT,
     comparison_prompt_comparison LONGTEXT,
-    comparison_prompt_summary   LONGTEXT,
-    google_oauth_client_id      TEXT,
-    google_oauth_client_secret  TEXT,
-    google_access_token         LONGTEXT,
-    google_refresh_token        TEXT,
-    google_token_expiry         DATETIME,
-    google_user_email           TEXT
+    comparison_prompt_summary    LONGTEXT,
+    google_oauth_client_id       TEXT,
+    google_oauth_client_secret   TEXT,
+    google_access_token          LONGTEXT,
+    google_refresh_token         TEXT,
+    google_token_expiry          DATETIME,
+    google_user_email            TEXT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
