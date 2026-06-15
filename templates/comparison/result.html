@@ -904,6 +904,19 @@ async function runComparison() {
   setProgress(TOTAL_PAIRS, TOTAL_PAIRS,
     errCount > 0 ? `⚠️ Ukończono (${errCount} błędów)` : '✅ Analiza par zakończona');
 
+  // Koloruj pasek i panel zależnie od wyniku
+  const bar   = document.getElementById('progress-bar');
+  const panel = document.getElementById('progress-panel');
+  if (errCount > 0) {
+    bar.classList.replace('bg-lime', 'bg-red-400');
+    panel.classList.replace('border-gray-100', 'border-red-200');
+    panel.classList.add('bg-red-50');
+  } else {
+    bar.classList.replace('bg-lime', 'bg-green-500');
+    panel.classList.replace('border-gray-100', 'border-green-200');
+    panel.classList.add('bg-green-50');
+  }
+
   // Ukryj przycisk anulowania
   const cancelBtn = document.getElementById('cancel-btn');
   if (cancelBtn) cancelBtn.classList.add('hidden');
