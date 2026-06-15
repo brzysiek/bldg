@@ -46,6 +46,7 @@ _MYSQL_COL_TYPES = {
 }
 
 STATUS_LABELS_PL = {
+    "queued":      "W kolejce",
     "pending":     "Oczekuje",
     "extracting":  "Ekstrakcja tekstu",
     "chunking":    "Analiza struktury",
@@ -53,6 +54,7 @@ STATUS_LABELS_PL = {
     "summarizing": "Podsumowanie",
     "done":        "Zakończono",
     "error":       "Błąd analizy",
+    "cancelled":   "Anulowano",
 }
 
 
@@ -97,8 +99,10 @@ def _migrate_db():
             "gdrive_synced_at":   "DATETIME",
         })
         add_cols("documents", {
-            "gdrive_file_id":   "TEXT",
-            "ai_description":   "TEXT",
+            "gdrive_file_id":        "TEXT",
+            "ai_description":        "TEXT",
+            "extraction_cache_key":  "TEXT",
+            "extraction_cache_json": "TEXT",
         })
 
         # Migracja: document_type_id → edition_id

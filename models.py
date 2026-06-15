@@ -57,6 +57,9 @@ class Document(db.Model):
     ai_summary_status = db.Column(db.Text)
     ai_summary_error = db.Column(db.Text)
 
+    extraction_cache_key  = db.Column(db.Text)
+    extraction_cache_json = db.Column(db.Text)
+
 
 class AppSettings(db.Model):
     __tablename__ = "app_settings"

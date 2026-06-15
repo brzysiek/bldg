@@ -49,7 +49,14 @@
         </div>
         <span id="progress-label" class="text-sm font-semibold text-bottle">Przygotowuję porównanie...</span>
       </div>
-      <span id="progress-fraction" class="text-xs text-slate-text/40 shrink-0"></span>
+      <div class="flex items-center gap-3 shrink-0">
+        <span id="total-timer" class="text-xs font-mono text-slate-text/40 tabular-nums">0:00</span>
+        <span id="progress-fraction" class="text-xs text-slate-text/40"></span>
+        <button id="cancel-btn" onclick="cancelComparison()"
+                class="px-3 py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 transition-colors">
+          Anuluj
+        </button>
+      </div>
     </div>
     <div class="w-full bg-gray-100 rounded-full h-2 mb-2">
       <div id="progress-bar" class="bg-lime h-2 rounded-full transition-all duration-500" style="width:0%"></div>
@@ -78,6 +85,71 @@
   <div id="edition-summary-wrap" class="hidden bg-white rounded-xl border border-gray-100 p-6 sm:p-8 mb-5">
     <h2 class="text-base font-bold text-bottle mb-4 pb-3 border-b border-lime/30">📊 Podsumowanie całej edycji</h2>
     <div id="edition-summary-body" class="prose max-w-none"></div>
+  </div>
+
+{# ═══════════════════════════════════════════════════════════
+   QUEUED — waiting for active comparison to finish
+   ════════════════════════════════════════════════════════════ #}
+{% elif job.status == 'queued' %}
+
+  <div class="bg-white rounded-xl border border-yellow-100 p-5 mb-5">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="flex gap-0.5 shrink-0">
+          <div class="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-bounce" style="animation-delay:0s"></div>
+          <div class="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-bounce" style="animation-delay:0.15s"></div>
+          <div class="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-bounce" style="animation-delay:0.3s"></div>
+        </div>
+        <div>
+          <span class="text-sm font-semibold text-bottle">W kolejce — oczekuje na wolny slot</span>
+          <p class="text-xs text-slate-text/40 mt-0.5">Strona odświeży się automatycznie gdy porównanie się rozpocznie.</p>
+        </div>
+      </div>
+      <form method="POST" action="{{ url_for('comparison.cancel_job', job_id=job.id) }}"
+            onsubmit="return confirm('Anulować to porównanie?')">
+        <button type="submit"
+                class="px-3 py-1.5 border border-red-200 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 transition-colors">
+          Anuluj
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- File pairs preview -->
+  <div class="space-y-2 mb-5">
+    {% for m in mappings %}
+      <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        <div class="flex items-center gap-3 px-5 py-3.5">
+          <div class="text-lg shrink-0 text-gray-300">○</div>
+          <div class="min-w-0 flex-1">
+            <div class="font-medium text-slate-text text-sm truncate">{{ m.old_name }}</div>
+            <div class="text-xs text-slate-text/40">→ {{ m.new_name }}</div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+{# ═══════════════════════════════════════════════════════════
+   CANCELLED
+   ════════════════════════════════════════════════════════════ #}
+{% elif job.status == 'cancelled' %}
+
+  <div class="bg-gray-50 border border-gray-200 rounded-xl p-6 mb-6">
+    <div class="font-semibold text-gray-700 mb-1">⛔ Porównanie anulowane</div>
+    <p class="text-gray-600 text-sm">To porównanie zostało anulowane i nie zostanie ukończone.</p>
+    <div class="mt-4 flex gap-3">
+      <a href="{{ url_for('comparison.setup') }}"
+         class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-medium hover:bg-bottle/90">
+        Nowe porównanie
+      </a>
+      <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}">
+        <button type="submit"
+                class="px-4 py-2 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50">
+          Usuń
+        </button>
+      </form>
+    </div>
   </div>
 
 {# ═══════════════════════════════════════════════════════════
@@ -329,10 +401,11 @@
 <script>
 {% if job.status == 'pending' %}
 /* ── Browser-driven sequential comparison ── */
-const JOB_ID      = {{ job.id }};
-const TOTAL_PAIRS = {{ mappings | length }};
-const RUN_PAIR_URL      = {{ url_for('comparison.run_pair', job_id=job.id) | tojson }};
-const GEN_SUMMARY_URL   = {{ url_for('comparison.generate_edition_summary', job_id=job.id) | tojson }};
+const JOB_ID          = {{ job.id }};
+const TOTAL_PAIRS     = {{ mappings | length }};
+const RUN_PAIR_URL    = {{ url_for('comparison.run_pair', job_id=job.id) | tojson }};
+const GEN_SUMMARY_URL = {{ url_for('comparison.generate_edition_summary', job_id=job.id) | tojson }};
+const CANCEL_URL      = {{ url_for('comparison.cancel_job', job_id=job.id) | tojson }};
 
 const WAGA_BADGE = {
   KRYTYCZNA: 'bg-red-100 text-red-700',
@@ -346,6 +419,48 @@ const WAGA_ROW = {
   SREDNIA:   'bg-yellow-50',
   NISKA:     'bg-green-50',
 };
+
+let cancelled        = false;
+let totalTimerIval   = null;
+let pairTimerIval    = null;
+let totalStart       = null;
+let pairStart        = null;
+
+function fmtSecs(s) {
+  const m = Math.floor(s / 60), sec = s % 60;
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
+
+function fmtClock(ms) {
+  const s = Math.floor(ms / 1000), m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function startTotalTimer() {
+  totalStart = Date.now();
+  totalTimerIval = setInterval(() => {
+    const el = document.getElementById('total-timer');
+    if (el) el.textContent = fmtClock(Date.now() - totalStart);
+  }, 1000);
+}
+
+function stopTotalTimer() {
+  if (totalTimerIval) { clearInterval(totalTimerIval); totalTimerIval = null; }
+}
+
+function startPairTimer(idx) {
+  pairStart = Date.now();
+  if (pairTimerIval) clearInterval(pairTimerIval);
+  pairTimerIval = setInterval(() => {
+    const el = document.getElementById(`pair-timer-${idx}`);
+    if (el) el.textContent = fmtClock(Date.now() - pairStart);
+  }, 1000);
+}
+
+function stopPairTimer() {
+  if (pairTimerIval) { clearInterval(pairTimerIval); pairTimerIval = null; }
+  return pairStart ? Math.floor((Date.now() - pairStart) / 1000) : 0;
+}
 
 function setProgress(done, total, label, fileHint) {
   const pct = total > 0 ? Math.round(done / total * 100) : 0;
@@ -362,8 +477,10 @@ function setPairState(idx, state) {
   if (state === 'running') {
     icon.textContent = '⏳';
     icon.className = 'text-lg shrink-0';
-    badge.innerHTML = '<span class="text-xs text-slate-text/40 animate-pulse">analizuję...</span>';
+    badge.innerHTML = `<span class="text-xs text-slate-text/40 animate-pulse">analizuję...</span>`
+      + `<span id="pair-timer-${idx}" class="ml-2 text-xs font-mono text-slate-text/30 tabular-nums">0:00</span>`;
     card.classList.add('border-lime/40');
+    startPairTimer(idx);
   } else if (state === 'waiting') {
     icon.textContent = '○';
     icon.className = 'text-lg shrink-0 text-gray-300';
@@ -372,6 +489,7 @@ function setPairState(idx, state) {
 }
 
 function setPairDone(idx, data) {
+  const elapsed = stopPairTimer();
   const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
   const body  = document.getElementById(`pair-body-${idx}`);
@@ -383,12 +501,12 @@ function setPairDone(idx, data) {
   icon.className = 'text-lg shrink-0';
   card.classList.remove('border-lime/40');
 
-  const critBadge = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
-  const cntColor  = n > 0 ? 'bg-bottle/10 text-bottle' : 'bg-gray-100 text-gray-400';
-  badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>
-    <button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
+  const critBadge  = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
+  const cntColor   = n > 0 ? 'bg-bottle/10 text-bottle' : 'bg-gray-100 text-gray-400';
+  const timeBadge  = elapsed > 0 ? `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-mono ml-1">${fmtSecs(elapsed)}</span>` : '';
+  badge.innerHTML  = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}`
+    + `<button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
 
-  // Build body
   let html = '';
   if (data.summary_html) {
     html += `<div class="px-5 py-4 bg-lime/5 border-b border-lime/20 prose max-w-none text-sm">${data.summary_html}</div>`;
@@ -402,6 +520,7 @@ function setPairDone(idx, data) {
 }
 
 function setPairError(idx, msg) {
+  stopPairTimer();
   const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);
@@ -447,8 +566,28 @@ function buildChangesTable(changes) {
   </table></div>`;
 }
 
+async function cancelComparison() {
+  if (!confirm('Anulować to porównanie?')) return;
+  cancelled = true;
+  const btn = document.getElementById('cancel-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Anulowanie...'; }
+  try {
+    await fetch(CANCEL_URL, {method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}});
+  } catch (e) {
+    console.warn('Cancel request failed:', e);
+  }
+  stopTotalTimer();
+  stopPairTimer();
+  document.getElementById('progress-label').textContent = '⛔ Anulowanie...';
+  setTimeout(() => window.location.reload(), 1000);
+}
+
 async function runComparison() {
+  startTotalTimer();
+
   for (let i = 0; i < TOTAL_PAIRS; i++) {
+    if (cancelled) break;
+
     setProgress(i, TOTAL_PAIRS, `⏳ Para ${i + 1} z ${TOTAL_PAIRS}...`);
     setPairState(i, 'running');
 
@@ -461,15 +600,30 @@ async function runComparison() {
       let data, raw = '';
       try { raw = await resp.text(); data = JSON.parse(raw); } catch(_) { data = null; }
 
+      if (data?.cancelled) {
+        stopPairTimer();
+        stopTotalTimer();
+        document.getElementById('progress-label').textContent = '⛔ Porównanie anulowane';
+        setTimeout(() => window.location.reload(), 1500);
+        return;
+      }
+
       if (!resp.ok || !data?.ok) {
-        const err = data?.error || `HTTP ${resp.status}`;
-        setPairError(i, err);
+        setPairError(i, data?.error || `HTTP ${resp.status}`);
       } else {
         setPairDone(i, data);
       }
     } catch (e) {
       setPairError(i, e.message);
     }
+
+    if (cancelled) break;
+  }
+
+  if (cancelled) {
+    stopTotalTimer();
+    setTimeout(() => window.location.reload(), 1500);
+    return;
   }
 
   // Edition summary
@@ -487,17 +641,34 @@ async function runComparison() {
     console.warn('Edition summary failed:', e);
   }
 
+  stopTotalTimer();
   setProgress(TOTAL_PAIRS, TOTAL_PAIRS, '✅ Porównanie zakończone!');
-  // Short delay then reload to show the stored "done" state
   setTimeout(() => window.location.reload(), 1500);
 }
 
-// Start automatically on page load
 window.addEventListener('DOMContentLoaded', runComparison);
+
+{% elif job.status == 'queued' %}
+/* ── Queued: poll status-api, reload when slot becomes available ── */
+const STATUS_API_URL = {{ url_for('comparison.job_status_api', job_id=job.id) | tojson }};
+
+async function pollQueued() {
+  try {
+    const r = await fetch(STATUS_API_URL);
+    const d = await r.json();
+    if (d.status !== 'queued') {
+      window.location.reload();
+      return;
+    }
+  } catch(e) { /* ignore */ }
+  setTimeout(pollQueued, 3000);
+}
+
+window.addEventListener('DOMContentLoaded', () => setTimeout(pollQueued, 3000));
 
 {% else %}
 
-/* ── Done/error state helpers ── */
+/* ── Done/error/cancelled state helpers ── */
 function toggleAccordion(id) {
   const el    = document.getElementById(id);
   const arrow = document.getElementById('arrow-' + id);

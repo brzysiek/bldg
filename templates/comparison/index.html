@@ -27,13 +27,15 @@
       <tbody class="divide-y divide-gray-50">
         {% for job in jobs %}
           {% set status_styles = {
-            'done':       ('bg-green-100 text-green-800', '✅'),
-            'error':      ('bg-red-100 text-red-800', '❌'),
-            'pending':    ('bg-gray-100 text-gray-600', '⏳'),
-            'comparing':  ('bg-blue-100 text-blue-800', '🔄'),
-            'extracting': ('bg-blue-100 text-blue-800', '🔄'),
-            'chunking':   ('bg-blue-100 text-blue-800', '🔄'),
-            'summarizing':('bg-blue-100 text-blue-800', '🔄'),
+            'done':        ('bg-green-100 text-green-800',  '✅'),
+            'error':       ('bg-red-100 text-red-800',      '❌'),
+            'cancelled':   ('bg-gray-100 text-gray-500',    '⛔'),
+            'queued':      ('bg-yellow-100 text-yellow-800','🕐'),
+            'pending':     ('bg-gray-100 text-gray-600',    '⏳'),
+            'comparing':   ('bg-blue-100 text-blue-800',    '🔄'),
+            'extracting':  ('bg-blue-100 text-blue-800',    '🔄'),
+            'chunking':    ('bg-blue-100 text-blue-800',    '🔄'),
+            'summarizing': ('bg-blue-100 text-blue-800',    '🔄'),
           } %}
           {% set s_cls, s_icon = status_styles.get(job.status, ('bg-gray-100 text-gray-500', '?')) %}
           <tr class="hover:bg-gray-50/50 transition-colors">
@@ -61,6 +63,15 @@
                      class="px-3 py-1.5 bg-lime text-bottle rounded-lg text-xs font-bold hover:bg-lime/80 transition-colors">
                     Excel
                   </a>
+                {% endif %}
+                {% if job.status in ['queued', 'pending', 'comparing', 'extracting', 'chunking', 'summarizing'] %}
+                  <form method="POST" action="{{ url_for('comparison.cancel_job', job_id=job.id) }}"
+                        onsubmit="return confirm('Anulować porownanie?')">
+                    <button type="submit"
+                            class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">
+                      Anuluj
+                    </button>
+                  </form>
                 {% endif %}
                 <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
                       onsubmit="return confirm('Usunac porownanie?')">

@@ -1,7 +1,11 @@
+import hashlib
 import json
+import logging
 import time
 from datetime import datetime
 from services.text_extractor import extract_text
+
+log = logging.getLogger(__name__)
 
 DEFAULT_PROMPT_EXTRACTION = """Jestes ekspertem ds. analizy dokumentow prawnych i regulaminow konkursow grantowych.
 
@@ -157,11 +161,15 @@ def compare_one_pair(doc_old, doc_new, job, settings):
         if old_tmp: shutil.rmtree(old_tmp, ignore_errors=True)
         if new_tmp: shutil.rmtree(new_tmp, ignore_errors=True)
 
+    struct_old = _get_structure_cached(doc_old, text_old, call_gemini, settings)
+    struct_new = _get_structure_cached(doc_new, text_new, call_gemini, settings)
+
     changes = _compare_pair(
         text_old, text_new,
         job.label_old or "Edycja starsza",
         job.label_new or "Edycja nowsza",
         call_gemini, lambda _: None, settings,
+        struct_old=struct_old, struct_new=struct_new,
     )
     summary = _file_summary(
         changes,
@@ -229,9 +237,46 @@ def _extract_structure(text, label, call_gemini, settings):
         return {"tytul": label, "sekcje": blocks}
 
 
-def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_progress, settings):
-    struct_old = _extract_structure(text_old, label_old, call_gemini, settings)
-    struct_new = _extract_structure(text_new, label_new, call_gemini, settings)
+def _cache_key(text, prompt):
+    return hashlib.md5((text[:300_000] + prompt).encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _get_structure_cached(doc, text, call_gemini, settings):
+    """Return extracted document structure, using DB cache when prompt+content unchanged."""
+    from extensions import db
+
+    prompt = settings.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION
+    key = _cache_key(text, prompt)
+
+    if doc.extraction_cache_key == key and doc.extraction_cache_json:
+        try:
+            structure = json.loads(doc.extraction_cache_json)
+            n_sekcji = len(structure.get("sekcje", {}))
+            log.info("Ekstrakcja (cache HIT): %s — %d sekcji, pominięto wywołanie Gemini", doc.original_name, n_sekcji)
+            return structure
+        except Exception:
+            pass  # uszkodzony cache — przelicz
+
+    log.info("Ekstrakcja (cache MISS): %s — wywołuję Gemini", doc.original_name)
+    structure = _extract_structure(text, doc.original_name, call_gemini, settings)
+
+    try:
+        doc.extraction_cache_key  = key
+        doc.extraction_cache_json = json.dumps(structure, ensure_ascii=False)
+        db.session.commit()
+        log.info("Ekstrakcja zapisana do cache: %s", doc.original_name)
+    except Exception as e:
+        log.warning("Zapis cache ekstrakcji nieudany (%s): %s", doc.original_name, e)
+
+    return structure
+
+
+def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_progress, settings,
+                  struct_old=None, struct_new=None):
+    if struct_old is None:
+        struct_old = _extract_structure(text_old, label_old, call_gemini, settings)
+    if struct_new is None:
+        struct_new = _extract_structure(text_new, label_new, call_gemini, settings)
 
     sekcje_old = struct_old.get("sekcje", {})
     sekcje_new = struct_new.get("sekcje", {})

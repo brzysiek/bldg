@@ -79,6 +79,10 @@ def setup():
             flash("Nie wybrano żadnych par plików do porównania.", "error")
             return redirect(url_for("comparison.setup"))
 
+        active_statuses = ["pending", "comparing", "extracting", "chunking", "summarizing"]
+        is_busy = ComparisonJob.query.filter(ComparisonJob.status.in_(active_statuses)).first() is not None
+        initial_status = "queued" if is_busy else "pending"
+
         job = ComparisonJob(
             competition_name   = competition.name if competition else "",
             edition_old_id     = edition_old_id,
@@ -86,7 +90,7 @@ def setup():
             label_old          = edition_old.name if edition_old else "Edycja starsza",
             label_new          = edition_new.name if edition_new else "Edycja nowsza",
             file_mappings_json = json.dumps(mappings, ensure_ascii=False),
-            status             = "pending",
+            status             = initial_status,
             progress_total     = len(mappings),
             progress_current   = 0,
             gemini_model_used  = settings.gemini_model,
@@ -105,6 +109,12 @@ def setup():
 def run_pair(job_id):
     """Process one file pair synchronously in the main request thread."""
     job = ComparisonJob.query.get_or_404(job_id)
+
+    # Catch cancellations that arrived while a previous pair was running
+    db.session.refresh(job)
+    if job.status == "cancelled":
+        return jsonify({"ok": False, "cancelled": True, "error": "Porównanie zostało anulowane"})
+
     settings = db.session.get(AppSettings, 1)
 
     if not settings or not settings.gemini_api_key:
@@ -197,11 +207,14 @@ def generate_edition_summary(job_id):
         import markdown as md_lib
         summary_html = md_lib.markdown(summary_text, extensions=["extra"])
 
+        _promote_next_queued()
+
         return jsonify({"ok": True, "summary_html": summary_html})
     except Exception as exc:
         job.status        = "error"
         job.error_message = str(exc)[:1000]
         db.session.commit()
+        _promote_next_queued()
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
@@ -213,6 +226,14 @@ def _update_cost(job):
     job.estimated_cost_usd = round(
         (t_in / 1_000_000 * price["input"]) + (t_out / 1_000_000 * price["output"]), 6
     )
+
+
+def _promote_next_queued():
+    """Promote the oldest queued job to pending so it can start."""
+    next_job = ComparisonJob.query.filter_by(status="queued").order_by(ComparisonJob.created_at).first()
+    if next_job:
+        next_job.status = "pending"
+        db.session.commit()
 
 
 # ── Result / status pages ──────────────────────────────────────────────────
@@ -236,7 +257,7 @@ def job_status(job_id):
     if job.edition_summary:
         edition_summary_html = md_lib.markdown(job.edition_summary, extensions=["extra"])
 
-    mappings = json.loads(job.file_mappings_json or "[]") if job.status == "pending" else []
+    mappings = json.loads(job.file_mappings_json or "[]") if job.status in ("pending", "queued") else []
 
     return render_template(
         "comparison/result.html",
@@ -340,6 +361,28 @@ def _write_changes_sheet(ws, changes, waga_colors, job):
         ws.column_dimensions[get_column_letter(i)].width = width
     for row in ws.iter_rows(min_row=2):
         ws.row_dimensions[row[0].row].height = 80
+
+
+@bp.route("/job/<int:job_id>/cancel", methods=["POST"])
+def cancel_job(job_id):
+    job = ComparisonJob.query.get_or_404(job_id)
+    cancellable = {"queued", "pending", "comparing", "extracting", "chunking", "summarizing"}
+    if job.status not in cancellable:
+        if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return jsonify({"ok": False, "error": f"Nie można anulować statusu '{job.status}'"}), 400
+        flash(f"Nie można anulować porównania o statusie '{job.status}'.", "warning")
+        return redirect(url_for("comparison.index"))
+
+    job.status      = "cancelled"
+    job.finished_at = datetime.utcnow()
+    db.session.commit()
+
+    _promote_next_queued()
+
+    if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return jsonify({"ok": True})
+    flash("Porównanie anulowane.", "info")
+    return redirect(url_for("comparison.index"))
 
 
 @bp.route("/job/<int:job_id>/delete", methods=["POST"])
