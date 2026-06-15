@@ -7,3 +7,4 @@ storage/
 data/
 *.db
 .DS_Store
+passenger_wsgi.py
