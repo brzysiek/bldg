@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
     comparison_prompt_extraction LONGTEXT,
     comparison_prompt_comparison LONGTEXT,
     comparison_prompt_summary    LONGTEXT,
+    google_drive_api_key         TEXT,
     google_oauth_client_id       TEXT,
     google_oauth_client_secret   TEXT,
     google_access_token          LONGTEXT,

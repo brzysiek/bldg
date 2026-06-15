@@ -70,6 +70,7 @@ class AppSettings(db.Model):
     comparison_prompt_comparison = db.Column(db.Text)
     comparison_prompt_summary = db.Column(db.Text)
 
+    google_drive_api_key = db.Column(db.Text)
     google_oauth_client_id = db.Column(db.Text)
     google_oauth_client_secret = db.Column(db.Text)
     google_access_token = db.Column(db.Text)

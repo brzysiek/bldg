@@ -56,6 +56,7 @@ def _migrate_db():
             "comparison_prompt_extraction":  "TEXT",
             "comparison_prompt_comparison":  "TEXT",
             "comparison_prompt_summary":     "TEXT",
+            "google_drive_api_key":          "TEXT",
             "google_oauth_client_id":        "TEXT",
             "google_oauth_client_secret":    "TEXT",
             "google_access_token":           "TEXT",

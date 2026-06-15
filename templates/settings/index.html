@@ -102,6 +102,17 @@
     {% endif %}
 
     <form method="POST" action="{{ url_for('settings.save_google_oauth') }}" class="space-y-3 mb-4">
+      <div>
+        <label class="block text-xs font-medium text-slate-text mb-1">Drive API Key <span class="text-slate-text/40 font-normal">(dostęp publiczny — bez OAuth)</span></label>
+        <input type="password" name="google_drive_api_key"
+               placeholder="{{ 'pozostaw puste, aby nie zmieniać' if settings.google_drive_api_key else 'AIza...' }}"
+               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle font-mono" />
+        {% if settings.google_drive_api_key %}
+          <p class="text-xs text-green-600 mt-1">✅ Zapisano. Pozostaw puste, aby nie zmieniać.</p>
+        {% else %}
+          <p class="text-xs text-slate-text/40 mt-1">Klucz API z <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a> z włączonym <strong>Drive API</strong>. Pozwala synchronizować publicznie udostępnione foldery bez logowania OAuth.</p>
+        {% endif %}
+      </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-medium text-slate-text mb-1">Client ID (Google OAuth)</label>

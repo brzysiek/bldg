@@ -115,15 +115,18 @@ def gemini_models():
 @bp.route("/settings/save-google-oauth", methods=["POST"])
 def save_google_oauth():
     settings = _get_or_create_settings()
+    drive_api_key = request.form.get("google_drive_api_key", "").strip()
     client_id = request.form.get("google_oauth_client_id", "").strip()
     client_secret = request.form.get("google_oauth_client_secret", "").strip()
+    if drive_api_key:
+        settings.google_drive_api_key = drive_api_key
     if client_id:
         settings.google_oauth_client_id = client_id
     if client_secret:
         settings.google_oauth_client_secret = client_secret
     settings.updated_at = datetime.utcnow()
     db.session.commit()
-    flash("Dane OAuth Google zapisane. Teraz połącz konto.", "success")
+    flash("Ustawienia Google Drive zapisane.", "success")
     return redirect(url_for("settings.index", tab="integracje"))
 
 

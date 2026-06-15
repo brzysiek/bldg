@@ -54,7 +54,7 @@ def _gdrive_mode(settings) -> str:
     """Returns 'oauth', 'public', or 'none'."""
     if settings and settings.google_access_token:
         return "oauth"
-    if settings and settings.gemini_api_key:
+    if settings and settings.google_drive_api_key:
         return "public"
     return "none"
 
@@ -133,7 +133,7 @@ def sync_drive(c_slug, e_slug):
             files = list_folder_files(edition.gdrive_folder_id, settings)
         else:
             from services.google_drive import list_folder_files_public, download_file_public as gdrive_download
-            files = list_folder_files_public(edition.gdrive_folder_id, settings.gemini_api_key)
+            files = list_folder_files_public(edition.gdrive_folder_id, settings.google_drive_api_key)
     except Exception as e:
         flash(f"Błąd pobierania listy plików z Drive: {e}", "error")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
@@ -152,7 +152,7 @@ def sync_drive(c_slug, e_slug):
             if mode == "oauth":
                 dest_path = gdrive_download(gid, file_meta["name"], file_meta["mime_type"], dest_dir, settings)
             else:
-                dest_path = gdrive_download(gid, file_meta["name"], file_meta["mime_type"], dest_dir, settings.gemini_api_key)
+                dest_path = gdrive_download(gid, file_meta["name"], file_meta["mime_type"], dest_dir, settings.google_drive_api_key)
             size = os.path.getsize(dest_path)
 
             if existing:
