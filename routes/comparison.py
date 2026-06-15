@@ -561,86 +561,262 @@ def job_status_api(job_id):
     })
 
 
+# ── Skip pair ─────────────────────────────────────────────────────────────
+
+@bp.route("/job/<int:job_id>/skip-pair", methods=["POST"])
+def skip_pair(job_id):
+    """Mark a file pair as skipped (no Gemini call, empty changes)."""
+    job = ComparisonJob.query.get_or_404(job_id)
+    data = request.get_json() or {}
+    pair_idx = data.get("pair_idx", 0)
+
+    mappings = json.loads(job.file_mappings_json or "[]")
+    if pair_idx >= len(mappings):
+        return jsonify({"ok": False, "error": "Nieprawidłowy indeks pary"}), 400
+
+    mapping = mappings[pair_idx]
+    old_doc_id = mapping["old_doc_id"]
+    new_doc_id = mapping["new_doc_id"]
+
+    per_file_results = json.loads(job.per_file_results_json or "[]")
+    per_file_results = [r for r in per_file_results
+                        if not (r.get("old_doc_id") == old_doc_id
+                                and r.get("new_doc_id") == new_doc_id)]
+    per_file_results.append({
+        "old_doc_id": old_doc_id,
+        "new_doc_id": new_doc_id,
+        "old_name":   mapping.get("old_name", ""),
+        "new_name":   mapping.get("new_name", ""),
+        "changes":    [],
+        "summary":    "",
+        "skipped":    True,
+    })
+    job.per_file_results_json = json.dumps(per_file_results, ensure_ascii=False)
+    db.session.commit()
+
+    return jsonify({
+        "ok":       True,
+        "pair_idx": pair_idx,
+        "old_name": mapping.get("old_name", ""),
+        "new_name": mapping.get("new_name", ""),
+    })
+
+
 # ── Excel export ───────────────────────────────────────────────────────────
+
+_BOTTLE     = "1C4B40"
+_WAGA_FILL  = {"KRYTYCZNA": "FFCCCC", "WYSOKA": "FFE5CC", "SREDNIA": "FFFFCC", "NISKA": "E5FFE5"}
+
+
+def _excel_filename(job, suffix=""):
+    import re
+    dt = job.created_at.strftime("%Y-%m-%d %H-%M") if job.created_at else "export"
+    parts = [job.competition_name or "konkurs", job.label_new or "edycja", dt]
+    if suffix:
+        parts.append(suffix)
+    slug = "-".join(re.sub(r"[^\w\s\-]", "", p or "").strip() for p in parts)
+    return secure_filename(f"Rejestr zmian-{slug}.xlsx")
+
+
+def _safe_sheet_name(name):
+    import re
+    return re.sub(r"[\\/*?:\[\]]", "_", name or "Arkusz")[:31]
+
+
+def _xl_col_widths(ws, widths):
+    from openpyxl.utils import get_column_letter
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+
+def _write_summary_sheet(ws, job, per_file_results):
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    NCOLS = 7
+    ws["A1"] = job.competition_name or "Porównanie edycji"
+    ws["A1"].font = Font(bold=True, size=15, color=_BOTTLE)
+    ws["A2"] = f"{job.label_old or '?'}  →  {job.label_new or '?'}"
+    ws["A2"].font = Font(size=11, color="444444")
+    ws["A3"] = f"Data: {job.created_at.strftime('%d.%m.%Y %H:%M') if job.created_at else '—'}"
+    ws["A3"].font = Font(size=9, color="888888")
+    for r in [1, 2, 3]:
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=NCOLS)
+
+    ROW_HDR = 5
+    for col, label in enumerate(
+        ["Starsza edycja (plik)", "Nowsza edycja (plik)",
+         "Zmian", "Krytyczne", "Wysokie", "Średnie", "Niskie"], 1
+    ):
+        c = ws.cell(row=ROW_HDR, column=col, value=label)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor=_BOTTLE)
+        c.alignment = Alignment(wrap_text=True, horizontal="center" if col > 2 else "left")
+
+    row = ROW_HDR
+    active_pfr = [p for p in per_file_results if not p.get("skipped")]
+    for pfr in active_pfr:
+        row += 1
+        ch     = pfr.get("changes", [])
+        n_tot  = len(ch)
+        n_crit = sum(1 for c in ch if c.get("waga") == "KRYTYCZNA")
+        n_high = sum(1 for c in ch if c.get("waga") == "WYSOKA")
+        n_med  = sum(1 for c in ch if c.get("waga") == "SREDNIA")
+        n_low  = sum(1 for c in ch if c.get("waga") == "NISKA")
+        for col, v in enumerate(
+            [pfr.get("old_name",""), pfr.get("new_name",""),
+             n_tot, n_crit, n_high, n_med, n_low], 1
+        ):
+            cell = ws.cell(row=row, column=col, value=v)
+            cell.alignment = Alignment(wrap_text=True,
+                                       horizontal="center" if col > 2 else "left")
+        if n_crit > 0:
+            ws.cell(row=row, column=4).fill = PatternFill("solid", fgColor="FFCCCC")
+
+    # Total row
+    row += 1
+    all_ch = [c for p in active_pfr for c in p.get("changes", [])]
+    for col, v in enumerate(
+        ["ŁĄCZNIE", "", len(all_ch),
+         sum(1 for c in all_ch if c.get("waga") == "KRYTYCZNA"),
+         sum(1 for c in all_ch if c.get("waga") == "WYSOKA"),
+         sum(1 for c in all_ch if c.get("waga") == "SREDNIA"),
+         sum(1 for c in all_ch if c.get("waga") == "NISKA")], 1
+    ):
+        cell = ws.cell(row=row, column=col, value=v)
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill("solid", fgColor="EEEEEE")
+        cell.alignment = Alignment(horizontal="center" if col > 2 else "left")
+
+    # AI edition summary
+    if job.edition_summary:
+        row += 2
+        lbl = ws.cell(row=row, column=1, value="Podsumowanie AI całej edycji:")
+        lbl.font = Font(bold=True, size=11, color=_BOTTLE)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
+        row += 1
+        cell = ws.cell(row=row, column=1, value=job.edition_summary)
+        cell.alignment = Alignment(wrap_text=True)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
+        ws.row_dimensions[row].height = min(600, max(150, len(job.edition_summary) // 4))
+
+    _xl_col_widths(ws, [40, 40, 10, 12, 10, 10, 10])
+
+
+def _write_pair_sheet(ws, pfr, job):
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    old_name = pfr.get("old_name", "?")
+    new_name = pfr.get("new_name", "?")
+    summary  = pfr.get("summary", "")
+    changes  = pfr.get("changes", [])
+
+    ws["A1"] = old_name
+    ws["A1"].font = Font(bold=True, size=13, color=_BOTTLE)
+    ws["A2"] = f"→  {new_name}"
+    ws["A2"].font = Font(size=11, color="555555")
+    for r in [1, 2]:
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
+
+    row = 3
+
+    if summary:
+        row += 1
+        lbl = ws.cell(row=row, column=1, value="Podsumowanie zmian w pliku:")
+        lbl.font = Font(bold=True, size=11, color=_BOTTLE)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+        row += 1
+        cell = ws.cell(row=row, column=1, value=summary)
+        cell.alignment = Alignment(wrap_text=True)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+        ws.row_dimensions[row].height = min(400, max(80, len(summary) // 3))
+        row += 2
+
+    if not changes:
+        ws.cell(row=row, column=1,
+                value="Brak zmian." if not pfr.get("skipped") else "Para pominięta.").font = \
+            Font(italic=True, color="888888")
+        _xl_col_widths(ws, [20, 20, 12, 50, 50, 60])
+        return
+
+    tbl_row = row
+    for col, h in enumerate(
+        ["Sekcja", "Typ zmiany", "Waga",
+         f"Zapis — {job.label_old}", f"Zapis — {job.label_new}", "Komentarz biznesowy"], 1
+    ):
+        c = ws.cell(row=tbl_row, column=col, value=h)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor=_BOTTLE)
+        c.alignment = Alignment(wrap_text=True)
+
+    for change in changes:
+        row += 1
+        waga = change.get("waga", "NISKA")
+        fill = PatternFill("solid", fgColor=_WAGA_FILL.get(waga, "FFFFFF"))
+        for col, v in enumerate(
+            [change.get("sekcja",""), change.get("typ_zmiany",""), waga,
+             change.get("zapis_stary",""), change.get("zapis_nowy",""),
+             change.get("komentarz_biznesowy","")], 1
+        ):
+            cell = ws.cell(row=row, column=col, value=v)
+            cell.fill = fill
+            cell.alignment = Alignment(wrap_text=True)
+
+    for r in ws.iter_rows(min_row=tbl_row + 1):
+        ws.row_dimensions[r[0].row].height = 80
+    _xl_col_widths(ws, [20, 20, 12, 50, 50, 60])
+
 
 @bp.route("/job/<int:job_id>/download-excel")
 def download_excel(job_id):
     import openpyxl
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
-
     job = ComparisonJob.query.get_or_404(job_id)
-    if job.status != "done":
-        flash("Porównanie jeszcze nie gotowe.", "warning")
-        return redirect(url_for("comparison.job_status", job_id=job_id))
-
     per_file_results = json.loads(job.per_file_results_json or "[]")
 
+    if not per_file_results:
+        flash("Brak wyników do eksportu.", "warning")
+        return redirect(url_for("comparison.job_status", job_id=job_id))
+
     wb = openpyxl.Workbook()
-
     ws_sum = wb.active
-    ws_sum.title = "Podsumowanie edycji"
-    ws_sum["A1"] = f"Porównanie: {job.competition_name}"
-    ws_sum["A1"].font = Font(bold=True, size=14)
-    ws_sum["A2"] = f"{job.label_old} vs {job.label_new}"
-    ws_sum["A3"] = f"Wygenerowano: {job.created_at.strftime('%Y-%m-%d %H:%M')}" if job.created_at else ""
-    ws_sum["A5"] = job.edition_summary or "(brak podsumowania)"
-    ws_sum["A5"].alignment = Alignment(wrap_text=True)
-    ws_sum.column_dimensions["A"].width = 120
-    ws_sum.row_dimensions[5].height = 600
-
-    waga_colors = {
-        "KRYTYCZNA": "FFCCCC",
-        "WYSOKA":    "FFE5CC",
-        "SREDNIA":   "FFFFCC",
-        "NISKA":     "E5FFE5",
-    }
+    ws_sum.title = "Podsumowanie"
+    _write_summary_sheet(ws_sum, job, per_file_results)
 
     for pfr in per_file_results:
-        sheet_name = pfr.get("old_name", "Plik")[:28]
-        ws = wb.create_sheet(sheet_name)
-        _write_changes_sheet(ws, pfr.get("changes", []), waga_colors, job)
+        if pfr.get("skipped"):
+            continue
+        ws = wb.create_sheet(_safe_sheet_name(pfr.get("old_name", "Para")))
+        _write_pair_sheet(ws, pfr, job)
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-
-    filename = secure_filename(
-        f"rejestr_zmian_{job.competition_name or 'konkurs'}_{job.label_old}_vs_{job.label_new}.xlsx"
-    )
-    return send_file(buf, as_attachment=True, download_name=filename,
+    return send_file(buf, as_attachment=True,
+                     download_name=_excel_filename(job),
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-def _write_changes_sheet(ws, changes, waga_colors, job):
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
+@bp.route("/job/<int:job_id>/pair/<int:pair_idx>/download-excel")
+def download_pair_excel(job_id, pair_idx):
+    import openpyxl
+    job = ComparisonJob.query.get_or_404(job_id)
+    per_file_results = json.loads(job.per_file_results_json or "[]")
 
-    headers = ["Sekcja", "Typ zmiany", "Waga",
-               f"Zapis — {job.label_old}", f"Zapis — {job.label_new}", "Komentarz biznesowy"]
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="1C4B40")
-        cell.alignment = Alignment(wrap_text=True)
+    if pair_idx >= len(per_file_results):
+        flash("Nie znaleziono wyników tej pary.", "warning")
+        return redirect(url_for("comparison.job_status", job_id=job_id))
 
-    for row, change in enumerate(changes, 2):
-        waga = change.get("waga", "NISKA")
-        fill = PatternFill("solid", fgColor=waga_colors.get(waga, "FFFFFF"))
-        row_data = [
-            change.get("sekcja", ""), change.get("typ_zmiany", ""), waga,
-            change.get("zapis_stary", ""), change.get("zapis_nowy", ""),
-            change.get("komentarz_biznesowy", ""),
-        ]
-        for col, value in enumerate(row_data, 1):
-            cell = ws.cell(row=row, column=col, value=value)
-            cell.fill = fill
-            cell.alignment = Alignment(wrap_text=True)
+    pfr = per_file_results[pair_idx]
+    wb  = openpyxl.Workbook()
+    ws  = wb.active
+    ws.title = _safe_sheet_name(pfr.get("old_name", "Para"))
+    _write_pair_sheet(ws, pfr, job)
 
-    for i, width in enumerate([15, 20, 12, 50, 50, 60], 1):
-        ws.column_dimensions[get_column_letter(i)].width = width
-    for row in ws.iter_rows(min_row=2):
-        ws.row_dimensions[row[0].row].height = 80
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True,
+                     download_name=_excel_filename(job, suffix=pfr.get("old_name", f"para-{pair_idx + 1}")),
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @bp.route("/job/<int:job_id>/cancel", methods=["POST"])

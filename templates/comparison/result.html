@@ -19,12 +19,14 @@
       {% if job.gemini_model_used %}<span class="px-2 py-0.5 bg-bottle/10 text-bottle text-xs rounded-full font-medium">{{ job.gemini_model_used }}</span>{% endif %}
     </div>
   </div>
-  {% if job.status == 'done' %}
+  {% if per_file_results or job.status == 'done' %}
     <div class="flex items-center gap-2 ml-4 shrink-0">
-      <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-         class="flex items-center gap-2 px-4 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors">
-        ⬇️ Excel
-      </a>
+      {% if per_file_results %}
+        <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
+           class="flex items-center gap-2 px-4 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors">
+          ⬇️ Excel
+        </a>
+      {% endif %}
       <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
             onsubmit="return confirm('Usunąć porównanie?')">
         <button type="submit" class="px-3 py-2 border border-red-200 text-red-500 rounded-lg text-sm hover:bg-red-50 transition-colors">🗑</button>
@@ -67,14 +69,19 @@
   <!-- Live pair list -->
   <div id="pairs-list" class="space-y-2 mb-5">
     {% for m in mappings %}
-      <div id="pair-{{ loop.index0 }}" class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div id="pair-{{ loop.index0 }}" class="bg-white rounded-xl border border-gray-100 overflow-hidden transition-colors duration-300">
         <div class="flex items-center gap-3 px-5 py-3.5">
           <div id="pair-icon-{{ loop.index0 }}" class="text-lg shrink-0 text-gray-300">○</div>
           <div class="min-w-0 flex-1">
             <div class="font-medium text-slate-text text-sm truncate">{{ m.old_name }}</div>
             <div class="text-xs text-slate-text/40">→ {{ m.new_name }}</div>
           </div>
-          <div id="pair-badge-{{ loop.index0 }}" class="shrink-0"></div>
+          <div id="pair-badge-{{ loop.index0 }}" class="shrink-0 flex items-center gap-1">
+            <button onclick="skipPair({{ loop.index0 }})"
+                    class="px-2 py-0.5 text-xs text-slate-text/35 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors">
+              ⏭ Pomiń
+            </button>
+          </div>
         </div>
         <div id="pair-body-{{ loop.index0 }}" class="hidden border-t border-gray-50"></div>
       </div>
@@ -193,11 +200,12 @@
       <h2 class="font-semibold text-slate-text text-sm mb-3">Wyniki par ({{ per_file_results | length }})</h2>
       <div class="space-y-2">
         {% for pfr in per_file_results %}
+          {% if not pfr.get('skipped') %}
           {% set n_ch   = pfr.get('changes', []) | length %}
           {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
           <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            <button type="button" onclick="toggleAccordion('pfr-{{ loop.index0 }}')"
-                    class="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-gray-50/50 transition-colors">
+            <div class="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-gray-50/50 transition-colors"
+                 onclick="toggleAccordion('pfr-{{ loop.index0 }}')">
               <div class="flex items-center gap-3 min-w-0">
                 <span class="text-base shrink-0">{{ pfr.old_name | file_icon }}</span>
                 <div class="min-w-0">
@@ -205,12 +213,17 @@
                   <div class="text-xs text-slate-text/50">→ {{ pfr.new_name }}</div>
                 </div>
               </div>
-              <div class="flex items-center gap-2 ml-4 shrink-0">
+              <div class="flex items-center gap-2 ml-4 shrink-0" onclick="event.stopPropagation()">
                 {% if n_crit %}<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">{{ n_crit }} kryt.</span>{% endif %}
                 <span class="px-2 py-0.5 {% if n_ch > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_ch }} zmian</span>
-                <span class="text-slate-text/30 text-sm transition-transform duration-200" id="arrow-pfr-{{ loop.index0 }}">▼</span>
+                <a href="{{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=loop.index0) }}"
+                   class="px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors"
+                   title="Pobierz Excel dla tej pary">⬇️</a>
+                <span class="text-slate-text/30 text-sm transition-transform duration-200 cursor-pointer"
+                      id="arrow-pfr-{{ loop.index0 }}"
+                      onclick="toggleAccordion('pfr-{{ loop.index0 }}'); event.stopPropagation()">▼</span>
               </div>
-            </button>
+            </div>
             <div id="pfr-{{ loop.index0 }}" class="hidden border-t border-gray-50">
               {% if pfr.get('summary_html') %}
                 <div class="px-5 py-4 bg-lime/5 border-b border-lime/20">
@@ -220,6 +233,7 @@
               {{ _render_changes_table(pfr.get('changes', []), job) }}
             </div>
           </div>
+          {% endif %}
         {% endfor %}
       </div>
     </div>
@@ -279,11 +293,12 @@
       <h2 class="font-semibold text-slate-text text-sm mb-3">Wyniki per dokument ({{ per_file_results | length }} par)</h2>
       <div class="space-y-2">
         {% for pfr in per_file_results %}
+          {% if pfr.get('skipped') %}{% continue %}{% endif %}
           {% set n_ch = pfr.get('changes', []) | length %}
           {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
           <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            <button type="button" onclick="toggleAccordion('pfr-{{ loop.index0 }}')"
-                    class="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-gray-50/50 transition-colors">
+            <div class="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-gray-50/50 transition-colors"
+                 onclick="toggleAccordion('pfr-{{ loop.index0 }}')">
               <div class="flex items-center gap-3 min-w-0">
                 <span class="text-base shrink-0">{{ pfr.old_name | file_icon }}</span>
                 <div class="min-w-0">
@@ -291,12 +306,17 @@
                   <div class="text-xs text-slate-text/50">→ {{ pfr.new_name }}</div>
                 </div>
               </div>
-              <div class="flex items-center gap-2 ml-4 shrink-0">
+              <div class="flex items-center gap-2 ml-4 shrink-0" onclick="event.stopPropagation()">
                 {% if n_crit %}<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">{{ n_crit }} kryt.</span>{% endif %}
                 <span class="px-2 py-0.5 {% if n_ch > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_ch }} zmian</span>
-                <span class="text-slate-text/30 text-sm transition-transform duration-200" id="arrow-pfr-{{ loop.index0 }}">▼</span>
+                <a href="{{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=loop.index0) }}"
+                   class="px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors"
+                   title="Pobierz Excel dla tej pary">⬇️</a>
+                <span class="text-slate-text/30 text-sm transition-transform duration-200 cursor-pointer"
+                      id="arrow-pfr-{{ loop.index0 }}"
+                      onclick="toggleAccordion('pfr-{{ loop.index0 }}'); event.stopPropagation()">▼</span>
               </div>
-            </button>
+            </div>
             <div id="pfr-{{ loop.index0 }}" class="hidden border-t border-gray-50">
               {% if pfr.get('summary_html') %}
                 <div class="px-5 py-4 bg-lime/5 border-b border-lime/20">
@@ -470,14 +490,20 @@
 <script>
 {% if job.status == 'pending' %}
 /* ── Browser-driven sequential comparison ── */
-const JOB_ID             = {{ job.id }};
-const TOTAL_PAIRS        = {{ mappings | length }};
-const RUN_PAIR_BATCH_URL = {{ url_for('comparison.run_pair_batch',            job_id=job.id) | tojson }};
-const FINALIZE_PAIR_URL  = {{ url_for('comparison.finalize_pair',             job_id=job.id) | tojson }};
-const GEN_SUMMARY_URL    = {{ url_for('comparison.generate_edition_summary',  job_id=job.id) | tojson }};
-const FINISH_PAIRS_URL   = {{ url_for('comparison.finish_pairs',              job_id=job.id) | tojson }};
-const CANCEL_URL         = {{ url_for('comparison.cancel_job',                job_id=job.id) | tojson }};
-const STATUS_API_URL     = {{ url_for('comparison.job_status_api',            job_id=job.id) | tojson }};
+const JOB_ID                 = {{ job.id }};
+const TOTAL_PAIRS            = {{ mappings | length }};
+const RUN_PAIR_BATCH_URL     = {{ url_for('comparison.run_pair_batch',            job_id=job.id) | tojson }};
+const FINALIZE_PAIR_URL      = {{ url_for('comparison.finalize_pair',             job_id=job.id) | tojson }};
+const SKIP_PAIR_URL          = {{ url_for('comparison.skip_pair',                 job_id=job.id) | tojson }};
+const GEN_SUMMARY_URL        = {{ url_for('comparison.generate_edition_summary',  job_id=job.id) | tojson }};
+const FINISH_PAIRS_URL       = {{ url_for('comparison.finish_pairs',              job_id=job.id) | tojson }};
+const CANCEL_URL             = {{ url_for('comparison.cancel_job',                job_id=job.id) | tojson }};
+const STATUS_API_URL         = {{ url_for('comparison.job_status_api',            job_id=job.id) | tojson }};
+const DOWNLOAD_PAIR_URL_TPL  = {{ url_for('comparison.download_pair_excel',       job_id=job.id, pair_idx=0) | tojson }};
+
+function pairDownloadUrl(idx) {
+  return DOWNLOAD_PAIR_URL_TPL.replace(/\/pair\/0\//, `/pair/${idx}/`);
+}
 
 const WAGA_BADGE = {
   KRYTYCZNA: 'bg-red-100 text-red-700',
@@ -499,6 +525,7 @@ let pairPollIval   = null;
 let totalStart     = null;
 let pairStart      = null;
 const failedPairs  = new Set();
+const skippedPairs = new Set();
 
 function fmtSecs(s) {
   const m = Math.floor(s / 60), sec = s % 60;
@@ -595,12 +622,15 @@ function setPairDone(idx, data) {
 
   icon.textContent = '✅';
   icon.className = 'text-lg shrink-0';
-  card.classList.remove('border-lime/40');
+  card.classList.remove('border-lime/40', 'border-gray-100');
+  card.classList.add('bg-green-50', 'border-green-200');
 
   const critBadge = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
   const cntColor  = n > 0 ? 'bg-bottle/10 text-bottle' : 'bg-gray-100 text-gray-400';
   const timeBadge = elapsed > 0 ? `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-mono ml-1">${fmtSecs(elapsed)}</span>` : '';
+  const dlUrl     = pairDownloadUrl(idx);
   badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}`
+    + `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors" title="Excel">⬇️</a>`
     + `<button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
 
   let html = '';
@@ -626,13 +656,42 @@ function setPairError(idx, msg) {
 
   icon.textContent = '❌';
   icon.className = 'text-lg shrink-0';
-  card.classList.remove('border-lime/40');
+  card.classList.remove('border-lime/40', 'border-gray-100');
+  card.classList.add('bg-red-50', 'border-red-200');
   badge.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">Błąd</span>`
-    + `<button onclick="retryPair(${idx})" class="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Ponów</button>`;
+    + `<button onclick="retryPair(${idx})" class="ml-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Ponów</button>`
+    + `<button onclick="skipPair(${idx})" class="ml-1 px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-medium hover:bg-gray-200 transition-colors">⏭ Pomiń</button>`;
   body.innerHTML = `<div class="px-5 py-3 bg-red-50 border-t border-red-100">
     <p class="text-xs font-mono text-red-700 break-all">${esc(msg)}</p>
   </div>`;
   body.classList.remove('hidden');
+}
+
+function setPairSkipped(idx) {
+  stopPairTimer();
+  stopPairPoll();
+  const icon = document.getElementById(`pair-icon-${idx}`);
+  const badge = document.getElementById(`pair-badge-${idx}`);
+  const card  = document.getElementById(`pair-${idx}`);
+  icon.textContent = '⏭';
+  icon.className = 'text-lg shrink-0 opacity-40';
+  badge.innerHTML = `<span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full font-medium">Pominięto</span>`;
+  card.classList.remove('border-lime/40', 'border-gray-100');
+  card.classList.add('opacity-50');
+}
+
+async function skipPair(idx) {
+  if (skippedPairs.has(idx)) return;
+  skippedPairs.add(idx);
+  failedPairs.delete(idx);
+  setPairSkipped(idx);
+  try {
+    await fetch(SKIP_PAIR_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pair_idx: idx}),
+    });
+  } catch(e) { /* nie krytyczny — para jest już oznaczona lokalnie */ }
 }
 
 function togglePairBody(idx) {
@@ -828,6 +887,7 @@ async function runComparison() {
 
   for (let i = 0; i < TOTAL_PAIRS; i++) {
     if (cancelled) break;
+    if (skippedPairs.has(i)) continue;
     const result = await runOnePair(i);
     if (result?.cancelled) return;
     if (cancelled) break;
