@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Nowe porownanie – Grant Docs{% endblock %}
+{% block title %}Nowe porownanie – BLDG{% endblock %}
 {% block content %}
 <nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2">
   <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porownania</a>
@@ -69,23 +69,23 @@
   <div class="bg-white rounded-xl border border-gray-100 p-5 mb-5" id="mapping-panel" style="display:none">
     <h2 class="font-semibold text-bottle text-sm mb-4">3. Pary do porównania</h2>
 
-    <!-- Kreator par -->
+    <!-- Kreator par: Starsza → Nowsza (spójnie z krokiem 2) -->
     <div class="flex flex-col sm:flex-row gap-3 items-end mb-4 pb-4 border-b border-gray-100">
       <div class="flex-1 min-w-0">
-        <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-new-file">Nowsza edycja</label>
-        <select id="new-file-sel"
+        <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-old-file">Starsza edycja</label>
+        <select id="old-file-sel"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
-          <option value="">— wybierz plik z nowszej —</option>
+          <option value="">— wybierz plik ze starszej —</option>
         </select>
       </div>
       <div class="hidden sm:flex items-center pb-2 text-slate-text/25 shrink-0">
         <span class="text-xl">→</span>
       </div>
       <div class="flex-1 min-w-0">
-        <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-old-file">Starsza edycja</label>
-        <select id="old-file-sel"
+        <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-new-file">Nowsza edycja</label>
+        <select id="new-file-sel"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
-          <option value="">— wybierz plik ze starszej —</option>
+          <option value="">— wybierz plik z nowszej —</option>
         </select>
       </div>
       <div class="shrink-0">
@@ -217,6 +217,11 @@ async function loadFiles(oldId, newId) {
   document.getElementById('mapping-panel').style.display = '';
 }
 
+function _fileLabel(f) {
+  const prefix = f.from_gdrive ? '☁️ ' : '';
+  return f.description ? `${prefix}${f.description} (${f.name})` : `${prefix}${f.name}`;
+}
+
 function renderSelects() {
   const usedNewIds = new Set(pairs.map(p => String(p.new_id)));
   const usedOldIds = new Set(pairs.map(p => String(p.old_id)));
@@ -225,17 +230,17 @@ function renderSelects() {
   const prevNew = newSel.value;
   const prevOld = oldSel.value;
 
-  newSel.innerHTML = '<option value="">— wybierz plik z nowszej —</option>';
-  filesNew.filter(f => !usedNewIds.has(String(f.id))).forEach(f => {
-    newSel.appendChild(new Option((f.from_gdrive ? '☁️ ' : '') + f.name, String(f.id)));
-  });
-  if (prevNew && !usedNewIds.has(prevNew)) newSel.value = prevNew;
-
   oldSel.innerHTML = '<option value="">— wybierz plik ze starszej —</option>';
   filesOld.filter(f => !usedOldIds.has(String(f.id))).forEach(f => {
-    oldSel.appendChild(new Option((f.from_gdrive ? '☁️ ' : '') + f.name, String(f.id)));
+    oldSel.appendChild(new Option(_fileLabel(f), String(f.id)));
   });
   if (prevOld && !usedOldIds.has(prevOld)) oldSel.value = prevOld;
+
+  newSel.innerHTML = '<option value="">— wybierz plik z nowszej —</option>';
+  filesNew.filter(f => !usedNewIds.has(String(f.id))).forEach(f => {
+    newSel.appendChild(new Option(_fileLabel(f), String(f.id)));
+  });
+  if (prevNew && !usedNewIds.has(prevNew)) newSel.value = prevNew;
 }
 
 function renderPairsList() {
@@ -261,9 +266,9 @@ function renderPairsList() {
     const row = document.createElement('div');
     row.className = 'flex items-center gap-3 py-2.5 px-3 bg-gray-50 rounded-lg';
     row.innerHTML =
-      `<span class="flex-1 text-sm font-medium text-slate-text truncate min-w-0" title="${esc(p.new_name)}">${esc(p.new_name)}</span>` +
+      `<span class="flex-1 text-sm font-medium text-slate-text truncate min-w-0" title="${esc(p.old_name)}">${esc(p.old_name)}</span>` +
       `<span class="text-slate-text/30 shrink-0">→</span>` +
-      `<span class="flex-1 text-sm text-slate-text/60 truncate min-w-0" title="${esc(p.old_name)}">${esc(p.old_name)}</span>` +
+      `<span class="flex-1 text-sm text-slate-text/60 truncate min-w-0" title="${esc(p.new_name)}">${esc(p.new_name)}</span>` +
       `<button type="button" onclick="removePair(${i})" title="Usuń parę"` +
       ` class="shrink-0 w-6 h-6 flex items-center justify-center rounded text-slate-text/30 hover:text-red-400 hover:bg-red-50 transition-colors text-lg leading-none">×</button>`;
     list.appendChild(row);

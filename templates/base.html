@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}Grant Docs Manager{% endblock %}</title>
+  <title>{% block title %}Manager dokumentacji BLDG{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <script>
@@ -49,8 +49,8 @@
   <header class="bg-bottle text-white shadow-md sticky top-0 z-20">
     <div class="max-w-screen-2xl mx-auto px-6 flex items-center gap-8 h-14">
       <a href="{{ url_for('competitions.index') }}" class="flex items-center gap-2 shrink-0">
-        <span class="text-lime font-bold text-lg leading-none">Grant Docs</span>
-        <span class="text-white/40 text-xs hidden sm:inline">Manager</span>
+        <span class="text-lime font-bold text-lg leading-none">BLDG</span>
+        <span class="text-white/40 text-xs hidden sm:inline">Manager dokumentacji</span>
       </a>
       <nav class="flex items-center gap-1 flex-1">
         <a href="{{ url_for('competitions.index') }}"

@@ -220,7 +220,13 @@ def api_edition_files(edition_id):
     if not edition:
         return jsonify([])
     docs = [
-        {"id": doc.id, "name": doc.original_name, "size": doc.file_size or 0, "from_gdrive": bool(doc.gdrive_file_id)}
+        {
+            "id": doc.id,
+            "name": doc.original_name,
+            "size": doc.file_size or 0,
+            "from_gdrive": bool(doc.gdrive_file_id),
+            "description": (doc.ai_description or "").strip(),
+        }
         for doc in edition.documents
     ]
     docs.sort(key=lambda d: d["name"])
