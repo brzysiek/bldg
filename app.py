@@ -285,11 +285,28 @@ def create_app():
 
     @app.template_filter("file_icon")
     def file_icon(filename):
-        if not filename:
-            return "📎"
-        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-        return {"pdf": "📄", "doc": "📝", "docx": "📝", "xls": "📊", "xlsx": "📊",
-                "png": "🖼️", "jpg": "🖼️", "jpeg": "🖼️", "txt": "📃"}.get(ext, "📎")
+        ext = filename.rsplit(".", 1)[-1].lower() if filename and "." in filename else ""
+        _icons = {
+            "pdf":  ("bg-red-600",    "PDF", "text-[9px]"),
+            "doc":  ("bg-blue-700",   "W",   "text-sm"),
+            "docx": ("bg-blue-700",   "W",   "text-sm"),
+            "xls":  ("bg-green-700",  "X",   "text-sm"),
+            "xlsx": ("bg-green-700",  "X",   "text-sm"),
+            "xlsm": ("bg-green-700",  "X",   "text-sm"),
+            "ppt":  ("bg-orange-600", "P",   "text-sm"),
+            "pptx": ("bg-orange-600", "P",   "text-sm"),
+            "txt":  ("bg-slate-400",  "TXT", "text-[9px]"),
+            "csv":  ("bg-teal-600",   "CSV", "text-[9px]"),
+            "png":  ("bg-violet-500", "IMG", "text-[9px]"),
+            "jpg":  ("bg-violet-500", "IMG", "text-[9px]"),
+            "jpeg": ("bg-violet-500", "IMG", "text-[9px]"),
+        }
+        bg, label, sz = _icons.get(ext, ("bg-gray-400", (ext.upper() or "?")[:4], "text-[9px]"))
+        return (
+            f'<span class="inline-flex items-center justify-center w-6 h-6 rounded '
+            f'{bg} text-white {sz} font-bold leading-none select-none shrink-0">'
+            f'{label}</span>'
+        )
 
     @app.template_filter("filesize_fmt")
     def filesize_fmt(size):
