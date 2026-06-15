@@ -17,8 +17,9 @@ def test_connection(api_key: str, model_name: str) -> dict:
 def summarize_document(text: str, settings) -> dict:
     """Returns {"summary": str, "description": str}."""
     import json as _json
+    from seed import DEFAULT_PROMPT
     client = genai.Client(api_key=settings.gemini_api_key)
-    prompt = settings.gemini_summary_prompt.replace("{document_text}", text)
+    prompt = (settings.gemini_summary_prompt or DEFAULT_PROMPT).replace("{document_text}", text)
     response = client.models.generate_content(
         model=settings.gemini_model,
         contents=prompt,
