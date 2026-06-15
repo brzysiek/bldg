@@ -5,7 +5,6 @@ import tempfile
 from datetime import datetime
 from flask import Blueprint, jsonify, render_template, request, redirect, url_for, flash, send_file, abort, Response
 from werkzeug.utils import secure_filename
-import markdown as md_lib
 from extensions import db
 from models import Competition, Edition, Document, AppSettings
 from services.text_extractor import extract_text
@@ -208,6 +207,7 @@ def summary(file_id):
 
     summary_html = None
     if doc.ai_summary:
+        import markdown as md_lib
         summary_html = md_lib.markdown(doc.ai_summary, extensions=["tables", "fenced_code"])
 
     return render_template(

@@ -310,10 +310,11 @@ async function bulkSummarize() {
 
     try {
       const resp = await fetch(`/files/${file.id}/summarize-json`, { method: 'POST' });
-      let data;
-      try { data = await resp.json(); } catch (_) { data = null; }
+      let data, rawText = '';
+      try { rawText = await resp.text(); data = JSON.parse(rawText); } catch (_) { data = null; }
       if (!resp.ok) {
-        const msg = `HTTP ${resp.status}${data?.error ? ': ' + data.error : ''}`;
+        const body = data?.error ? ': ' + data.error : (rawText ? ': ' + rawText.slice(0, 120) : '');
+        const msg = `HTTP ${resp.status}${body}`;
         console.error(`[bulk] file ${file.id} (${file.name}):`, msg, data);
         setRowError(file.id, msg);
         showProgressError(file.id, file.name, msg);
