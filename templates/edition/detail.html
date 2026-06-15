@@ -106,7 +106,7 @@
     {% if has_gemini %}
       <button id="btn-bulk" onclick="bulkSummarize()"
               class="hidden px-3 py-1.5 bg-lime text-bottle rounded-lg text-xs font-semibold hover:bg-lime/80 transition-colors">
-        ✨ Podsumuj zaznaczone (<span id="sel-count">0</span>)
+        ✨ Podsumuj zaznaczone z AI (<span id="sel-count">0</span>)
       </button>
     {% endif %}
     <a href="{{ url_for('files.upload', c_slug=competition.slug, e_slug=edition.slug) }}"
