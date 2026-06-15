@@ -90,30 +90,16 @@ def delete(file_id):
     return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
 
 
-@bp.route("/files/<int:file_id>/summarize", methods=["POST"])
-def summarize(file_id):
-    doc = Document.query.get_or_404(file_id)
-    edition = doc.edition
-    competition = edition.competition
+def _run_summarize(doc, settings):
+    """Extracts text and runs Gemini summarization. Returns (ok, error_msg)."""
+    import shutil
 
-    settings = AppSettings.query.first()
-    if not settings or not settings.gemini_api_key:
-        flash("Brak klucza Gemini API. Przejdź do ⚙️ Ustawień.", "warning")
-        return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
-
-    doc.ai_summary_status = "pending"
-    db.session.commit()
-
-    # For Drive files: download to temp dir for text extraction
-    _tmp_dir = None
     local_path = doc.stored_path
+    _tmp_dir = None
+
     if doc.gdrive_file_id:
         if not settings.google_drive_api_key and not settings.google_access_token:
-            doc.ai_summary_status = "error"
-            doc.ai_summary_error = "Brak klucza Drive API — nie można pobrać pliku do analizy"
-            db.session.commit()
-            flash("Brak skonfigurowanego dostępu do Drive.", "warning")
-            return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+            return False, "Brak klucza Drive API — nie można pobrać pliku do analizy"
         try:
             _tmp_dir = tempfile.mkdtemp()
             if settings.google_access_token:
@@ -123,31 +109,18 @@ def summarize(file_id):
                 from services.google_drive import download_file_public
                 local_path = download_file_public(doc.gdrive_file_id, doc.original_name, doc.mime_type or "application/pdf", _tmp_dir, settings.google_drive_api_key)
         except Exception as e:
-            doc.ai_summary_status = "error"
-            doc.ai_summary_error = str(e)
-            db.session.commit()
-            flash(f"Błąd pobierania pliku z Drive: {e}", "error")
-            return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+            return False, f"Błąd pobierania z Drive: {e}"
 
     try:
         text = extract_text(local_path, doc.mime_type or "")
     except Exception as e:
-        doc.ai_summary_status = "error"
-        doc.ai_summary_error = str(e)
-        db.session.commit()
-        flash(f"Błąd ekstrakcji tekstu: {e}", "error")
-        return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+        return False, f"Błąd ekstrakcji tekstu: {e}"
     finally:
         if _tmp_dir:
-            import shutil
             shutil.rmtree(_tmp_dir, ignore_errors=True)
 
     if not text or len(text.strip()) < 50:
-        doc.ai_summary_status = "error"
-        doc.ai_summary_error = "Nie udało się wyodrębnić tekstu z dokumentu — plik może być zeskanowany lub zabezpieczony"
-        db.session.commit()
-        flash("Nie udało się wyodrębnić tekstu z dokumentu.", "error")
-        return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+        return False, "Nie udało się wyodrębnić tekstu — plik może być zeskanowany lub zabezpieczony"
 
     if len(text) > 400_000:
         text = text[:400_000] + "\n[TEKST OBCIĘTY DO 400 000 ZNAKÓW]"
@@ -161,14 +134,59 @@ def summarize(file_id):
         doc.ai_summary_status = "done"
         doc.ai_summary_error = None
         db.session.commit()
-        flash("Podsumowanie AI zostało wygenerowane.", "success")
+        return True, None
     except Exception as e:
         doc.ai_summary_status = "error"
         doc.ai_summary_error = str(e)
         db.session.commit()
-        flash(f"Błąd Gemini API: {e}", "error")
+        return False, str(e)
+
+
+@bp.route("/files/<int:file_id>/summarize", methods=["POST"])
+def summarize(file_id):
+    doc = Document.query.get_or_404(file_id)
+    edition = doc.edition
+    competition = edition.competition
+    settings = AppSettings.query.first()
+
+    if not settings or not settings.gemini_api_key:
+        flash("Brak klucza Gemini API. Przejdź do ⚙️ Ustawień.", "warning")
+        return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+
+    doc.ai_summary_status = "pending"
+    db.session.commit()
+
+    ok, err = _run_summarize(doc, settings)
+    if ok:
+        flash("Podsumowanie AI zostało wygenerowane.", "success")
+    else:
+        flash(f"Błąd: {err}", "error")
 
     return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+
+
+@bp.route("/files/<int:file_id>/summarize-json", methods=["POST"])
+def summarize_json(file_id):
+    from flask import jsonify
+    doc = Document.query.get_or_404(file_id)
+    settings = AppSettings.query.first()
+
+    if not settings or not settings.gemini_api_key:
+        return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
+
+    doc.ai_summary_status = "pending"
+    db.session.commit()
+
+    ok, err = _run_summarize(doc, settings)
+    if ok:
+        return jsonify({
+            "ok": True,
+            "file_id": file_id,
+            "description": doc.ai_description or "",
+            "summary": doc.ai_summary or "",
+        })
+    else:
+        return jsonify({"ok": False, "file_id": file_id, "error": err})
 
 
 @bp.route("/files/<int:file_id>/summary")

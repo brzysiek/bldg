@@ -103,11 +103,29 @@
         ⚠️ <a href="{{ url_for('settings.index') }}" class="underline">Skonfiguruj Gemini</a>
       </span>
     {% endif %}
+    {% if has_gemini %}
+      <button id="btn-bulk" onclick="bulkSummarize()"
+              class="hidden px-3 py-1.5 bg-lime text-bottle rounded-lg text-xs font-semibold hover:bg-lime/80 transition-colors">
+        🤖 Podsumuj zaznaczone (<span id="sel-count">0</span>)
+      </button>
+    {% endif %}
     <a href="{{ url_for('files.upload', c_slug=competition.slug, e_slug=edition.slug) }}"
        class="px-3 py-1.5 border border-gray-200 text-slate-text rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
       + Wgraj plik
     </a>
   </div>
+</div>
+
+<!-- Bulk progress bar (hidden until bulk summarize starts) -->
+<div id="bulk-progress" class="hidden mb-4 bg-white rounded-xl border border-gray-100 px-5 py-4">
+  <div class="flex justify-between items-center mb-2">
+    <span id="progress-label" class="text-sm text-slate-text font-medium"></span>
+    <span id="progress-fraction" class="text-xs text-slate-text/50"></span>
+  </div>
+  <div class="w-full bg-gray-100 rounded-full h-2">
+    <div id="progress-bar" class="bg-bottle h-2 rounded-full transition-all duration-500" style="width:0%"></div>
+  </div>
+  <p id="progress-file" class="text-xs text-slate-text/50 mt-1.5 truncate"></p>
 </div>
 
 {% if all_docs %}
@@ -116,7 +134,12 @@
       <table class="w-full text-sm">
         <thead>
           <tr class="text-xs text-slate-text/50 border-b border-gray-100 bg-gray-50/60">
-            <th class="text-left px-5 py-3 font-medium">Plik</th>
+            <th class="px-3 py-3 w-8">
+              <input type="checkbox" id="check-all" onchange="toggleAll(this)"
+                     class="rounded border-gray-300 text-bottle focus:ring-bottle/30 cursor-pointer" />
+            </th>
+            <th class="text-left px-3 py-3 font-medium">Plik</th>
+            <th class="text-left px-3 py-3 font-medium">Format</th>
             <th class="text-left px-3 py-3 font-medium">Opis</th>
             <th class="text-left px-3 py-3 font-medium">Status AI</th>
             <th class="text-right px-5 py-3 font-medium">Akcje</th>
@@ -124,23 +147,34 @@
         </thead>
         <tbody class="divide-y divide-gray-50">
           {% for doc in all_docs %}
-            <tr class="hover:bg-gray-50/50 transition-colors">
-              <td class="px-5 py-3">
-                <div class="flex items-center gap-2">
-                  <span>{{ doc.original_name | file_icon }}</span>
-                  <span class="font-medium text-slate-text max-w-[220px] truncate" title="{{ doc.original_name }}">{{ doc.original_name }}</span>
-                </div>
-                {% if doc.gdrive_file_id %}
-                  <div class="mt-0.5 ml-6"><span class="text-xs text-blue-500">☁️ Drive</span></div>
-                {% endif %}
-              </td>
-              <td class="px-3 py-3 text-slate-text/70 text-xs max-w-[140px]">
-                {{ doc.ai_description or '—' }}
+            <tr id="doc-row-{{ doc.id }}" class="hover:bg-gray-50/50 transition-colors">
+              <td class="px-3 py-3">
+                <input type="checkbox"
+                       class="doc-cb rounded border-gray-300 text-bottle focus:ring-bottle/30 cursor-pointer
+                              {% if doc.ai_summary_status == 'pending' %}opacity-30 pointer-events-none{% endif %}"
+                       value="{{ doc.id }}"
+                       data-name="{{ doc.original_name | e }}"
+                       {% if doc.ai_summary_status == 'pending' %}disabled{% endif %}
+                       onchange="updateBulkBtn()" />
               </td>
               <td class="px-3 py-3">
+                <div class="flex items-center gap-2">
+                  <span>{{ doc.original_name | file_icon }}</span>
+                  <span class="font-medium text-slate-text max-w-[240px] truncate" title="{{ doc.original_name }}">{{ doc.original_name }}</span>
+                  {% if doc.gdrive_file_id %}<span class="text-xs text-blue-400">☁️</span>{% endif %}
+                </div>
+              </td>
+              <td class="px-3 py-3">
+                {%- set ext = doc.original_name.rsplit('.', 1)[-1].upper() if '.' in doc.original_name else '' -%}
+                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded font-mono">{{ ext or '?' }}</span>
+              </td>
+              <td id="desc-{{ doc.id }}" class="px-3 py-3 text-slate-text/70 text-xs max-w-[160px]">
+                {{ doc.ai_description or '—' }}
+              </td>
+              <td id="status-{{ doc.id }}" class="px-3 py-3">
                 {% if doc.ai_summary_status == 'done' %}
-                  <button onclick="showSummary({{ doc.id }}, {{ doc.original_name | tojson }})"
-                          class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors cursor-pointer">
+                  <button onclick='showSummary({{ doc.id }}, {{ doc.original_name | tojson }})'
+                          class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">
                     🔍 Podsumowanie
                   </button>
                 {% elif doc.ai_summary_status == 'pending' %}
@@ -169,7 +203,7 @@
                           onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳...'">
                       <button type="submit"
                               class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors">
-                        🤖 {{ 'Podsumuj ponownie' if doc.ai_summary_status == 'done' else 'Podsumuj AI' }}
+                        🤖 {{ 'Ponów' if doc.ai_summary_status == 'done' else 'Podsumuj AI' }}
                       </button>
                     </form>
                   {% endif %}
@@ -213,33 +247,132 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
+/* ── Sync form ── */
 const syncForm = document.getElementById('sync-form');
 if (syncForm) {
-  syncForm.addEventListener('submit', function() {
+  syncForm.addEventListener('submit', () => {
     const btn = document.getElementById('sync-btn');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Synchronizuję...'; }
   });
 }
 
+/* ── Summary popup ── */
 const SUMMARIES = {
-  {% for doc in all_docs %}{% if doc.ai_summary %}
-  {{ doc.id }}: {{ doc.ai_summary | tojson }},
-  {% endif %}{% endfor %}
+  {% for doc in all_docs %}{% if doc.ai_summary %}{{ doc.id }}: {{ doc.ai_summary | tojson }},{% endif %}{% endfor %}
 };
 
 function showSummary(id, name) {
   document.getElementById('modal-title').textContent = name;
-  const text = SUMMARIES[id] || '';
-  document.getElementById('modal-body').innerHTML = marked.parse(text);
+  document.getElementById('modal-body').innerHTML = marked.parse(SUMMARIES[id] || '');
   document.getElementById('summary-modal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
-
 function closeSummary() {
   document.getElementById('summary-modal').classList.add('hidden');
   document.body.style.overflow = '';
 }
-
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSummary(); });
+
+/* ── Bulk summarize ── */
+function toggleAll(el) {
+  document.querySelectorAll('.doc-cb:not(:disabled)').forEach(cb => { cb.checked = el.checked; });
+  updateBulkBtn();
+}
+
+function updateBulkBtn() {
+  const n = document.querySelectorAll('.doc-cb:checked').length;
+  const btn = document.getElementById('btn-bulk');
+  if (!btn) return;
+  document.getElementById('sel-count').textContent = n;
+  btn.classList.toggle('hidden', n === 0);
+  const allCbs = document.querySelectorAll('.doc-cb:not(:disabled)');
+  const allChecked = allCbs.length > 0 && document.querySelectorAll('.doc-cb:not(:disabled):checked').length === allCbs.length;
+  document.getElementById('check-all').checked = allChecked;
+}
+
+async function bulkSummarize() {
+  const checked = Array.from(document.querySelectorAll('.doc-cb:checked'));
+  if (!checked.length) return;
+
+  const queue = checked.map(cb => ({ id: +cb.value, name: cb.dataset.name }));
+  const total = queue.length;
+  let done = 0, errors = 0;
+
+  // Lock UI
+  document.getElementById('btn-bulk').disabled = true;
+  document.getElementById('bulk-progress').classList.remove('hidden');
+  document.querySelectorAll('.doc-cb').forEach(cb => cb.disabled = true);
+
+  for (const file of queue) {
+    setProgress(done, total, file.name, 'active');
+    setRowPending(file.id);
+
+    try {
+      const resp = await fetch(`/files/${file.id}/summarize-json`, { method: 'POST' });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      if (data.ok) {
+        setRowDone(file.id, data.description, data.summary);
+      } else {
+        setRowError(file.id, data.error || 'Błąd');
+        errors++;
+      }
+    } catch (e) {
+      setRowError(file.id, e.message);
+      errors++;
+    }
+    done++;
+  }
+
+  // Finish
+  const label = errors
+    ? `Gotowe — ${done - errors} podsumowań, ${errors} błędów`
+    : `Gotowe — podsumowano ${done} plików`;
+  setProgress(done, total, label, 'done');
+  document.getElementById('btn-bulk').classList.add('hidden');
+  document.querySelectorAll('.doc-cb').forEach(cb => {
+    cb.disabled = cb.classList.contains('opacity-30');
+    cb.checked = false;
+  });
+}
+
+function setProgress(done, total, filename, state) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-fraction').textContent = `${done} / ${total}`;
+  if (state === 'active') {
+    document.getElementById('progress-label').textContent = `⏳ Podsumowuję…`;
+    document.getElementById('progress-file').textContent = filename;
+  } else {
+    document.getElementById('progress-label').textContent = filename;
+    document.getElementById('progress-file').textContent = '';
+    document.getElementById('progress-bar').classList.replace('bg-bottle', 'bg-green-500');
+  }
+}
+
+function setRowPending(id) {
+  const el = document.getElementById('status-' + id);
+  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>';
+}
+
+function setRowDone(id, description, summary) {
+  SUMMARIES[id] = summary;
+  const descEl = document.getElementById('desc-' + id);
+  if (descEl) descEl.textContent = description || '—';
+  const statusEl = document.getElementById('status-' + id);
+  if (statusEl) {
+    const row = document.getElementById('doc-row-' + id);
+    const name = row ? (row.querySelector('.doc-cb')?.dataset.name || '') : '';
+    // Use single-quoted attribute to avoid " conflict with JSON.stringify
+    statusEl.innerHTML = `<button onclick='showSummary(${id}, ${JSON.stringify(name)})'
+      class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">
+      🔍 Podsumowanie</button>`;
+  }
+}
+
+function setRowError(id, msg) {
+  const el = document.getElementById('status-' + id);
+  if (el) el.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">❌ Błąd</span>`;
+}
 </script>
 {% endblock %}
