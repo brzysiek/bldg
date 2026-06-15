@@ -9,7 +9,8 @@
 
 <h1 class="text-xl font-bold text-bottle mb-6">Nowe porownanie edycji</h1>
 
-<form method="POST" id="setup-form">
+<form method="POST" id="setup-form"
+      onsubmit="const b=this.querySelector('#submit-panel button'); if(b){ b.disabled=true; b.textContent='Uruchamianie...'; }">
 
   <!-- Krok 1: Wybor konkursu -->
   <div class="bg-white rounded-xl border border-gray-100 p-5 mb-4">
@@ -77,7 +78,6 @@
   <div id="submit-panel" style="display:none">
     <button type="submit"
             class="flex items-center gap-2 px-6 py-3 bg-bottle text-white rounded-xl text-sm font-bold hover:bg-bottle/90 transition-colors"
-            onclick="this.disabled=true; this.textContent='Uruchamianie...'">
       ▶ Uruchom porownanie
     </button>
   </div>

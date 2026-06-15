@@ -71,6 +71,28 @@ def _migrate_db():
         add_cols("documents", {
             "gdrive_file_id": "TEXT",
         })
+
+        # Migracja: document_type_id → edition_id
+        if "documents" in tables:
+            doc_cols = {c["name"] for c in inspector.get_columns("documents")}
+            if "document_type_id" in doc_cols and "edition_id" not in doc_cols:
+                conn.execute(text("ALTER TABLE `documents` ADD COLUMN `edition_id` INT"))
+                if "document_types" in tables:
+                    conn.execute(text(
+                        "UPDATE `documents` d "
+                        "JOIN `document_types` dt ON d.document_type_id = dt.id "
+                        "SET d.edition_id = dt.edition_id"
+                    ))
+                conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+                conn.execute(text("ALTER TABLE `documents` DROP COLUMN `document_type_id`"))
+                conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+                conn.commit()
+            if "document_types" in inspector.get_table_names():
+                conn.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+                conn.execute(text("DROP TABLE IF EXISTS `document_types`"))
+                conn.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+                conn.commit()
+
         add_cols("comparison_jobs", {
             "status_detail":          "TEXT",
             "started_at":             "DATETIME",

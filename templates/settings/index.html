@@ -64,12 +64,13 @@
         </button>
         <button type="submit" form="form-gemini-test"
                 class="px-4 py-2.5 bg-bottle/10 text-bottle border border-bottle/20 rounded-lg text-sm font-semibold hover:bg-bottle/20 transition-colors"
-                onclick="this.disabled=true; this.textContent='⏳ Testowanie...'">
+                id="btn-gemini-test">
           🔌 Testuj połączenie
         </button>
       </div>
     </form>
-    <form method="POST" action="{{ url_for('settings.test') }}" id="form-gemini-test"></form>
+    <form method="POST" action="{{ url_for('settings.test') }}" id="form-gemini-test"
+          onsubmit="const b=document.getElementById('btn-gemini-test'); b.disabled=true; b.textContent='⏳ Testowanie...'"></form>
     {% if test_result is not none %}
       <div class="mt-4 p-4 rounded-lg text-sm {% if test_result.ok %}bg-green-50 border border-green-200 text-green-800{% else %}bg-red-50 border border-red-200 text-red-800{% endif %}">
         {% if test_result.ok %}
