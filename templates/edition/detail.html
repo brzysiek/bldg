@@ -46,17 +46,29 @@
   <div class="flex items-center gap-2 mb-3">
     <span class="text-base">☁️</span>
     <h2 class="font-semibold text-bottle text-sm">Google Drive</h2>
+    {% if gdrive_mode == 'oauth' %}
+      <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">OAuth</span>
+    {% elif gdrive_mode == 'public' %}
+      <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">Dostęp publiczny</span>
+    {% endif %}
     {% if edition.gdrive_synced_at %}
       <span class="text-xs text-slate-text/40 ml-auto">Ostatnia sync: {{ edition.gdrive_synced_at.strftime('%d.%m.%Y %H:%M') }}</span>
     {% endif %}
   </div>
 
-  {% if not has_gdrive %}
+  {% if gdrive_mode == 'none' %}
     <div class="bg-yellow-50 border border-yellow-100 rounded-lg px-4 py-3 text-sm text-yellow-800 flex items-center gap-2">
-      ⚠️ Konto Google Drive nie jest podlaczone.
-      <a href="{{ url_for('settings.index') }}#gdrive" class="font-semibold underline">Podlacz w Ustawieniach →</a>
+      ⚠️ Konto Google Drive nie jest podłączone.
+      <a href="{{ url_for('settings.index', tab='integracje') }}#gdrive" class="font-semibold underline">Podłącz w Ustawieniach →</a>
     </div>
   {% else %}
+    {% if gdrive_mode == 'public' %}
+      <div class="bg-yellow-50 border border-yellow-100 rounded-lg px-3 py-2 text-xs text-yellow-800 flex items-center gap-2 mb-3">
+        ⚠️ OAuth nie jest skonfigurowany. Działa w trybie <strong>dostępu publicznego</strong> — synchronizacja działa tylko z folderami/plikami udostępnionymi publicznie.
+        <a href="{{ url_for('settings.index', tab='integracje') }}#gdrive" class="underline whitespace-nowrap">Skonfiguruj OAuth →</a>
+      </div>
+    {% endif %}
+
     <form method="POST" action="{{ url_for('editions.set_drive_url', c_slug=competition.slug, e_slug=edition.slug) }}" class="flex gap-2 mb-3">
       <input type="url" name="gdrive_folder_url"
              value="{{ edition.gdrive_folder_url or '' }}"
@@ -71,7 +83,7 @@
       <form method="POST" action="{{ url_for('editions.sync_drive', c_slug=competition.slug, e_slug=edition.slug) }}">
         <button type="submit"
                 class="flex items-center gap-2 px-4 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors"
-                onclick="this.disabled=true; this.textContent='Synchronizuje...'">
+                onclick="this.disabled=true; this.textContent='Synchronizuję...'">
           🔄 Synchronizuj pliki z Drive
         </button>
       </form>

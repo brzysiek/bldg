@@ -50,20 +50,28 @@ def new(c_slug):
     return render_template("edition/form.html", competition=competition, edition=None)
 
 
+def _gdrive_mode(settings) -> str:
+    """Returns 'oauth', 'public', or 'none'."""
+    if settings and settings.google_access_token:
+        return "oauth"
+    if settings and settings.gemini_api_key:
+        return "public"
+    return "none"
+
+
 @bp.route("/competition/<c_slug>/edition/<e_slug>")
 def detail(c_slug, e_slug):
     competition = Competition.query.filter_by(slug=c_slug).first_or_404()
     edition = Edition.query.filter_by(competition_id=competition.id, slug=e_slug).first_or_404()
     settings = AppSettings.query.first()
     has_gemini = bool(settings and settings.gemini_api_key)
-    has_gdrive = bool(settings and settings.google_access_token)
     all_docs = sorted(edition.documents, key=lambda d: d.uploaded_at or datetime.min, reverse=True)
     return render_template(
         "edition/detail.html",
         competition=competition,
         edition=edition,
         has_gemini=has_gemini,
-        has_gdrive=has_gdrive,
+        gdrive_mode=_gdrive_mode(settings),
         all_docs=all_docs,
         settings=settings,
     )
@@ -110,8 +118,9 @@ def sync_drive(c_slug, e_slug):
     edition = Edition.query.filter_by(competition_id=competition.id, slug=e_slug).first_or_404()
     settings = AppSettings.query.first()
 
-    if not settings or not settings.google_access_token:
-        flash("Polacz konto Google Drive w Ustawieniach.", "warning")
+    mode = _gdrive_mode(settings)
+    if mode == "none":
+        flash("Brak dostępu do Google Drive. Skonfiguruj OAuth lub klucz Gemini API w Ustawieniach.", "warning")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
     if not edition.gdrive_folder_id:
@@ -119,10 +128,14 @@ def sync_drive(c_slug, e_slug):
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
     try:
-        from services.google_drive import list_folder_files, download_file as gdrive_download
-        files = list_folder_files(edition.gdrive_folder_id, settings)
+        if mode == "oauth":
+            from services.google_drive import list_folder_files, download_file as gdrive_download
+            files = list_folder_files(edition.gdrive_folder_id, settings)
+        else:
+            from services.google_drive import list_folder_files_public, download_file_public as gdrive_download
+            files = list_folder_files_public(edition.gdrive_folder_id, settings.gemini_api_key)
     except Exception as e:
-        flash(f"Blad pobierania listy plikow z Drive: {e}", "error")
+        flash(f"Błąd pobierania listy plików z Drive: {e}", "error")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
     dest_dir = os.path.join("storage", competition.slug, edition.slug, "gdrive")
@@ -136,7 +149,10 @@ def sync_drive(c_slug, e_slug):
         gid = file_meta["id"]
         existing = Document.query.filter_by(gdrive_file_id=gid).first()
         try:
-            dest_path = gdrive_download(gid, file_meta["name"], file_meta["mime_type"], dest_dir, settings)
+            if mode == "oauth":
+                dest_path = gdrive_download(gid, file_meta["name"], file_meta["mime_type"], dest_dir, settings)
+            else:
+                dest_path = gdrive_download(gid, file_meta["name"], file_meta["mime_type"], dest_dir, settings.gemini_api_key)
             size = os.path.getsize(dest_path)
 
             if existing:
@@ -161,9 +177,9 @@ def sync_drive(c_slug, e_slug):
     db.session.commit()
 
     if errors:
-        flash(f"Synchronizacja czesciowa: +{added} nowych, {updated} zaktualizowanych. Bledy: {'; '.join(errors[:3])}", "warning")
+        flash(f"Synchronizacja częściowa: +{added} nowych, {updated} zaktualizowanych. Błędy: {'; '.join(errors[:3])}", "warning")
     else:
-        flash(f"Synchronizacja zakonczona: +{added} nowych, {updated} zaktualizowanych.", "success")
+        flash(f"Synchronizacja zakończona: +{added} nowych, {updated} zaktualizowanych.", "success")
 
     return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 

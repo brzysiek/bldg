@@ -1,18 +1,18 @@
 import os
 import re
+import io
 from datetime import datetime, timezone
 
+import requests as _requests
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-import io
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 REDIRECT_URI = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
 
-# Google-native MIME types and their export formats
 EXPORT_MIME = {
     "application/vnd.google-apps.document":     ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"),
     "application/vnd.google-apps.spreadsheet":  ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"),
@@ -114,14 +114,14 @@ def _refresh_if_needed(creds: Credentials, settings):
         db.session.commit()
 
 
+# ── OAuth mode ────────────────────────────────────────────────────────────────
+
 def list_folder_files(folder_id: str, settings) -> list[dict]:
     creds = _make_credentials(settings)
     _refresh_if_needed(creds, settings)
-
     svc = build("drive", "v3", credentials=creds)
     results = []
     page_token = None
-
     while True:
         resp = svc.files().list(
             q=f"'{folder_id}' in parents and trashed=false",
@@ -129,34 +129,24 @@ def list_folder_files(folder_id: str, settings) -> list[dict]:
             pageSize=100,
             pageToken=page_token,
         ).execute()
-
         for f in resp.get("files", []):
             mime = f.get("mimeType", "")
             if mime.startswith("application/vnd.google-apps.folder"):
                 continue
             if mime not in DOWNLOADABLE_MIME and mime not in EXPORT_MIME:
                 continue
-            results.append({
-                "id": f["id"],
-                "name": f["name"],
-                "mime_type": mime,
-                "size": int(f.get("size", 0)),
-            })
-
+            results.append({"id": f["id"], "name": f["name"], "mime_type": mime, "size": int(f.get("size", 0))})
         page_token = resp.get("nextPageToken")
         if not page_token:
             break
-
     return results
 
 
 def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, settings) -> str:
     creds = _make_credentials(settings)
     _refresh_if_needed(creds, settings)
-
     svc = build("drive", "v3", credentials=creds)
     os.makedirs(dest_dir, exist_ok=True)
-
     if mime_type in EXPORT_MIME:
         export_mime, ext = EXPORT_MIME[mime_type]
         base = os.path.splitext(file_name)[0]
@@ -165,14 +155,62 @@ def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, s
     else:
         dest_path = os.path.join(dest_dir, file_name)
         request = svc.files().get_media(fileId=file_id)
-
     buf = io.BytesIO()
     downloader = MediaIoBaseDownload(buf, request)
     done = False
     while not done:
         _, done = downloader.next_chunk()
-
     with open(dest_path, "wb") as f:
         f.write(buf.getvalue())
+    return dest_path
 
+
+# ── Public mode (no OAuth, uses Gemini/Drive API key) ────────────────────────
+
+def list_folder_files_public(folder_id: str, api_key: str) -> list[dict]:
+    """List publicly shared folder using Drive API key (no OAuth)."""
+    url = "https://www.googleapis.com/drive/v3/files"
+    params = {
+        "q": f"'{folder_id}' in parents and trashed=false",
+        "fields": "nextPageToken,files(id,name,mimeType,size)",
+        "pageSize": 100,
+        "key": api_key,
+    }
+    results = []
+    while True:
+        resp = _requests.get(url, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        for f in data.get("files", []):
+            mime = f.get("mimeType", "")
+            if mime.startswith("application/vnd.google-apps.folder"):
+                continue
+            if mime not in DOWNLOADABLE_MIME and mime not in EXPORT_MIME:
+                continue
+            results.append({"id": f["id"], "name": f["name"], "mime_type": mime, "size": int(f.get("size", 0))})
+        page_token = data.get("nextPageToken")
+        if not page_token:
+            break
+        params["pageToken"] = page_token
+    return results
+
+
+def download_file_public(file_id: str, file_name: str, mime_type: str, dest_dir: str, api_key: str) -> str:
+    """Download a publicly shared file using Drive API key (no OAuth)."""
+    os.makedirs(dest_dir, exist_ok=True)
+    if mime_type in EXPORT_MIME:
+        export_mime, ext = EXPORT_MIME[mime_type]
+        base = os.path.splitext(file_name)[0]
+        dest_path = os.path.join(dest_dir, f"{base}{ext}")
+        url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export"
+        params = {"mimeType": export_mime, "key": api_key}
+    else:
+        dest_path = os.path.join(dest_dir, file_name)
+        url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+        params = {"alt": "media", "key": api_key}
+    resp = _requests.get(url, params=params, timeout=60, stream=True)
+    resp.raise_for_status()
+    with open(dest_path, "wb") as fh:
+        for chunk in resp.iter_content(chunk_size=8192):
+            fh.write(chunk)
     return dest_path
