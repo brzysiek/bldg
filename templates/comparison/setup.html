@@ -203,8 +203,10 @@ async function loadFiles(oldId, newId) {
     fetch(edFilesUrl(oldId)),
     fetch(edFilesUrl(newId)),
   ]);
-  filesOld = await rOld.json();
-  filesNew = await rNew.json();
+  const sortFiles = arr => arr.slice().sort((a, b) =>
+    _fileLabel(a).localeCompare(_fileLabel(b), 'pl', {sensitivity: 'base'}));
+  filesOld = sortFiles(await rOld.json());
+  filesNew = sortFiles(await rNew.json());
   pairs = [];
 
   const oldName = document.getElementById('edition-old-select').selectedOptions[0].text;
