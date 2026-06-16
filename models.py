@@ -83,6 +83,16 @@ class AppSettings(db.Model):
     google_user_email = db.Column(db.Text)
 
 
+class PromptVersion(db.Model):
+    __tablename__ = "prompt_versions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    prompt_key = db.Column(db.Text, nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    source = db.Column(db.Text, default="manual")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class ComparisonJob(db.Model):
     __tablename__ = "comparison_jobs"
 

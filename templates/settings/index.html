@@ -1,6 +1,43 @@
 {% extends "base.html" %}
 {% block title %}Ustawienia – BLDG{% endblock %}
 {% block content %}
+
+{% macro _prompt_history(prompt_key, versions) %}
+  {% if versions %}
+    <details class="mt-3">
+      <summary class="text-xs text-slate-text/50 hover:text-bottle cursor-pointer select-none">📜 Historia zmian ({{ versions | length }})</summary>
+      <div class="mt-2 space-y-2 border-l-2 border-gray-100 pl-3">
+        {% for v in versions %}
+          <div class="text-xs">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-slate-text/70 font-medium">{{ v.created_at.strftime('%d.%m.%Y %H:%M') if v.created_at else '—' }}</span>
+              <span class="px-1.5 py-0.5 rounded-full
+                {% if v.source == 'manual' %}bg-blue-100 text-blue-700
+                {% elif v.source == 'restore' %}bg-purple-100 text-purple-700
+                {% elif v.source == 'reset_default' %}bg-amber-100 text-amber-700
+                {% else %}bg-gray-100 text-gray-600{% endif %}">
+                {{ {'manual': 'Ręczna zmiana', 'restore': 'Przywrócono wersję', 'reset_default': 'Reset do domyślnego', 'seed': 'Wersja początkowa'}.get(v.source, v.source) }}
+              </span>
+              {% if loop.first %}
+                <span class="text-slate-text/30">(aktualna)</span>
+              {% else %}
+                <form method="POST" action="{{ url_for('settings.restore_prompt', key=prompt_key, version_id=v.id) }}"
+                      onsubmit="return confirm('Przywrócić tę wersję promptu? Aktualna treść zostanie zastąpiona (pozostanie zapisana w historii).')" class="ml-auto">
+                  <button type="submit" class="px-2 py-0.5 border border-gray-200 rounded text-xs hover:bg-gray-50 transition-colors">↺ Przywróć</button>
+                </form>
+              {% endif %}
+            </div>
+            <details class="mt-1">
+              <summary class="text-slate-text/40 cursor-pointer hover:text-bottle">Podgląd treści</summary>
+              <pre class="mt-1 p-2 bg-gray-50 rounded text-xs whitespace-pre-wrap font-mono max-h-40 overflow-y-auto">{{ v.content }}</pre>
+            </details>
+          </div>
+        {% endfor %}
+      </div>
+    </details>
+  {% endif %}
+{% endmacro %}
+
 <h1 class="text-2xl font-bold text-bottle mb-5">⚙️ Ustawienia</h1>
 
 <!-- Tabs -->
@@ -147,7 +184,10 @@
   <!-- Prompt podsumowania pliku -->
   <div class="bg-white rounded-xl border border-gray-100 p-6">
     <h2 class="text-base font-semibold text-bottle mb-1 pb-3 border-b border-gray-100">🧠 Prompt podsumowania dokumentu</h2>
-    <p class="text-xs text-slate-text/60 my-3">Użyj <code class="bg-gray-100 px-1 rounded">{document_text}</code> jako placeholder dla treści dokumentu. Prompt powinien zwracać JSON z polami <code class="bg-gray-100 px-1 rounded">opis</code> (1–4 słowa) i <code class="bg-gray-100 px-1 rounded">podsumowanie</code> (1 akapit).</p>
+    <p class="text-xs text-slate-text/60 mt-3 mb-1">
+      <strong>Do czego służy:</strong> uruchamiany przy każdym wgraniu lub synchronizacji pliku z Google Drive — Gemini analizuje treść dokumentu i generuje krótki opis oraz podsumowanie widoczne na liście plików edycji.
+    </p>
+    <p class="text-xs text-slate-text/60 mb-3">Użyj <code class="bg-gray-100 px-1 rounded">{document_text}</code> jako placeholder dla treści dokumentu. Prompt powinien zwracać JSON z polami <code class="bg-gray-100 px-1 rounded">opis</code> (1–4 słowa) i <code class="bg-gray-100 px-1 rounded">podsumowanie</code> (1 akapit).</p>
     <form method="POST" action="{{ url_for('settings.save_prompt') }}" class="space-y-4">
       <textarea name="gemini_summary_prompt" rows="14"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.gemini_summary_prompt or '' }}</textarea>
@@ -163,6 +203,7 @@
         </form>
       </div>
     </form>
+    {{ _prompt_history('gemini_summary_prompt', history.get('gemini_summary_prompt', [])) }}
   </div>
 
   <!-- Prompty porównania -->
@@ -172,23 +213,35 @@
 
       <div>
         <label class="block text-sm font-medium text-slate-text mb-1">Ekstrakcja struktury dokumentu</label>
+        <p class="text-xs text-slate-text/60 mb-1.5">
+          <strong>Do czego służy:</strong> pierwszy etap porównania edycji — Gemini dzieli treść dokumentu na ponumerowane sekcje/akapity, które następnie są parowane i porównywane między starszą i nowszą edycją.
+        </p>
         <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: <code class="bg-gray-100 px-1 rounded">{document_text}</code></p>
         <textarea name="comparison_prompt_extraction" rows="8"
                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.comparison_prompt_extraction or '' }}</textarea>
+        {{ _prompt_history('comparison_prompt_extraction', history.get('comparison_prompt_extraction', [])) }}
       </div>
 
       <div>
         <label class="block text-sm font-medium text-slate-text mb-1">Porównanie per sekcja</label>
+        <p class="text-xs text-slate-text/60 mb-1.5">
+          <strong>Do czego służy:</strong> główny etap porównania — dla każdej sparowanej sekcji starej i nowej wersji dokumentu Gemini ocenia, czy treść się zmieniła, jaki to typ zmiany i jak istotna jest ta zmiana biznesowo (waga).
+        </p>
         <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: <code class="bg-gray-100 px-1 rounded">{label_old}</code>, <code class="bg-gray-100 px-1 rounded">{label_new}</code>, <code class="bg-gray-100 px-1 rounded">{sekcja}</code>, <code class="bg-gray-100 px-1 rounded">{tresc_stara}</code>, <code class="bg-gray-100 px-1 rounded">{tresc_nowa}</code></p>
         <textarea name="comparison_prompt_comparison" rows="12"
                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.comparison_prompt_comparison or '' }}</textarea>
+        {{ _prompt_history('comparison_prompt_comparison', history.get('comparison_prompt_comparison', [])) }}
       </div>
 
       <div>
         <label class="block text-sm font-medium text-slate-text mb-1">Executive Summary</label>
+        <p class="text-xs text-slate-text/60 mb-1.5">
+          <strong>Do czego służy:</strong> etap końcowy — na podstawie listy wykrytych zmian Gemini generuje podsumowanie wykonawcze (executive summary) całego porównania edycji, prezentowane na górze wyniku.
+        </p>
         <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: <code class="bg-gray-100 px-1 rounded">{label_old}</code>, <code class="bg-gray-100 px-1 rounded">{label_new}</code>, <code class="bg-gray-100 px-1 rounded">{competition_name}</code>, <code class="bg-gray-100 px-1 rounded">{changes_list}</code></p>
         <textarea name="comparison_prompt_summary" rows="10"
                   class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.comparison_prompt_summary or '' }}</textarea>
+        {{ _prompt_history('comparison_prompt_summary', history.get('comparison_prompt_summary', [])) }}
       </div>
 
       <div class="flex items-center gap-3 pt-1">

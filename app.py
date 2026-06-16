@@ -146,11 +146,15 @@ def _migrate_db():
 def _seed_comparison_prompts():
     from models import AppSettings
     from services.comparator import DEFAULT_PROMPT_EXTRACTION, DEFAULT_PROMPT_COMPARISON, DEFAULT_PROMPT_SUMMARY
+    from services.prompt_history import record_prompt_version
     settings = db.session.get(AppSettings, 1)
     if settings and not settings.comparison_prompt_extraction:
         settings.comparison_prompt_extraction = DEFAULT_PROMPT_EXTRACTION
         settings.comparison_prompt_comparison = DEFAULT_PROMPT_COMPARISON
         settings.comparison_prompt_summary    = DEFAULT_PROMPT_SUMMARY
+        record_prompt_version("comparison_prompt_extraction", DEFAULT_PROMPT_EXTRACTION, source="seed")
+        record_prompt_version("comparison_prompt_comparison", DEFAULT_PROMPT_COMPARISON, source="seed")
+        record_prompt_version("comparison_prompt_summary", DEFAULT_PROMPT_SUMMARY, source="seed")
         db.session.commit()
 
 

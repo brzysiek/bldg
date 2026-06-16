@@ -1,11 +1,19 @@
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash
 from extensions import db
-from models import AppSettings
+from models import AppSettings, PromptVersion
 from services.gemini import test_connection
+from services.prompt_history import record_prompt_version, get_prompt_history
 from seed import DEFAULT_PROMPT
 
 bp = Blueprint("settings", __name__)
+
+PROMPT_KEYS = [
+    "gemini_summary_prompt",
+    "comparison_prompt_extraction",
+    "comparison_prompt_comparison",
+    "comparison_prompt_summary",
+]
 
 
 def _get_or_create_settings():
@@ -13,6 +21,7 @@ def _get_or_create_settings():
     if not s:
         s = AppSettings(id=1, gemini_model="gemini-2.5-flash", gemini_summary_prompt=DEFAULT_PROMPT)
         db.session.add(s)
+        record_prompt_version("gemini_summary_prompt", DEFAULT_PROMPT, source="seed")
         db.session.commit()
     return s
 
@@ -22,7 +31,9 @@ def index():
     import os
     settings = _get_or_create_settings()
     redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
-    return render_template("settings/index.html", settings=settings, test_result=None, google_redirect_uri=redirect_uri)
+    history = {key: get_prompt_history(key) for key in PROMPT_KEYS}
+    return render_template("settings/index.html", settings=settings, test_result=None,
+                            google_redirect_uri=redirect_uri, history=history)
 
 
 @bp.route("/settings/save", methods=["POST"])
@@ -44,6 +55,7 @@ def save_prompt():
     prompt = request.form.get("gemini_summary_prompt", "").strip()
     if prompt:
         settings.gemini_summary_prompt = prompt
+        record_prompt_version("gemini_summary_prompt", prompt, source="manual")
     settings.updated_at = datetime.utcnow()
     db.session.commit()
     flash("Prompt AI został zapisany.", "success")
@@ -54,6 +66,7 @@ def save_prompt():
 def reset_prompt():
     settings = _get_or_create_settings()
     settings.gemini_summary_prompt = DEFAULT_PROMPT
+    record_prompt_version("gemini_summary_prompt", DEFAULT_PROMPT, source="reset_default")
     settings.updated_at = datetime.utcnow()
     db.session.commit()
     flash("Prompt przywrócony do domyślnego.", "success")
@@ -63,9 +76,14 @@ def reset_prompt():
 @bp.route("/settings/save-comparison-prompts", methods=["POST"])
 def save_comparison_prompts():
     settings = _get_or_create_settings()
-    settings.comparison_prompt_extraction = request.form.get("comparison_prompt_extraction", "")
-    settings.comparison_prompt_comparison = request.form.get("comparison_prompt_comparison", "")
-    settings.comparison_prompt_summary    = request.form.get("comparison_prompt_summary", "")
+    fields = {
+        "comparison_prompt_extraction": request.form.get("comparison_prompt_extraction", ""),
+        "comparison_prompt_comparison": request.form.get("comparison_prompt_comparison", ""),
+        "comparison_prompt_summary":    request.form.get("comparison_prompt_summary", ""),
+    }
+    for key, value in fields.items():
+        setattr(settings, key, value)
+        record_prompt_version(key, value, source="manual")
     settings.updated_at = datetime.utcnow()
     db.session.commit()
     flash("Prompty porównania zapisane.", "success")
@@ -76,12 +94,35 @@ def save_comparison_prompts():
 def reset_comparison_prompts():
     from services.comparator import DEFAULT_PROMPT_EXTRACTION, DEFAULT_PROMPT_COMPARISON, DEFAULT_PROMPT_SUMMARY
     settings = _get_or_create_settings()
-    settings.comparison_prompt_extraction = DEFAULT_PROMPT_EXTRACTION
-    settings.comparison_prompt_comparison = DEFAULT_PROMPT_COMPARISON
-    settings.comparison_prompt_summary    = DEFAULT_PROMPT_SUMMARY
+    defaults = {
+        "comparison_prompt_extraction": DEFAULT_PROMPT_EXTRACTION,
+        "comparison_prompt_comparison": DEFAULT_PROMPT_COMPARISON,
+        "comparison_prompt_summary":    DEFAULT_PROMPT_SUMMARY,
+    }
+    for key, value in defaults.items():
+        setattr(settings, key, value)
+        record_prompt_version(key, value, source="reset_default")
     settings.updated_at = datetime.utcnow()
     db.session.commit()
     flash("Prompty przywrócone do domyślnych.", "success")
+    return redirect(url_for("settings.index", tab="porownania"))
+
+
+@bp.route("/settings/restore-prompt/<key>/<int:version_id>", methods=["POST"])
+def restore_prompt(key, version_id):
+    if key not in PROMPT_KEYS:
+        flash("Nieznany prompt.", "error")
+        return redirect(url_for("settings.index", tab="porownania"))
+    version = PromptVersion.query.filter_by(id=version_id, prompt_key=key).first()
+    if not version:
+        flash("Nie znaleziono tej wersji promptu.", "error")
+        return redirect(url_for("settings.index", tab="porownania"))
+    settings = _get_or_create_settings()
+    setattr(settings, key, version.content)
+    record_prompt_version(key, version.content, source="restore")
+    settings.updated_at = datetime.utcnow()
+    db.session.commit()
+    flash("Przywrócono historyczną wersję promptu.", "success")
     return redirect(url_for("settings.index", tab="porownania"))
 
 
@@ -139,4 +180,6 @@ def test():
         return redirect(url_for("settings.index"))
     result = test_connection(settings.gemini_api_key, settings.gemini_model)
     redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
-    return render_template("settings/index.html", settings=settings, test_result=result, google_redirect_uri=redirect_uri)
+    history = {key: get_prompt_history(key) for key in PROMPT_KEYS}
+    return render_template("settings/index.html", settings=settings, test_result=result,
+                            google_redirect_uri=redirect_uri, history=history)
