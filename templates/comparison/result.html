@@ -2,15 +2,38 @@
 {% block title %}Porównanie #{{ job.id }} – BLDG{% endblock %}
 {% block content %}
 {# ─── Macros (must be defined before use) ───────────────────────────────── #}
-{% macro _render_changes_table(changes, job) %}
+{% set TYP_OPTIONS = ['ZAOSTRZENIE','ZLAGO_DZENIE','NOWA_WYMAGANIE','USUNIETE_WYMAGANIE','ZMIANA_TERMINU','ZMIANA_KWOTY','ZMIANA_REDAKCYJNA','INNE'] %}
+{% set WAGA_OPTIONS = ['KRYTYCZNA','WYSOKA','SREDNIA','NISKA'] %}
+
+{% macro _filter_toolbar(table_id) %}
+  <div class="flex items-center gap-2 flex-wrap mb-2">
+    <button type="button" id="{{ table_id }}-typ-btn"
+            class="filter-btn border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs hover:bg-gray-50"
+            onclick="toggleFilterDropdown('{{ table_id }}','typ', this)">Typ<span class="filter-cnt"></span> <span class="text-slate-text/40">▾</span></button>
+    <button type="button" id="{{ table_id }}-waga-btn"
+            class="filter-btn border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs hover:bg-gray-50"
+            onclick="toggleFilterDropdown('{{ table_id }}','waga', this)">Waga<span class="filter-cnt"></span> <span class="text-slate-text/40">▾</span></button>
+    <input type="text" id="{{ table_id }}-search" oninput="applyFilters('{{ table_id }}')" placeholder="Szukaj..."
+           class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 w-36" />
+    <button type="button" onclick="resetFilters('{{ table_id }}')" class="text-xs text-slate-text/40 hover:text-bottle px-1.5 py-1.5">Resetuj</button>
+    <span id="{{ table_id }}-count" class="text-xs text-slate-text/30"></span>
+  </div>
+{% endmacro %}
+
+{% macro _sortable_th(table_id, col_idx, sort_type, classes, label) %}
+  <th class="{{ classes }} cursor-pointer hover:text-bottle select-none" onclick="sortTableBy('{{ table_id }}', {{ col_idx }}, '{{ sort_type }}')">{{ label }} <span class="sort-arrow"></span></th>
+{% endmacro %}
+
+{% macro _render_changes_table(changes, job, table_id) %}
   {% if changes %}
+    {{ _filter_toolbar(table_id) }}
     <div class="overflow-x-auto">
-      <table class="w-full text-xs">
+      <table id="{{ table_id }}" class="w-full text-xs">
         <thead>
           <tr class="text-slate-text/40 border-b border-gray-50 bg-gray-50/30">
-            <th class="text-left px-4 py-2 font-medium w-24">Sekcja</th>
-            <th class="text-left px-3 py-2 font-medium w-28">Typ</th>
-            <th class="text-left px-3 py-2 font-medium w-20">Waga</th>
+            {{ _sortable_th(table_id, 0, 'text', 'text-left px-4 py-2 font-medium w-24', 'Sekcja') }}
+            {{ _sortable_th(table_id, 1, 'text', 'text-left px-3 py-2 font-medium w-28', 'Typ') }}
+            {{ _sortable_th(table_id, 2, 'waga', 'text-left px-3 py-2 font-medium w-20', 'Waga') }}
             <th class="text-left px-3 py-2 font-medium">{{ job.label_old }}</th>
             <th class="text-left px-3 py-2 font-medium">{{ job.label_new }}</th>
             <th class="text-left px-3 py-2 font-medium">Komentarz</th>
@@ -43,37 +66,22 @@
     <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between flex-wrap gap-2">
       <h2 class="font-semibold text-bottle text-sm">Globalny rejestr zmian ({{ changes | length }})</h2>
       <div class="flex items-center gap-2 flex-wrap">
-        <select id="filter-typ" onchange="filterTable()"
-                class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
-          <option value="">Typ (wszystkie)</option>
-          {% for typ in ['ZAOSTRZENIE','ZLAGO_DZENIE','NOWA_WYMAGANIE','USUNIETE_WYMAGANIE','ZMIANA_TERMINU','ZMIANA_KWOTY','ZMIANA_REDAKCYJNA','INNE'] %}
-            <option value="{{ typ | lower }}">{{ typ }}</option>
-          {% endfor %}
-        </select>
-        <select id="filter-waga" onchange="filterTable()"
-                class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20">
-          <option value="">Waga (wszystkie)</option>
-          <option value="krytyczna">KRYTYCZNA</option>
-          <option value="wysoka">WYSOKA</option>
-          <option value="srednia">SREDNIA</option>
-          <option value="niska">NISKA</option>
-        </select>
-        <input type="text" id="filter-search" oninput="filterTable()" placeholder="Szukaj..."
-               class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 w-32" />
-        <button onclick="clearFilters()" class="text-xs text-slate-text/40 hover:text-bottle px-1.5 py-1.5">Resetuj</button>
         <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
            class="flex items-center gap-1 px-3 py-1.5 bg-lime text-bottle rounded text-xs font-bold hover:bg-lime/80">⬇️ XLSX</a>
         <a href="{{ url_for('comparison.download_csv', job_id=job.id) }}"
            class="flex items-center gap-1 px-3 py-1.5 border border-lime text-bottle rounded text-xs font-bold hover:bg-lime/20">⬇️ CSV</a>
       </div>
     </div>
+    <div class="px-5 pt-3">
+      {{ _filter_toolbar('changes-table') }}
+    </div>
     <div class="overflow-x-auto">
       <table id="changes-table" class="w-full text-xs">
         <thead>
           <tr class="text-slate-text/40 border-b border-gray-100 bg-gray-50/50">
-            <th class="text-left px-4 py-2.5 font-medium w-24">Sekcja</th>
-            <th class="text-left px-3 py-2.5 font-medium w-28">Typ</th>
-            <th class="text-left px-3 py-2.5 font-medium w-20">Waga</th>
+            {{ _sortable_th('changes-table', 0, 'text', 'text-left px-4 py-2.5 font-medium w-24', 'Sekcja') }}
+            {{ _sortable_th('changes-table', 1, 'text', 'text-left px-3 py-2.5 font-medium w-28', 'Typ') }}
+            {{ _sortable_th('changes-table', 2, 'waga', 'text-left px-3 py-2.5 font-medium w-20', 'Waga') }}
             <th class="text-left px-3 py-2.5 font-medium">{{ job.label_old }}</th>
             <th class="text-left px-3 py-2.5 font-medium">{{ job.label_new }}</th>
             <th class="text-left px-3 py-2.5 font-medium">Komentarz biznesowy</th>
@@ -248,7 +256,7 @@
                   <div class="prose max-w-none text-sm">{{ pfr.summary_html | safe }}</div>
                 </div>
               {% endif %}
-              {{ _render_changes_table(pfr.get('changes', []), job) }}
+              {{ _render_changes_table(pfr.get('changes', []), job, 'pair-table-' ~ loop.index0) }}
             </div>
           </div>
         {% endif %}
@@ -352,6 +360,8 @@
   <a href="{{ url_for('comparison.index') }}" class="text-sm text-bottle hover:underline">← Wróć do listy porównań</a>
 </div>
 
+<div id="filter-popover" class="hidden fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs space-y-0.5 max-h-60 overflow-y-auto" style="min-width:170px"></div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -399,6 +409,9 @@ const WAGA_ROW = {
   SREDNIA:   'bg-yellow-50',
   NISKA:     'bg-green-50',
 };
+const WAGA_RANK = {KRYTYCZNA: 3, WYSOKA: 2, SREDNIA: 1, NISKA: 0};
+const TYP_OPTIONS  = ['ZAOSTRZENIE','ZLAGO_DZENIE','NOWA_WYMAGANIE','USUNIETE_WYMAGANIE','ZMIANA_TERMINU','ZMIANA_KWOTY','ZMIANA_REDAKCYJNA','INNE'];
+const WAGA_OPTIONS = ['KRYTYCZNA','WYSOKA','SREDNIA','NISKA'];
 
 /* ── State ─────────────────────────────────────────────────────────────── */
 let cancelled      = false;
@@ -560,7 +573,7 @@ function setPairDone(idx, data) {
     if (data.summary_html) {
       html += `<div class="px-5 py-4 bg-lime/5 border-b border-lime/20 prose max-w-none text-sm">${data.summary_html}</div>`;
     }
-    html += data.changes && data.changes.length ? buildChangesTable(data.changes) : '<p class="px-5 py-4 text-sm text-slate-text/50">Brak zmian w tym dokumencie.</p>';
+    html += data.changes && data.changes.length ? buildChangesTable(data.changes, `live-table-${idx}`) : '<p class="px-5 py-4 text-sm text-slate-text/50">Brak zmian w tym dokumencie.</p>';
     body.innerHTML = html;
   }
 }
@@ -628,7 +641,24 @@ function togglePairBody(idx) {
   btns.forEach(b => { if (b.textContent.trim() === '▼' || b.textContent.trim() === '▲') b.style.transform = shown ? 'rotate(180deg)' : ''; });
 }
 
-function buildChangesTable(changes) {
+function buildFilterToolbarHtml(tableId) {
+  return `<div class="flex items-center gap-2 flex-wrap mb-2">
+    <button type="button" id="${tableId}-typ-btn" class="filter-btn border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs hover:bg-gray-50"
+            onclick="toggleFilterDropdown('${tableId}','typ', this)">Typ<span class="filter-cnt"></span> <span class="text-slate-text/40">▾</span></button>
+    <button type="button" id="${tableId}-waga-btn" class="filter-btn border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs hover:bg-gray-50"
+            onclick="toggleFilterDropdown('${tableId}','waga', this)">Waga<span class="filter-cnt"></span> <span class="text-slate-text/40">▾</span></button>
+    <input type="text" id="${tableId}-search" oninput="applyFilters('${tableId}')" placeholder="Szukaj..."
+           class="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 w-36" />
+    <button type="button" onclick="resetFilters('${tableId}')" class="text-xs text-slate-text/40 hover:text-bottle px-1.5 py-1.5">Resetuj</button>
+    <span id="${tableId}-count" class="text-xs text-slate-text/30"></span>
+  </div>`;
+}
+
+function _sortableTh(tableId, colIdx, sortType, classes, label) {
+  return `<th class="${classes} cursor-pointer hover:text-bottle select-none" onclick="sortTableBy('${tableId}', ${colIdx}, '${sortType}')">${label} <span class="sort-arrow"></span></th>`;
+}
+
+function buildChangesTable(changes, tableId) {
   const rows = changes.map(ch => {
     const waga = ch.waga || 'NISKA';
     const bg   = WAGA_ROW[waga] || '';
@@ -642,11 +672,12 @@ function buildChangesTable(changes) {
       <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">${esc(ch.komentarz_biznesowy || '')}</div></td>
     </tr>`;
   }).join('');
-  return `<div class="overflow-x-auto"><table class="w-full text-xs">
+  return `${buildFilterToolbarHtml(tableId)}
+  <div class="overflow-x-auto"><table id="${tableId}" class="w-full text-xs">
     <thead><tr class="text-slate-text/40 border-b border-gray-50 bg-gray-50/30">
-      <th class="text-left px-4 py-2 font-medium w-24">Sekcja</th>
-      <th class="text-left px-3 py-2 font-medium w-28">Typ</th>
-      <th class="text-left px-3 py-2 font-medium w-20">Waga</th>
+      ${_sortableTh(tableId, 0, 'text', 'text-left px-4 py-2 font-medium w-24', 'Sekcja')}
+      ${_sortableTh(tableId, 1, 'text', 'text-left px-3 py-2 font-medium w-28', 'Typ')}
+      ${_sortableTh(tableId, 2, 'waga', 'text-left px-3 py-2 font-medium w-20', 'Waga')}
       <th class="text-left px-3 py-2 font-medium">Edycja starsza</th>
       <th class="text-left px-3 py-2 font-medium">Edycja nowsza</th>
       <th class="text-left px-3 py-2 font-medium">Komentarz</th>
@@ -664,22 +695,136 @@ function toggleAccordion(id) {
   if (arrow) arrow.style.transform = hidden ? '' : 'rotate(180deg)';
 }
 
-/* ── Global changes table filters ───────────────────────────────────────── */
-function filterTable() {
-  const typ  = document.getElementById('filter-typ')?.value.toLowerCase()  || '';
-  const waga = document.getElementById('filter-waga')?.value.toLowerCase() || '';
-  const q    = document.getElementById('filter-search')?.value.toLowerCase() || '';
-  document.querySelectorAll('#changes-table tbody tr').forEach(row => {
-    const t = row.textContent.toLowerCase();
-    row.style.display = ((!typ || t.includes(typ)) && (!waga || t.includes(waga)) && (!q || t.includes(q))) ? '' : 'none';
-  });
+/* ── Generic table filtering (Typ / Waga multi-select + search) ──────────── */
+const FILTER_STATE = {};
+let _activeFilterTableId = null;
+let _activeFilterKind    = null;
+
+function _filterState(tableId) {
+  if (!FILTER_STATE[tableId]) FILTER_STATE[tableId] = {typ: new Set(), waga: new Set()};
+  return FILTER_STATE[tableId];
 }
-function clearFilters() {
-  ['filter-typ', 'filter-waga', 'filter-search'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
+
+function updateFilterButtonLabels(tableId) {
+  const state   = _filterState(tableId);
+  const typCnt  = document.querySelector(`#${tableId}-typ-btn .filter-cnt`);
+  const wagaCnt = document.querySelector(`#${tableId}-waga-btn .filter-cnt`);
+  if (typCnt)  typCnt.textContent  = state.typ.size  ? ` (${state.typ.size})`  : '';
+  if (wagaCnt) wagaCnt.textContent = state.waga.size ? ` (${state.waga.size})` : '';
+}
+
+function applyFilters(tableId) {
+  const state = _filterState(tableId);
+  const q     = (document.getElementById(`${tableId}-search`)?.value || '').trim().toLowerCase();
+  const table = document.getElementById(tableId);
+  const tbody = table?.querySelector('tbody');
+  if (!tbody) return;
+
+  let visible = 0, total = 0;
+  tbody.querySelectorAll('tr').forEach(row => {
+    total++;
+    const typ  = row.cells[1]?.textContent.trim() || '';
+    const waga = row.cells[2]?.textContent.trim() || '';
+    const text = row.textContent.toLowerCase();
+    const ok = (state.typ.size === 0  || state.typ.has(typ))
+            && (state.waga.size === 0 || state.waga.has(waga))
+            && (!q || text.includes(q));
+    row.style.display = ok ? '' : 'none';
+    if (ok) visible++;
   });
-  filterTable();
+
+  const countEl = document.getElementById(`${tableId}-count`);
+  if (countEl) countEl.textContent = (state.typ.size || state.waga.size || q) ? `${visible} / ${total}` : '';
+}
+
+function resetFilters(tableId) {
+  const state = _filterState(tableId);
+  state.typ.clear();
+  state.waga.clear();
+  const s = document.getElementById(`${tableId}-search`);
+  if (s) s.value = '';
+  updateFilterButtonLabels(tableId);
+  applyFilters(tableId);
+}
+
+function onFilterCheckboxChange(tableId, kind, cb) {
+  const state = _filterState(tableId)[kind];
+  if (cb.checked) state.add(cb.value); else state.delete(cb.value);
+  updateFilterButtonLabels(tableId);
+  applyFilters(tableId);
+}
+
+function openFilterDropdown(tableId, kind, btnEl) {
+  const pop   = document.getElementById('filter-popover');
+  const opts  = kind === 'typ' ? TYP_OPTIONS : WAGA_OPTIONS;
+  const state = _filterState(tableId)[kind];
+  pop.innerHTML = opts.map(o => `<label class="flex items-center gap-1.5 cursor-pointer hover:bg-gray-50 px-1.5 py-1 rounded">
+    <input type="checkbox" value="${o}" ${state.has(o) ? 'checked' : ''} onchange="onFilterCheckboxChange('${tableId}','${kind}', this)">
+    <span>${o}</span></label>`).join('');
+
+  const rect  = btnEl.getBoundingClientRect();
+  const popW  = 180;
+  let left = rect.left;
+  if (left + popW > window.innerWidth - 8) left = Math.max(8, window.innerWidth - popW - 8);
+  pop.style.left = `${left}px`;
+  pop.style.top  = `${rect.bottom + 4}px`;
+  pop.classList.remove('hidden');
+  _activeFilterTableId = tableId;
+  _activeFilterKind     = kind;
+}
+
+function toggleFilterDropdown(tableId, kind, btnEl) {
+  const pop = document.getElementById('filter-popover');
+  const isOpenForThis = !pop.classList.contains('hidden') && _activeFilterTableId === tableId && _activeFilterKind === kind;
+  if (isOpenForThis) {
+    pop.classList.add('hidden');
+    _activeFilterTableId = null;
+    _activeFilterKind    = null;
+    return;
+  }
+  openFilterDropdown(tableId, kind, btnEl);
+}
+
+document.addEventListener('click', (e) => {
+  const pop = document.getElementById('filter-popover');
+  if (!pop || pop.classList.contains('hidden')) return;
+  if (e.target.closest('#filter-popover') || e.target.closest('.filter-btn')) return;
+  pop.classList.add('hidden');
+  _activeFilterTableId = null;
+  _activeFilterKind    = null;
+});
+window.addEventListener('scroll', () => {
+  const pop = document.getElementById('filter-popover');
+  if (pop) pop.classList.add('hidden');
+  _activeFilterTableId = null;
+  _activeFilterKind    = null;
+}, true);
+
+/* ── Generic table sorting (Sekcja / Typ / Waga) ──────────────────────────── */
+function sortTableBy(tableId, colIdx, sortType) {
+  const table = document.getElementById(tableId);
+  const tbody = table?.querySelector('tbody');
+  if (!tbody) return;
+
+  const dir = (table.dataset.sortCol === String(colIdx) && table.dataset.sortDir === 'asc') ? 'desc' : 'asc';
+  table.dataset.sortCol = colIdx;
+  table.dataset.sortDir = dir;
+  const mul = dir === 'asc' ? 1 : -1;
+
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort((a, b) => {
+    const ta = a.cells[colIdx]?.textContent.trim() || '';
+    const tb = b.cells[colIdx]?.textContent.trim() || '';
+    if (sortType === 'waga') {
+      return ((WAGA_RANK[ta] ?? -1) - (WAGA_RANK[tb] ?? -1)) * mul;
+    }
+    return ta.localeCompare(tb, 'pl', {sensitivity: 'base'}) * mul;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+
+  table.querySelectorAll('.sort-arrow').forEach(s => s.textContent = '');
+  const activeArrow = table.querySelector(`thead th:nth-child(${colIdx + 1}) .sort-arrow`);
+  if (activeArrow) activeArrow.textContent = dir === 'asc' ? '▲' : '▼';
 }
 
 /* ── Cancel ─────────────────────────────────────────────────────────────── */
