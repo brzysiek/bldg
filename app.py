@@ -226,6 +226,7 @@ def create_app():
     from routes.settings import bp as settings_bp
     from routes.comparison import bp as comparison_bp
     from routes.auth import bp as auth_bp
+    from routes.placeholders import bp as placeholders_bp
 
     app.register_blueprint(comp_bp)
     app.register_blueprint(ed_bp)
@@ -233,6 +234,7 @@ def create_app():
     app.register_blueprint(settings_bp)
     app.register_blueprint(comparison_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(placeholders_bp)
 
     @app.route("/logs")
     def logs_page():

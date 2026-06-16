@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} – BLDG{% endblock %}
+{% block content %}
+<div class="bg-white rounded-xl border border-gray-100 p-10 text-center max-w-2xl mx-auto mt-10">
+  <div class="text-5xl mb-4">{{ icon }}</div>
+  <h1 class="text-xl font-bold text-bottle mb-3">{{ title }}</h1>
+  <p class="text-slate-text/60 text-sm leading-relaxed mb-2">
+    Ta funkcjonalność nie jest jeszcze zaimplementowana.
+  </p>
+  <p class="text-slate-text/50 text-sm leading-relaxed">{{ description }}</p>
+</div>
+{% endblock %}
