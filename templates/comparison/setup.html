@@ -69,39 +69,55 @@
   <div class="bg-white rounded-xl border border-gray-100 p-5 mb-5" id="mapping-panel" style="display:none">
     <h2 class="font-semibold text-bottle text-sm mb-4">3. Pary do porównania</h2>
 
-    <!-- Kreator par: Starsza → Nowsza (spójnie z krokiem 2) -->
-    <div class="flex flex-col sm:flex-row gap-3 items-end mb-4 pb-4 border-b border-gray-100">
-      <div class="flex-1 min-w-0">
-        <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-old-file">Starsza edycja</label>
-        <select id="old-file-sel"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
-          <option value="">— wybierz plik ze starszej edycji —</option>
-        </select>
-      </div>
-      <div class="hidden sm:flex items-center pb-2 text-slate-text/25 shrink-0">
-        <span class="text-xl">→</span>
-      </div>
-      <div class="flex-1 min-w-0">
-        <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-new-file">Nowsza edycja</label>
-        <select id="new-file-sel"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
-          <option value="">— wybierz plik z nowszej edycji —</option>
-        </select>
-      </div>
-      <div class="shrink-0">
-        <button type="button" onclick="addPair()"
-                class="w-full sm:w-auto px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-          + Dodaj parę
-        </button>
-      </div>
+    <!-- Wczytywanie list plików -->
+    <div id="mapping-loading" class="hidden py-6 text-center text-sm text-slate-text/50">
+      <span class="inline-block animate-spin mr-2">⏳</span> Wczytywanie plików...
     </div>
 
-    <!-- Lista par -->
-    <div id="pairs-empty" class="py-5 text-center text-sm text-slate-text/40">
-      Brak par — dodaj pierwszą parę powyżej.
+    <!-- Błąd wczytywania -->
+    <div id="mapping-error" class="hidden py-5 text-center">
+      <p id="mapping-error-msg" class="text-sm text-red-600 mb-3"></p>
+      <button type="button" onclick="retryLoadFiles()"
+              class="px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+        ↺ Spróbuj ponownie
+      </button>
     </div>
-    <div id="pairs-list" class="hidden space-y-1.5"></div>
-    <div id="hidden-inputs"></div>
+
+    <div id="mapping-content" class="hidden">
+      <!-- Kreator par: Starsza → Nowsza (spójnie z krokiem 2) -->
+      <div class="flex flex-col sm:flex-row gap-3 items-end mb-4 pb-4 border-b border-gray-100">
+        <div class="flex-1 min-w-0">
+          <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-old-file">Starsza edycja</label>
+          <select id="old-file-sel"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
+            <option value="">— wybierz plik ze starszej edycji —</option>
+          </select>
+        </div>
+        <div class="hidden sm:flex items-center pb-2 text-slate-text/25 shrink-0">
+          <span class="text-xl">→</span>
+        </div>
+        <div class="flex-1 min-w-0">
+          <label class="block text-xs font-semibold text-slate-text/60 mb-1.5 uppercase tracking-wide" id="lbl-new-file">Nowsza edycja</label>
+          <select id="new-file-sel"
+                  class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
+            <option value="">— wybierz plik z nowszej edycji —</option>
+          </select>
+        </div>
+        <div class="shrink-0">
+          <button type="button" onclick="addPair()"
+                  class="w-full sm:w-auto px-5 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+            + Dodaj parę
+          </button>
+        </div>
+      </div>
+
+      <!-- Lista par -->
+      <div id="pairs-empty" class="py-5 text-center text-sm text-slate-text/40">
+        Brak par — dodaj pierwszą parę powyżej.
+      </div>
+      <div id="pairs-list" class="hidden space-y-1.5"></div>
+      <div id="hidden-inputs"></div>
+    </div>
   </div>
 
   <!-- Submit -->
@@ -145,17 +161,30 @@ async function loadEditions() {
     return;
   }
 
-  const r = await fetch(editionsUrl(compId));
-  allEditions = await r.json();
+  const controller = new AbortController();
+  const timeoutId  = setTimeout(() => controller.abort(), 15000);
 
-  const oldSel = document.getElementById('edition-old-select');
-  const newSel = document.getElementById('edition-new-select');
-  _populateEditionSel(oldSel, newSel.value);
-  _populateEditionSel(newSel, oldSel.value);
+  try {
+    const r = await fetch(editionsUrl(compId), {signal: controller.signal});
+    clearTimeout(timeoutId);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    allEditions = await r.json();
 
-  document.getElementById('editions-panel').style.display = '';
-  document.getElementById('mapping-panel').style.display = 'none';
-  document.getElementById('submit-panel').style.display = 'none';
+    const oldSel = document.getElementById('edition-old-select');
+    const newSel = document.getElementById('edition-new-select');
+    _populateEditionSel(oldSel, newSel.value);
+    _populateEditionSel(newSel, oldSel.value);
+
+    document.getElementById('editions-panel').style.display = '';
+    document.getElementById('mapping-panel').style.display = 'none';
+    document.getElementById('submit-panel').style.display = 'none';
+  } catch (e) {
+    clearTimeout(timeoutId);
+    const isTimeout = e.name === 'AbortError';
+    alert(isTimeout
+      ? 'Przekroczono czas oczekiwania na listę edycji (15s). Spróbuj ponownie.'
+      : `Błąd wczytywania edycji: ${e.message}`);
+  }
 }
 
 function onEditionChange() {
@@ -198,25 +227,55 @@ function onEditionChange() {
   loadFiles(oldId, newId);
 }
 
+function retryLoadFiles() {
+  const oldId = document.getElementById('edition-old-select').value;
+  const newId = document.getElementById('edition-new-select').value;
+  if (oldId && newId) loadFiles(oldId, newId);
+}
+
 async function loadFiles(oldId, newId) {
-  const [rOld, rNew] = await Promise.all([
-    fetch(edFilesUrl(oldId)),
-    fetch(edFilesUrl(newId)),
-  ]);
-  const sortFiles = arr => arr.slice().sort((a, b) =>
-    _fileLabel(a).localeCompare(_fileLabel(b), 'pl', {sensitivity: 'base'}));
-  filesOld = sortFiles(await rOld.json());
-  filesNew = sortFiles(await rNew.json());
-  pairs = [];
-
-  const oldName = document.getElementById('edition-old-select').selectedOptions[0].text;
-  const newName = document.getElementById('edition-new-select').selectedOptions[0].text;
-  document.getElementById('lbl-old-file').textContent = oldName;
-  document.getElementById('lbl-new-file').textContent = newName;
-
-  renderSelects();
-  renderPairsList();
   document.getElementById('mapping-panel').style.display = '';
+  document.getElementById('mapping-content').classList.add('hidden');
+  document.getElementById('mapping-error').classList.add('hidden');
+  document.getElementById('mapping-loading').classList.remove('hidden');
+  document.getElementById('submit-panel').style.display = 'none';
+
+  const controller = new AbortController();
+  const timeoutId  = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const [rOld, rNew] = await Promise.all([
+      fetch(edFilesUrl(oldId), {signal: controller.signal}),
+      fetch(edFilesUrl(newId), {signal: controller.signal}),
+    ]);
+    clearTimeout(timeoutId);
+    if (!rOld.ok || !rNew.ok) throw new Error(`HTTP ${rOld.status}/${rNew.status}`);
+
+    const sortFiles = arr => arr.slice().sort((a, b) =>
+      _fileLabel(a).localeCompare(_fileLabel(b), 'pl', {sensitivity: 'base'}));
+    filesOld = sortFiles(await rOld.json());
+    filesNew = sortFiles(await rNew.json());
+    pairs = [];
+
+    const oldName = document.getElementById('edition-old-select').selectedOptions[0].text;
+    const newName = document.getElementById('edition-new-select').selectedOptions[0].text;
+    document.getElementById('lbl-old-file').textContent = oldName;
+    document.getElementById('lbl-new-file').textContent = newName;
+
+    renderSelects();
+    renderPairsList();
+
+    document.getElementById('mapping-loading').classList.add('hidden');
+    document.getElementById('mapping-content').classList.remove('hidden');
+  } catch (e) {
+    clearTimeout(timeoutId);
+    document.getElementById('mapping-loading').classList.add('hidden');
+    const msg = e.name === 'AbortError'
+      ? 'Przekroczono czas oczekiwania (15s). Serwer może się właśnie uruchamiać po przerwie — spróbuj ponownie.'
+      : `Błąd wczytywania plików: ${e.message}`;
+    document.getElementById('mapping-error-msg').textContent = msg;
+    document.getElementById('mapping-error').classList.remove('hidden');
+  }
 }
 
 function _fileLabel(f) {

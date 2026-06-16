@@ -282,6 +282,10 @@
       </button>
     </div>
     <p id="add-pair-msg" class="mt-2 text-xs text-slate-text/40 hidden"></p>
+    <p id="add-pair-error" class="hidden mt-2 text-xs text-red-600">
+      Błąd wczytywania listy plików.
+      <button type="button" onclick="loadAddPairFiles()" class="underline font-semibold">↺ Spróbuj ponownie</button>
+    </p>
   </div>
 {% endif %}
 
@@ -866,8 +870,21 @@ async function generateSummary() {
 /* ── Add pair form ───────────────────────────────────────────────────────── */
 async function loadAddPairFiles() {
   if (!ED_OLD_FILES_URL || !ED_NEW_FILES_URL) return;
+
+  const errEl = document.getElementById('add-pair-error');
+  if (errEl) errEl.classList.add('hidden');
+
+  const controller = new AbortController();
+  const timeoutId  = setTimeout(() => controller.abort(), 15000);
+
   try {
-    const [rOld, rNew] = await Promise.all([fetch(ED_OLD_FILES_URL), fetch(ED_NEW_FILES_URL)]);
+    const [rOld, rNew] = await Promise.all([
+      fetch(ED_OLD_FILES_URL, {signal: controller.signal}),
+      fetch(ED_NEW_FILES_URL, {signal: controller.signal}),
+    ]);
+    clearTimeout(timeoutId);
+    if (!rOld.ok || !rNew.ok) throw new Error(`HTTP ${rOld.status}/${rNew.status}`);
+
     const oldFiles = await rOld.json();
     const newFiles = await rNew.json();
 
@@ -896,7 +913,19 @@ async function loadAddPairFiles() {
       if (btn) btn.disabled = false;
     }
   } catch(e) {
+    clearTimeout(timeoutId);
     console.warn('Błąd ładowania plików:', e);
+
+    const isTimeout = e.name === 'AbortError';
+    const optText = isTimeout ? '— przekroczono czas oczekiwania —' : '— błąd wczytywania —';
+    const selOld = document.getElementById('add-pair-old');
+    const selNew = document.getElementById('add-pair-new');
+    if (selOld) selOld.innerHTML = `<option value="">${optText}</option>`;
+    if (selNew) selNew.innerHTML = `<option value="">${optText}</option>`;
+
+    const btn = document.getElementById('add-pair-btn');
+    if (btn) btn.disabled = true;
+    if (errEl) errEl.classList.remove('hidden');
   }
 }
 
