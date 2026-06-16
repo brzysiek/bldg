@@ -2,6 +2,7 @@ import os
 import re
 import io
 import ssl
+import unicodedata
 from datetime import datetime, timezone
 
 import requests as _requests
@@ -14,6 +15,31 @@ from googleapiclient.http import MediaIoBaseDownload
 
 SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 REDIRECT_URI = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
+
+_PL_TRANSLIT = {
+    "ą": "a", "ć": "c", "ę": "e", "ł": "l", "ń": "n", "ó": "o", "ś": "s", "ź": "z", "ż": "z",
+    "Ą": "A", "Ć": "C", "Ę": "E", "Ł": "L", "Ń": "N", "Ó": "O", "Ś": "S", "Ź": "Z", "Ż": "Z",
+}
+
+
+def _safe_filename(name: str) -> str:
+    """Returns an ASCII-only filename for on-disk temp storage.
+
+    Some cPanel hosts run with an ASCII filesystem encoding, so writing a
+    path containing Polish diacritics (ł, ś, ż...) raises UnicodeEncodeError
+    even though the bytes were downloaded successfully. The original_name
+    stored in the DB is unaffected — this only renames the temp file on disk.
+    """
+    try:
+        name.encode("ascii")
+        return name
+    except UnicodeEncodeError:
+        pass
+    translit = "".join(_PL_TRANSLIT.get(ch, ch) for ch in name)
+    normalized = unicodedata.normalize("NFKD", translit)
+    ascii_name = normalized.encode("ascii", "ignore").decode("ascii")
+    return ascii_name or "file"
+
 
 EXPORT_MIME = {
     "application/vnd.google-apps.document":     ("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"),
@@ -181,13 +207,14 @@ def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, s
     _refresh_if_needed(creds, settings)
     svc = build("drive", "v3", credentials=creds)
     os.makedirs(dest_dir, exist_ok=True)
+    safe_name = _safe_filename(file_name)
     if mime_type in EXPORT_MIME:
         export_mime, ext = EXPORT_MIME[mime_type]
-        base = os.path.splitext(file_name)[0]
+        base = os.path.splitext(safe_name)[0]
         dest_path = os.path.join(dest_dir, f"{base}{ext}")
         request = svc.files().export_media(fileId=file_id, mimeType=export_mime)
     else:
-        dest_path = os.path.join(dest_dir, file_name)
+        dest_path = os.path.join(dest_dir, safe_name)
         request = svc.files().get_media(fileId=file_id)
     buf = io.BytesIO()
     downloader = MediaIoBaseDownload(buf, request)
@@ -233,14 +260,15 @@ def list_folder_files_public(folder_id: str, api_key: str) -> list[dict]:
 def download_file_public(file_id: str, file_name: str, mime_type: str, dest_dir: str, api_key: str) -> str:
     """Download a publicly shared file using Drive API key (no OAuth)."""
     os.makedirs(dest_dir, exist_ok=True)
+    safe_name = _safe_filename(file_name)
     if mime_type in EXPORT_MIME:
         export_mime, ext = EXPORT_MIME[mime_type]
-        base = os.path.splitext(file_name)[0]
+        base = os.path.splitext(safe_name)[0]
         dest_path = os.path.join(dest_dir, f"{base}{ext}")
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export"
         params = {"mimeType": export_mime, "key": api_key}
     else:
-        dest_path = os.path.join(dest_dir, file_name)
+        dest_path = os.path.join(dest_dir, safe_name)
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
         params = {"alt": "media", "key": api_key}
     session = _make_public_session()
