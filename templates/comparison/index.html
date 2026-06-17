@@ -1,111 +1,121 @@
 {% extends "base.html" %}
-{% block title %}Porownania – BLDG{% endblock %}
+{% block title %}Porównania – BLDG{% endblock %}
 {% block content %}
 <div class="flex items-center justify-between mb-6">
   <div>
-    <h1 class="text-xl font-bold text-bottle">Porownania edycji</h1>
-    <p class="text-slate-text/60 text-sm mt-0.5">{{ jobs | length }} rekord{% if jobs | length == 1 %}{% elif jobs | length in [2,3,4] %}y{% else %}ow{% endif %}</p>
+    <h1 class="text-xl font-bold text-bottle">Porównania edycji</h1>
+    <p class="text-slate-text/60 text-sm mt-0.5">{{ jobs | length }} rekord{% if jobs | length == 1 %}{% elif jobs | length in [2,3,4] %}y{% else %}ów{% endif %}</p>
   </div>
   <a href="{{ url_for('comparison.setup') }}"
      class="flex items-center gap-2 px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-    + Nowe porownanie
+    + Nowe porównanie
   </a>
 </div>
 
+{% set status_styles = {
+  'done':             ('bg-green-100 text-green-800',  '✅'),
+  'awaiting_summary': ('bg-lime/30 text-bottle',       '📋'),
+  'error':            ('bg-red-100 text-red-800',      '❌'),
+  'cancelled':        ('bg-gray-100 text-gray-500',    '⛔'),
+  'queued':           ('bg-yellow-100 text-yellow-800','🕐'),
+  'pending':          ('bg-gray-100 text-gray-600',    '⏳'),
+  'comparing':        ('bg-blue-100 text-blue-800',    '🔄'),
+  'extracting':       ('bg-blue-100 text-blue-800',    '🔄'),
+  'chunking':         ('bg-blue-100 text-blue-800',    '🔄'),
+  'summarizing':      ('bg-blue-100 text-blue-800',    '🔄'),
+} %}
+
 {% if jobs %}
-  <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="text-xs text-slate-text/50 border-b border-gray-100 bg-gray-50/50">
-          <th class="text-left px-5 py-3 font-medium">Konkurs / Edycje</th>
-          <th class="text-left px-3 py-3 font-medium hidden sm:table-cell">Pliki</th>
-          <th class="text-left px-3 py-3 font-medium hidden md:table-cell">Data</th>
-          <th class="text-left px-3 py-3 font-medium">Status</th>
-          <th class="text-right px-5 py-3 font-medium">Akcje</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-50">
-        {% for job in jobs %}
-          {% set status_styles = {
-            'done':             ('bg-green-100 text-green-800',  '✅'),
-            'awaiting_summary': ('bg-lime/30 text-bottle',       '📋'),
-            'error':            ('bg-red-100 text-red-800',      '❌'),
-            'cancelled':        ('bg-gray-100 text-gray-500',    '⛔'),
-            'queued':           ('bg-yellow-100 text-yellow-800','🕐'),
-            'pending':          ('bg-gray-100 text-gray-600',    '⏳'),
-            'comparing':        ('bg-blue-100 text-blue-800',    '🔄'),
-            'extracting':       ('bg-blue-100 text-blue-800',    '🔄'),
-            'chunking':         ('bg-blue-100 text-blue-800',    '🔄'),
-            'summarizing':      ('bg-blue-100 text-blue-800',    '🔄'),
-          } %}
+  {% for comp_name, group in jobs | groupby('competition_name') %}
+    <div class="mb-6">
+      <div class="flex items-center gap-3 mb-2 px-1">
+        <h2 class="text-sm font-bold text-bottle uppercase tracking-wide">
+          {{ comp_name or '— bez konkursu —' }}
+        </h2>
+        <div class="flex-1 h-px bg-bottle/15"></div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
+        {% for job in group %}
           {% set s_cls, s_icon = status_styles.get(job.status, ('bg-gray-100 text-gray-500', '?')) %}
-          <tr class="hover:bg-gray-50/50 transition-colors">
-            <td class="px-5 py-3">
-              <div class="font-semibold text-bottle text-sm flex items-center gap-1">
-                <span id="jname-{{ job.id }}">{{ job.job_label or job.competition_name or 'Porównanie #' ~ job.id }}</span>
+          <div class="flex items-center gap-4 px-5 py-4 {% if not loop.last %}border-b border-gray-50{% endif %} hover:bg-gray-50/40 transition-colors">
+
+            {# Nazwa + edycje #}
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span id="jname-{{ job.id }}" class="font-semibold text-slate-text text-sm">
+                  {{- job.job_label or job.competition_name or ('Porównanie #' ~ job.id) -}}
+                </span>
                 <button data-job-id="{{ job.id }}"
                         data-rename-url="{{ url_for('comparison.rename_job', job_id=job.id) }}"
                         onclick="startJobRename(this)"
-                        class="text-slate-text/20 hover:text-bottle leading-none text-xs shrink-0">✏️</button>
+                        class="px-1.5 py-0.5 text-xs border border-bottle/25 text-bottle/50 rounded hover:bg-bottle hover:text-white hover:border-bottle transition-colors leading-none shrink-0">✏️</button>
               </div>
-              <div class="text-xs text-slate-text/50 mt-0.5">{{ job.label_old or '?' }} → {{ job.label_new or '?' }}</div>
-            </td>
-            <td class="px-3 py-3 text-slate-text/60 text-xs hidden sm:table-cell">
-              {% if job.file_mappings_json %}{{ job.file_mappings_json | from_json_len }} par{% else %}1 para{% endif %}
-            </td>
-            <td class="px-3 py-3 text-slate-text/50 text-xs hidden md:table-cell whitespace-nowrap">
-              {{ job.created_at.strftime('%d.%m.%Y %H:%M') if job.created_at else '' }}
-            </td>
-            <td class="px-3 py-3">
+              <div class="mt-0.5 flex items-center gap-1.5 text-sm font-medium">
+                <span class="text-bottle truncate max-w-[16rem]" title="{{ job.label_old or '?' }}">{{ job.label_old or '?' }}</span>
+                <span class="text-slate-text/35 shrink-0">→</span>
+                <span class="text-bottle truncate max-w-[16rem]" title="{{ job.label_new or '?' }}">{{ job.label_new or '?' }}</span>
+              </div>
+              <div class="mt-0.5 flex items-center gap-3 text-xs text-slate-text/40">
+                <span>{{ job.created_at.strftime('%d.%m.%Y %H:%M') if job.created_at else '' }}</span>
+                {% if job.file_mappings_json %}
+                  <span>{{ job.file_mappings_json | from_json_len }} par plików</span>
+                {% endif %}
+              </div>
+            </div>
+
+            {# Status #}
+            <div class="shrink-0">
               <span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ s_cls }}">{{ s_icon }} {{ job.status | status_pl }}</span>
-            </td>
-            <td class="px-5 py-3">
-              <div class="flex items-center justify-end gap-2">
-                {% if job.status in ['comparing', 'extracting', 'chunking', 'summarizing'] %}
-                  <a href="{{ url_for('comparison.job_status', job_id=job.id) }}"
-                     class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors animate-pulse">
-                    ▶ Wznów
-                  </a>
-                {% else %}
-                  <a href="{{ url_for('comparison.job_status', job_id=job.id) }}"
-                     class="px-3 py-1.5 border border-gray-200 text-slate-text rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
-                    Szczegóły
-                  </a>
-                {% endif %}
-                {% if job.status == 'done' %}
-                  <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-                     class="px-3 py-1.5 bg-lime text-bottle rounded-lg text-xs font-bold hover:bg-lime/80 transition-colors">
-                    Excel
-                  </a>
-                {% endif %}
-                {% if job.status in ['queued', 'pending', 'comparing', 'extracting', 'chunking', 'summarizing'] %}
-                  <form method="POST" action="{{ url_for('comparison.cancel_job', job_id=job.id) }}"
-                        onsubmit="return confirm('Anulować porownanie?')">
-                    <button type="submit"
-                            class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">
-                      Anuluj
-                    </button>
-                  </form>
-                {% endif %}
-                <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
-                      onsubmit="return confirm('Usunac porownanie?')">
-                  <button type="submit" class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">🗑</button>
+            </div>
+
+            {# Akcje #}
+            <div class="flex items-center gap-2 shrink-0">
+              {% if job.status in ['comparing', 'extracting', 'chunking', 'summarizing'] %}
+                <a href="{{ url_for('comparison.job_status', job_id=job.id) }}"
+                   class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors animate-pulse">
+                  ▶ Wznów
+                </a>
+              {% else %}
+                <a href="{{ url_for('comparison.job_status', job_id=job.id) }}"
+                   class="px-3 py-1.5 border border-gray-200 text-slate-text rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
+                  Szczegóły
+                </a>
+              {% endif %}
+              {% if job.status == 'done' %}
+                <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
+                   class="px-3 py-1.5 bg-lime text-bottle rounded-lg text-xs font-bold hover:bg-lime/80 transition-colors">
+                  Excel
+                </a>
+              {% endif %}
+              {% if job.status in ['queued', 'pending', 'comparing', 'extracting', 'chunking', 'summarizing'] %}
+                <form method="POST" action="{{ url_for('comparison.cancel_job', job_id=job.id) }}"
+                      onsubmit="return confirm('Anulować porównanie?')">
+                  <button type="submit"
+                          class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">
+                    Anuluj
+                  </button>
                 </form>
-              </div>
-            </td>
-          </tr>
+              {% endif %}
+              <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
+                    onsubmit="return confirm('Usunąć porównanie?')">
+                <button type="submit" class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">🗑</button>
+              </form>
+            </div>
+
+          </div>
         {% endfor %}
-      </tbody>
-    </table>
-  </div>
+      </div>
+    </div>
+  {% endfor %}
 {% else %}
   <div class="bg-white rounded-xl border border-dashed border-gray-200 p-12 text-center">
     <div class="text-5xl mb-4">⚖️</div>
-    <h2 class="text-lg font-semibold text-slate-text mb-2">Brak porowan</h2>
-    <p class="text-slate-text/60 text-sm mb-5">Porownaj dwie edycje konkursu, aby zobaczyc co sie zmienilo.</p>
+    <h2 class="text-lg font-semibold text-slate-text mb-2">Brak porównań</h2>
+    <p class="text-slate-text/60 text-sm mb-5">Porównaj dwie edycje konkursu, aby zobaczyć co się zmieniło.</p>
     <a href="{{ url_for('comparison.setup') }}"
        class="inline-flex items-center gap-2 px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-      + Nowe porownanie
+      + Nowe porównanie
     </a>
   </div>
 {% endif %}
@@ -127,19 +137,21 @@ function startJobRename(btn) {
   const inp = document.createElement('input');
   inp.type = 'text';
   inp.value = _renameOriginals[jobId];
-  inp.className = 'border border-bottle/40 rounded px-1.5 py-0.5 text-sm font-bold text-bottle focus:outline-none focus:ring-1 focus:ring-bottle/20 w-44 min-w-0';
+  inp.className = 'border border-bottle/40 rounded px-1.5 py-0.5 text-sm font-semibold text-slate-text focus:outline-none focus:ring-1 focus:ring-bottle/20 w-52 min-w-0';
   const saveBtn = document.createElement('button');
   saveBtn.textContent = 'Zapisz';
   saveBtn.className = 'ml-1 px-2 py-0.5 bg-bottle text-white rounded text-xs shrink-0';
   const cancelBtn = document.createElement('button');
   cancelBtn.textContent = 'Anuluj';
-  cancelBtn.className = 'ml-1 px-1.5 py-0.5 text-slate-text/40 text-xs shrink-0';
+  cancelBtn.className = 'ml-1 px-1.5 py-0.5 text-slate-text/40 text-xs shrink-0 hover:text-slate-text';
   wrapper.append(inp, saveBtn, cancelBtn);
   inp.focus();
   saveBtn.onclick = async () => {
-    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label: inp.value.trim()})});
-    const d = await r.json();
-    span.textContent = d.label;
+    try {
+      const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label: inp.value.trim()})});
+      const d = await r.json();
+      span.textContent = d.label;
+    } catch(e) {}
     span.style.display = '';
     btn.style.display = '';
     inp.remove(); saveBtn.remove(); cancelBtn.remove();

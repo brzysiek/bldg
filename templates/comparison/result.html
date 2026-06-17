@@ -118,7 +118,10 @@
   <div>
     <h1 class="text-xl font-bold text-bottle mb-1 flex items-center gap-2">
       <span id="job-display-name">{{ job.job_label or job.competition_name or 'Porównanie #' ~ job.id }}</span>
-      <button onclick="startRename()" title="Zmień nazwę" class="text-slate-text/25 hover:text-bottle transition-colors text-base leading-none">✏️</button>
+      <button onclick="startRename()" title="Zmień nazwę"
+              class="px-2 py-0.5 text-xs font-medium border border-bottle/30 text-bottle/60 rounded hover:bg-bottle hover:text-white hover:border-bottle transition-colors leading-none">
+        Zmień nazwę
+      </button>
     </h1>
     <div class="text-sm text-slate-text/70 flex items-center gap-3 flex-wrap">
       <span class="font-medium">{{ job.label_old or '?' }}</span>
@@ -1281,7 +1284,7 @@ async function saveRename() {
     const h1 = input.parentElement;
     h1.innerHTML =
       `<span id="job-display-name">${esc(d.label)}</span>` +
-      `<button onclick="startRename()" title="Zmień nazwę" class="text-slate-text/25 hover:text-bottle transition-colors text-base leading-none">✏️</button>`;
+      `<button onclick="startRename()" title="Zmień nazwę" class="px-2 py-0.5 text-xs font-medium border border-bottle/30 text-bottle/60 rounded hover:bg-bottle hover:text-white hover:border-bottle transition-colors leading-none">Zmień nazwę</button>`;
     document.title = d.label + ' – BLDG';
   } catch(e) {}
 }
