@@ -113,7 +113,7 @@
 
       <!-- Lista par -->
       <div id="pairs-empty" class="py-5 text-center text-sm text-slate-text/40">
-        Brak par — dodaj pierwszą parę powyżej.
+        Algorytm nie znalazł automatycznych dopasowań — dobierz pary ręcznie powyżej.
       </div>
       <div id="pairs-list" class="hidden space-y-1.5"></div>
       <div id="hidden-inputs"></div>
@@ -288,8 +288,7 @@ async function loadFiles(oldId, newId) {
       labelInput.value = `${compName} — ${oldName} → ${newName}`;
     }
 
-    renderSelects();
-    renderPairsList();
+    autoPairs();
 
     document.getElementById('mapping-loading').classList.add('hidden');
     document.getElementById('mapping-content').classList.remove('hidden');
@@ -302,6 +301,53 @@ async function loadFiles(oldId, newId) {
     document.getElementById('mapping-error-msg').textContent = msg;
     document.getElementById('mapping-error').classList.remove('hidden');
   }
+}
+
+// --- Auto-pairing (name + description similarity, no AI) ---
+const _STOP = new Set(['i','w','z','do','na','dla','o','oraz','a','nie','się','że',
+  'jak','czy','przez','po','przy','jest','są','ten','ta','te','ich','ze','za','od',
+  'we','co','go','im','jako','też','już','nr','no','of','the','and','to','in']);
+
+function _nameTokens(s) {
+  return s.replace(/\.[^.]+$/, '').toLowerCase()
+    .replace(/[^a-z0-9ąćęłńóśźż]/gi, ' ').replace(/\s+/g, ' ').trim()
+    .split(' ').filter(t => t.length > 1 && !_STOP.has(t));
+}
+function _descTokens(s) {
+  return (s || '').toLowerCase()
+    .replace(/[^a-z0-9ąćęłńóśźż]/gi, ' ').replace(/\s+/g, ' ').trim()
+    .split(' ').filter(t => t.length > 2 && !_STOP.has(t));
+}
+function _jaccard(a, b) {
+  if (!a.length || !b.length) return 0;
+  const sA = new Set(a), sB = new Set(b);
+  let inter = 0;
+  for (const t of sA) if (sB.has(t)) inter++;
+  return inter / (sA.size + sB.size - inter);
+}
+function _pairScore(fo, fn) {
+  const nameSc = _jaccard(_nameTokens(fo.name), _nameTokens(fn.name));
+  if (!fo.description || !fn.description) return nameSc;
+  const descSc = _jaccard(_descTokens(fo.description), _descTokens(fn.description));
+  return nameSc * 0.6 + descSc * 0.4;
+}
+function autoPairs() {
+  const MIN = 0.15;
+  const cands = [];
+  filesOld.forEach(fo => filesNew.forEach(fn => {
+    const s = _pairScore(fo, fn);
+    if (s >= MIN) cands.push({s, fo, fn});
+  }));
+  cands.sort((a, b) => b.s - a.s);
+  const usedO = new Set(), usedN = new Set();
+  pairs = [];
+  for (const {s, fo, fn} of cands) {
+    if (usedO.has(fo.id) || usedN.has(fn.id)) continue;
+    usedO.add(fo.id); usedN.add(fn.id);
+    pairs.push({old_id: String(fo.id), old_name: fo.name, new_id: String(fn.id), new_name: fn.name, auto: true});
+  }
+  renderSelects();
+  renderPairsList();
 }
 
 function _fileLabel(f) {
@@ -369,18 +415,30 @@ function renderPairsList() {
   list.classList.remove('hidden');
   document.getElementById('submit-panel').style.display = '';
 
-  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const autoCount = pairs.filter(p => p.auto).length;
+  if (autoCount > 0) {
+    const banner = document.createElement('div');
+    banner.className = 'flex items-center gap-2 mb-3 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700';
+    const noun = autoCount === 1 ? 'para dopasowana' : autoCount < 5 ? 'pary dopasowane' : 'par dopasowanych';
+    banner.innerHTML = `<span class="text-base shrink-0">🤖</span><span><strong>${autoCount} ${noun}</strong> automatycznie na podstawie nazw plików. Usuń lub uzupełnij ręcznie poniżej.</span>`;
+    list.appendChild(banner);
+  }
   pairs.forEach((p, i) => {
     hidden.appendChild(Object.assign(document.createElement('input'), {type:'hidden', name:`mapping_${i}_new`, value:p.new_id}));
     hidden.appendChild(Object.assign(document.createElement('input'), {type:'hidden', name:`mapping_${i}_old`, value:p.old_id}));
     const row = document.createElement('div');
-    row.className = 'flex items-center gap-3 py-2.5 px-3 bg-gray-50 rounded-lg';
+    row.className = 'flex items-center gap-3 py-2 px-3 bg-gray-50 rounded-lg';
+    const autoBadge = p.auto
+      ? `<span class="shrink-0 px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded font-medium leading-none" title="Dopasowane automatycznie">auto</span>`
+      : `<span class="shrink-0 px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded font-medium leading-none" title="Dodane ręcznie">ręcznie</span>`;
     row.innerHTML =
       `<span class="flex-1 text-sm font-medium text-slate-text truncate min-w-0" title="${esc(p.old_name)}">${esc(p.old_name)}</span>` +
-      `<span class="text-slate-text/30 shrink-0">→</span>` +
+      `<span class="text-slate-text/30 shrink-0 text-xs">→</span>` +
       `<span class="flex-1 text-sm text-slate-text/60 truncate min-w-0" title="${esc(p.new_name)}">${esc(p.new_name)}</span>` +
+      autoBadge +
       `<button type="button" onclick="removePair(${i})" title="Usuń parę"` +
-      ` class="shrink-0 w-6 h-6 flex items-center justify-center rounded text-slate-text/30 hover:text-red-400 hover:bg-red-50 transition-colors text-lg leading-none">×</button>`;
+      ` class="shrink-0 w-6 h-6 flex items-center justify-center rounded text-slate-text/25 hover:text-red-400 hover:bg-red-50 transition-colors text-lg leading-none">×</button>`;
     list.appendChild(row);
   });
 }
@@ -394,7 +452,7 @@ function addPair() {
   const newFile = filesNew.find(f => String(f.id) === newId);
   const oldFile = filesOld.find(f => String(f.id) === oldId);
   if (!newFile || !oldFile) return;
-  pairs.push({new_id: newId, new_name: newFile.name, old_id: oldId, old_name: oldFile.name});
+  pairs.push({new_id: newId, new_name: newFile.name, old_id: oldId, old_name: oldFile.name, auto: false});
   newSel.value = '';
   oldSel.value = '';
   renderSelects();
