@@ -158,3 +158,4 @@ class ComparisonJob(db.Model):
     tokens_output = db.Column(db.Integer, default=0)
     estimated_cost_usd = db.Column(db.Float, default=0.0)
     pair_lock_at = db.Column(db.DateTime)  # heartbeat: renewed each section during active processing
+    skip_redactional = db.Column(db.Boolean, default=False)  # omit ZMIANA_REDAKCYJNA from results

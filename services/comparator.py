@@ -522,9 +522,18 @@ def get_pair_structures(doc_old, doc_new, settings):
     return struct_old, struct_new, all_keys, tokens["in"], tokens["out"]
 
 
+_SKIP_REDACTIONAL_NOTE = (
+    "DODATKOWA ZASADA: Jesli jedyna roznica miedzy fragmentami to zmiana czysto redakcyjna "
+    "(styl, formatowanie, numeracja, brzmienie bez zmiany znaczenia merytorycznego — "
+    "bez wplywu na wymagania, terminy, kwoty ani kryteria oceny) — "
+    "zwroc dokladnie to slowo (nic wiecej): BRAK_ZMIAN\n\n"
+)
+
+
 def compare_sections_batch(sekcje_old, sekcje_new, section_keys,
                             label_old, label_new, call_gemini, settings,
-                            on_progress=None, section_offset=0, sections_total=None):
+                            on_progress=None, section_offset=0, sections_total=None,
+                            skip_redactional=False):
     """Process the given section keys and return a list of changes."""
     changes = []
     n = len(section_keys)
@@ -545,8 +554,12 @@ def compare_sections_batch(sekcje_old, sekcje_new, section_keys,
             log.debug("compare_sections_batch  sekcja %s — identyczna", sekcja[:60])
             continue
 
+        base_prompt = settings.comparison_prompt_comparison or DEFAULT_PROMPT_COMPARISON
+        if skip_redactional:
+            base_prompt = _SKIP_REDACTIONAL_NOTE + base_prompt
+
         prompt = (
-            (settings.comparison_prompt_comparison or DEFAULT_PROMPT_COMPARISON)
+            base_prompt
             .replace("{label_old}", label_old)
             .replace("{label_new}", label_new)
             .replace("{sekcja}", sekcja)
@@ -562,9 +575,12 @@ def compare_sections_batch(sekcje_old, sekcje_new, section_keys,
                 raw = raw.replace("```json", "").replace("```", "").strip()
                 obj = json.loads(raw)
                 obj["sekcja"] = sekcja
-                changes.append(obj)
-                log.debug("compare_sections_batch  sekcja %s — zmiana: %s/%s",
-                          sekcja[:60], obj.get("typ_zmiany"), obj.get("waga"))
+                if skip_redactional and obj.get("typ_zmiany") == "ZMIANA_REDAKCYJNA":
+                    log.debug("compare_sections_batch  sekcja %s — pomijam ZMIANA_REDAKCYJNA", sekcja[:60])
+                else:
+                    changes.append(obj)
+                    log.debug("compare_sections_batch  sekcja %s — zmiana: %s/%s",
+                              sekcja[:60], obj.get("typ_zmiany"), obj.get("waga"))
         except Exception as e:
             log.warning("compare_sections_batch  sekcja %s — błąd (%s): %s",
                         sekcja[:60], type(e).__name__, e)

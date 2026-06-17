@@ -120,8 +120,20 @@
     </div>
   </div>
 
-  <!-- Submit -->
+  <!-- Opcje porównania -->
   <div id="submit-panel" style="display:none">
+    <div class="bg-white rounded-xl border border-gray-100 p-5 mb-4">
+      <h2 class="font-semibold text-bottle text-sm mb-3">Opcje porównania</h2>
+      <label class="flex items-start gap-3 cursor-pointer group">
+        <input type="checkbox" name="skip_redactional" id="skip-redactional-chk"
+               class="mt-0.5 w-4 h-4 rounded border-gray-300 text-bottle focus:ring-bottle/30 cursor-pointer">
+        <div>
+          <span class="text-sm font-medium text-slate-text group-hover:text-bottle transition-colors">Pomijaj zmiany czysto redakcyjne</span>
+          <p class="text-xs text-slate-text/50 mt-0.5">Sekcje, w których jedyna różnica to styl, formatowanie lub brzmienie bez zmiany znaczenia merytorycznego, nie będą uwzględniane w raporcie.</p>
+        </div>
+      </label>
+    </div>
+
     <button type="submit"
             class="flex items-center gap-2 px-6 py-3 bg-bottle text-white rounded-xl text-sm font-bold hover:bg-bottle/90 transition-colors">
       ▶ Uruchom porównanie

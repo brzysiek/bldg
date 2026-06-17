@@ -117,6 +117,7 @@ def setup():
             progress_total     = len(mappings),
             progress_current   = 0,
             gemini_model_used  = settings.gemini_model,
+            skip_redactional   = request.form.get("skip_redactional") == "on",
         )
         db.session.add(job)
         db.session.commit()
@@ -318,6 +319,7 @@ def run_pair_batch(job_id):
             call_fn, settings, _on_progress,
             section_offset=section_offset,
             sections_total=sections_total,
+            skip_redactional=bool(job.skip_redactional),
         )
 
         job.tokens_input  = (job.tokens_input  or 0) + batch_tokens["in"]
