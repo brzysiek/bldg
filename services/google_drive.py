@@ -2,7 +2,9 @@ import os
 import re
 import io
 import ssl
+import socket
 import unicodedata
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import requests as _requests
@@ -55,6 +57,17 @@ DOWNLOADABLE_MIME = {
     "application/vnd.ms-excel",
     "text/plain",
 }
+
+
+@contextmanager
+def _socket_timeout(seconds: int):
+    """Temporarily set socket default timeout — applies to googleapiclient httplib2 calls."""
+    old = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(seconds)
+    try:
+        yield
+    finally:
+        socket.setdefaulttimeout(old)
 
 
 def _make_public_session() -> _requests.Session:
@@ -179,48 +192,50 @@ def _refresh_if_needed(creds: Credentials, settings):
 def list_folder_files(folder_id: str, settings) -> list[dict]:
     creds = _make_credentials(settings)
     _refresh_if_needed(creds, settings)
-    svc = build("drive", "v3", credentials=creds)
     results = []
     page_token = None
-    while True:
-        resp = svc.files().list(
-            q=f"'{folder_id}' in parents and trashed=false",
-            fields="nextPageToken, files(id, name, mimeType, size, modifiedTime)",
-            pageSize=100,
-            pageToken=page_token,
-        ).execute()
-        for f in resp.get("files", []):
-            mime = f.get("mimeType", "")
-            if mime.startswith("application/vnd.google-apps.folder"):
-                continue
-            if mime not in DOWNLOADABLE_MIME and mime not in EXPORT_MIME:
-                continue
-            results.append({"id": f["id"], "name": f["name"], "mime_type": mime, "size": int(f.get("size", 0))})
-        page_token = resp.get("nextPageToken")
-        if not page_token:
-            break
+    with _socket_timeout(30):
+        svc = build("drive", "v3", credentials=creds)
+        while True:
+            resp = svc.files().list(
+                q=f"'{folder_id}' in parents and trashed=false",
+                fields="nextPageToken, files(id, name, mimeType, size, modifiedTime)",
+                pageSize=100,
+                pageToken=page_token,
+            ).execute()
+            for f in resp.get("files", []):
+                mime = f.get("mimeType", "")
+                if mime.startswith("application/vnd.google-apps.folder"):
+                    continue
+                if mime not in DOWNLOADABLE_MIME and mime not in EXPORT_MIME:
+                    continue
+                results.append({"id": f["id"], "name": f["name"], "mime_type": mime, "size": int(f.get("size", 0))})
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
     return results
 
 
 def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, settings) -> str:
     creds = _make_credentials(settings)
     _refresh_if_needed(creds, settings)
-    svc = build("drive", "v3", credentials=creds)
     os.makedirs(dest_dir, exist_ok=True)
     safe_name = _safe_filename(file_name)
-    if mime_type in EXPORT_MIME:
-        export_mime, ext = EXPORT_MIME[mime_type]
-        base = os.path.splitext(safe_name)[0]
-        dest_path = os.path.join(dest_dir, f"{base}{ext}")
-        request = svc.files().export_media(fileId=file_id, mimeType=export_mime)
-    else:
-        dest_path = os.path.join(dest_dir, safe_name)
-        request = svc.files().get_media(fileId=file_id)
-    buf = io.BytesIO()
-    downloader = MediaIoBaseDownload(buf, request)
-    done = False
-    while not done:
-        _, done = downloader.next_chunk()
+    with _socket_timeout(120):
+        svc = build("drive", "v3", credentials=creds)
+        if mime_type in EXPORT_MIME:
+            export_mime, ext = EXPORT_MIME[mime_type]
+            base = os.path.splitext(safe_name)[0]
+            dest_path = os.path.join(dest_dir, f"{base}{ext}")
+            request = svc.files().export_media(fileId=file_id, mimeType=export_mime)
+        else:
+            dest_path = os.path.join(dest_dir, safe_name)
+            request = svc.files().get_media(fileId=file_id)
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
     with open(dest_path, "wb") as f:
         f.write(buf.getvalue())
     return dest_path

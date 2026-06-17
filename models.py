@@ -51,7 +51,8 @@ class Document(db.Model):
 
     gdrive_file_id = db.Column(db.Text)
 
-    ai_summary = db.Column(db.Text)
+    # deferred: large text, loaded on-demand — never needed in list views
+    ai_summary = _deferred(db.Column(db.Text))
     ai_description = db.Column(db.Text)
     ai_summary_model = db.Column(db.Text)
     ai_summarized_at = db.Column(db.DateTime)
@@ -133,8 +134,10 @@ class ComparisonJob(db.Model):
     edition_old_id = db.Column(db.Integer, db.ForeignKey("editions.id", ondelete="SET NULL"), nullable=True)
     edition_new_id = db.Column(db.Integer, db.ForeignKey("editions.id", ondelete="SET NULL"), nullable=True)
     file_mappings_json = db.Column(db.Text)
-    per_file_results_json = db.Column(db.Text)
-    edition_summary = db.Column(db.Text)
+    # deferred: can be several MB per job — never needed in the jobs list view
+    per_file_results_json = _deferred(db.Column(db.Text))
+    edition_summary       = _deferred(db.Column(db.Text))
+    changes_json          = _deferred(db.Column(db.Text))
 
     competition_name = db.Column(db.Text)
     doc_old_name = db.Column(db.Text)
@@ -148,7 +151,6 @@ class ComparisonJob(db.Model):
     progress_total = db.Column(db.Integer, default=0)
     error_message = db.Column(db.Text)
 
-    changes_json = db.Column(db.Text)
     executive_summary = db.Column(db.Text)
 
     gemini_model_used = db.Column(db.Text)

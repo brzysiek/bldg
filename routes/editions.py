@@ -2,6 +2,7 @@ import logging
 import os
 from datetime import date, datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from sqlalchemy import func
 from extensions import db
 from models import Competition, Edition, Document, AppSettings
 from utils import slugify
@@ -201,10 +202,13 @@ def api_sync_status(edition_id):
     edition = db.session.get(Edition, edition_id)
     if not edition:
         return jsonify({"error": "not found"}), 404
+    doc_count = db.session.execute(
+        db.select(func.count(Document.id)).where(Document.edition_id == edition_id)
+    ).scalar_one()
     return jsonify({
         "syncing": _sync_in_progress.get(edition_id, False),
         "synced_at": edition.gdrive_synced_at.isoformat() if edition.gdrive_synced_at else None,
-        "doc_count": len(edition.documents),
+        "doc_count": doc_count,
     })
 
 
