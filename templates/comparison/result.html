@@ -229,8 +229,8 @@
         {% if not pfr.get('skipped') %}
           {% set n_ch   = pfr.get('changes', []) | length %}
           {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
-          <div class="bg-white rounded-xl border border-gray-100 overflow-hidden">
-            <div class="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-gray-50/50 transition-colors"
+          <div class="bg-green-50 rounded-xl border border-green-200 overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-green-100/50 transition-colors"
                  onclick="toggleAccordion('pfr-{{ loop.index0 }}')">
               <div class="flex items-center gap-3 min-w-0">
                 <span class="text-base shrink-0">{{ pfr.old_name | file_icon }}</span>
@@ -555,7 +555,10 @@ function setPairState(idx, state) {
       `<span id="pair-stage-${idx}" class="ml-2 text-xs text-slate-text/40 italic"></span>` +
       `<span id="pair-timer-${idx}" class="ml-2 text-xs font-mono text-slate-text/30 tabular-nums">0:00</span>`;
     if (body) body.classList.add('hidden');
-    if (card) card.classList.add('border-lime/40');
+    if (card) {
+      card.classList.remove('border-gray-100');
+      card.classList.add('bg-blue-50', 'border-blue-200');
+    }
     startPairTimer(idx);
     startPairPoll(idx);
   } else if (state === 'waiting') {
@@ -580,7 +583,7 @@ function setPairDone(idx, data) {
   icon.textContent = '✅';
   icon.className = 'text-lg shrink-0';
   if (card) {
-    card.classList.remove('border-lime/40', 'border-gray-100');
+    card.classList.remove('bg-blue-50', 'border-blue-200', 'border-lime/40', 'border-gray-100');
     card.classList.add('bg-green-50', 'border-green-200');
   }
 
@@ -617,7 +620,7 @@ function setPairError(idx, msg) {
   icon.textContent = '❌';
   icon.className = 'text-lg shrink-0';
   if (card) {
-    card.classList.remove('border-lime/40', 'border-gray-100');
+    card.classList.remove('bg-blue-50', 'border-blue-200', 'border-lime/40', 'border-gray-100');
     card.classList.add('bg-red-50', 'border-red-200');
   }
   badge.innerHTML =
@@ -642,7 +645,7 @@ function setPairSkipped(idx) {
   icon.className = 'text-lg shrink-0 opacity-40';
   badge.innerHTML = `<span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full font-medium">Pominięto</span>`;
   if (card) {
-    card.classList.remove('border-lime/40', 'border-gray-100');
+    card.classList.remove('bg-blue-50', 'border-blue-200', 'border-lime/40', 'border-gray-100');
     card.classList.add('opacity-50');
   }
 }
