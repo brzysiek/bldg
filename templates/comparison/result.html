@@ -67,9 +67,12 @@
       <h2 class="font-semibold text-bottle text-sm">Globalny rejestr zmian ({{ changes | length }})</h2>
       <div class="flex items-center gap-2 flex-wrap">
         <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-           class="flex items-center gap-1 px-3 py-1.5 bg-lime text-bottle rounded text-xs font-bold hover:bg-lime/80">⬇️ XLSX</a>
+           class="no-btn flex items-center gap-1.5 px-4 text-white text-sm font-bold transition-colors"
+           style="height:42px;border-radius:50px;background:#1D6F42"
+           onmouseover="this.style.background='#155230'" onmouseout="this.style.background='#1D6F42'">⬇️ XLSX</a>
         <a href="{{ url_for('comparison.download_csv', job_id=job.id) }}"
-           class="flex items-center gap-1 px-3 py-1.5 border border-lime text-bottle rounded text-xs font-bold hover:bg-lime/20">⬇️ CSV</a>
+           class="no-btn flex items-center gap-1.5 px-4 border border-lime text-bottle text-sm font-bold hover:bg-lime/20 transition-colors"
+           style="height:42px;border-radius:50px">⬇️ CSV</a>
       </div>
     </div>
     <div class="px-5 pt-3">
@@ -133,11 +136,14 @@
   <div class="flex items-center gap-2 ml-4 shrink-0">
     {% if per_file_results %}
       <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-         class="flex items-center gap-2 px-4 py-2 bg-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/80 transition-colors">
+         class="no-btn flex items-center gap-2 px-5 text-white text-sm font-bold transition-colors"
+         style="height:42px;border-radius:50px;background:#1D6F42"
+         onmouseover="this.style.background='#155230'" onmouseout="this.style.background='#1D6F42'">
         ⬇️ XLSX
       </a>
       <a href="{{ url_for('comparison.download_csv', job_id=job.id) }}"
-         class="flex items-center gap-2 px-4 py-2 border border-lime text-bottle rounded-lg text-sm font-bold hover:bg-lime/20 transition-colors">
+         class="no-btn flex items-center gap-2 px-5 border border-lime text-bottle text-sm font-bold hover:bg-lime/20 transition-colors"
+         style="height:42px;border-radius:50px">
         ⬇️ CSV
       </a>
     {% endif %}
