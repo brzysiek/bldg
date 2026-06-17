@@ -41,7 +41,13 @@
           {% set s_cls, s_icon = status_styles.get(job.status, ('bg-gray-100 text-gray-500', '?')) %}
           <tr class="hover:bg-gray-50/50 transition-colors">
             <td class="px-5 py-3">
-              <div class="font-semibold text-bottle text-sm">{{ job.competition_name or 'Porownanie #' ~ job.id }}</div>
+              <div class="font-semibold text-bottle text-sm flex items-center gap-1">
+                <span id="jname-{{ job.id }}">{{ job.job_label or job.competition_name or 'Porównanie #' ~ job.id }}</span>
+                <button data-job-id="{{ job.id }}"
+                        data-rename-url="{{ url_for('comparison.rename_job', job_id=job.id) }}"
+                        onclick="startJobRename(this)"
+                        class="text-slate-text/20 hover:text-bottle leading-none text-xs shrink-0">✏️</button>
+              </div>
               <div class="text-xs text-slate-text/50 mt-0.5">{{ job.label_old or '?' }} → {{ job.label_new or '?' }}</div>
             </td>
             <td class="px-3 py-3 text-slate-text/60 text-xs hidden sm:table-cell">
@@ -103,4 +109,46 @@
     </a>
   </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const _esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const _renameOriginals = {};
+
+function startJobRename(btn) {
+  const jobId = btn.dataset.jobId;
+  const url = btn.dataset.renameUrl;
+  const span = document.getElementById('jname-' + jobId);
+  _renameOriginals[jobId] = span.textContent.trim();
+  const wrapper = btn.parentElement;
+  span.style.display = 'none';
+  btn.style.display = 'none';
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = _renameOriginals[jobId];
+  inp.className = 'border border-bottle/40 rounded px-1.5 py-0.5 text-sm font-bold text-bottle focus:outline-none focus:ring-1 focus:ring-bottle/20 w-44 min-w-0';
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Zapisz';
+  saveBtn.className = 'ml-1 px-2 py-0.5 bg-bottle text-white rounded text-xs shrink-0';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Anuluj';
+  cancelBtn.className = 'ml-1 px-1.5 py-0.5 text-slate-text/40 text-xs shrink-0';
+  wrapper.append(inp, saveBtn, cancelBtn);
+  inp.focus();
+  saveBtn.onclick = async () => {
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label: inp.value.trim()})});
+    const d = await r.json();
+    span.textContent = d.label;
+    span.style.display = '';
+    btn.style.display = '';
+    inp.remove(); saveBtn.remove(); cancelBtn.remove();
+  };
+  cancelBtn.onclick = () => {
+    span.style.display = '';
+    btn.style.display = '';
+    inp.remove(); saveBtn.remove(); cancelBtn.remove();
+  };
+}
+</script>
 {% endblock %}

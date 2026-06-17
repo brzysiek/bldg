@@ -116,7 +116,10 @@
 <!-- Header -->
 <div class="flex items-start justify-between mb-6">
   <div>
-    <h1 class="text-xl font-bold text-bottle mb-1">{{ job.competition_name or 'Porównanie #' ~ job.id }}</h1>
+    <h1 class="text-xl font-bold text-bottle mb-1 flex items-center gap-2">
+      <span id="job-display-name">{{ job.job_label or job.competition_name or 'Porównanie #' ~ job.id }}</span>
+      <button onclick="startRename()" title="Zmień nazwę" class="text-slate-text/25 hover:text-bottle transition-colors text-base leading-none">✏️</button>
+    </h1>
     <div class="text-sm text-slate-text/70 flex items-center gap-3 flex-wrap">
       <span class="font-medium">{{ job.label_old or '?' }}</span>
       <span class="text-slate-text/40">→</span>
@@ -387,6 +390,7 @@ const ADD_PAIR_URL         = {{ url_for('comparison.add_pair',                 j
 const DOWNLOAD_PAIR_XLSX_TPL = {{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=0) | tojson }};
 const DOWNLOAD_PAIR_CSV_TPL  = {{ url_for('comparison.download_pair_csv',   job_id=job.id, pair_idx=0) | tojson }};
 const PAIR_RESULT_URL_TPL    = {{ url_for('comparison.pair_result',         job_id=job.id, pair_idx=0) | tojson }};
+const RENAME_URL             = {{ url_for('comparison.rename_job',           job_id=job.id) | tojson }};
 {% if job.edition_old_id and job.edition_new_id %}
 const ED_OLD_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_old_id) | tojson }};
 const ED_NEW_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_new_id) | tojson }};
@@ -1251,6 +1255,40 @@ async function pollQueued() {
     if (d.status !== 'queued') { window.location.reload(); return; }
   } catch(e) {}
   setTimeout(pollQueued, 3000);
+}
+
+/* ── Inline rename ───────────────────────────────────────────────────────── */
+let _renameOriginal = '';
+function startRename() {
+  _renameOriginal = document.getElementById('job-display-name').textContent.trim();
+  const h1 = document.getElementById('job-display-name').parentElement;
+  h1.innerHTML =
+    `<input id="rename-input" type="text" value="${esc(_renameOriginal)}"
+       class="border border-bottle/40 rounded-lg px-2 py-0.5 text-lg font-bold text-bottle focus:outline-none focus:ring-2 focus:ring-bottle/20 min-w-0 w-72" />` +
+    `<button onclick="saveRename()" class="px-2.5 py-1 bg-bottle text-white rounded-lg text-xs font-medium hover:bg-bottle/90 transition-colors">Zapisz</button>` +
+    `<button onclick="cancelRename()" class="px-2 py-1 text-slate-text/40 text-xs hover:text-bottle">Anuluj</button>`;
+  document.getElementById('rename-input')?.focus();
+}
+async function saveRename() {
+  const input = document.getElementById('rename-input');
+  const label = input?.value.trim() || '';
+  try {
+    const r = await fetch(RENAME_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label})});
+    const d = await r.json();
+    const h1 = input.parentElement;
+    h1.innerHTML =
+      `<span id="job-display-name">${esc(d.label)}</span>` +
+      `<button onclick="startRename()" title="Zmień nazwę" class="text-slate-text/25 hover:text-bottle transition-colors text-base leading-none">✏️</button>`;
+    document.title = d.label + ' – BLDG';
+  } catch(e) {}
+}
+function cancelRename() {
+  const input = document.getElementById('rename-input');
+  const h1 = input?.parentElement;
+  if (!h1) return;
+  h1.innerHTML =
+    `<span id="job-display-name">${esc(_renameOriginal)}</span>` +
+    `<button onclick="startRename()" title="Zmień nazwę" class="text-slate-text/25 hover:text-bottle transition-colors text-base leading-none">✏️</button>`;
 }
 
 /* ── Initialisation ─────────────────────────────────────────────────────── */

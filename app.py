@@ -170,6 +170,7 @@ def _migrate_db():
             "edition_summary":        "TEXT",
             "pair_lock_at":           "DATETIME",
             "skip_redactional":       "TINYINT(1)",
+            "job_label":              "TEXT",
         })
         conn.commit()
 

@@ -159,3 +159,4 @@ class ComparisonJob(db.Model):
     estimated_cost_usd = db.Column(db.Float, default=0.0)
     pair_lock_at = db.Column(db.DateTime)  # heartbeat: renewed each section during active processing
     skip_redactional = db.Column(db.Boolean, default=False)  # omit ZMIANA_REDAKCYJNA from results
+    job_label = db.Column(db.Text)  # user-editable display name (overrides competition_name in UI)

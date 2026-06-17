@@ -11,10 +11,10 @@
       theme: {
         extend: {
           colors: {
-            'bottle': '#1C4B40',
-            'lime': '#B5E619',
-            'slate-text': '#484845',
-            'offwhite': '#F5F5F3',
+            'bottle': '#0019A6',
+            'lime': '#45BEFF',
+            'slate-text': '#3C3B3A',
+            'offwhite': '#F4F5F6',
           },
           fontFamily: { sans: ['Work Sans', 'sans-serif'] },
         }
@@ -23,8 +23,8 @@
   </script>
   <style>
     body { font-family: 'Work Sans', sans-serif; }
-    .prose h1, .prose h2, .prose h3, .prose h4 { font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #1C4B40; }
-    .prose h1 { font-size: 1.5rem; border-bottom: 2px solid #B5E619; padding-bottom: 0.25rem; }
+    .prose h1, .prose h2, .prose h3, .prose h4 { font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: #0019A6; }
+    .prose h1 { font-size: 1.5rem; border-bottom: 2px solid #45BEFF; padding-bottom: 0.25rem; }
     .prose h2 { font-size: 1.25rem; }
     .prose h3 { font-size: 1.1rem; }
     .prose p { margin-bottom: 0.75rem; line-height: 1.7; }
@@ -32,14 +32,14 @@
     .prose ul { list-style-type: disc; }
     .prose ol { list-style-type: decimal; }
     .prose li { margin-bottom: 0.25rem; }
-    .prose strong { font-weight: 600; color: #1C4B40; }
+    .prose strong { font-weight: 600; color: #0019A6; }
     .prose code { background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
-    .prose pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 6px; overflow-x: auto; margin-bottom: 0.75rem; }
+    .prose pre { background: #1C2836; color: #e2e8f0; padding: 1rem; border-radius: 6px; overflow-x: auto; margin-bottom: 0.75rem; }
     .prose table { width: 100%; border-collapse: collapse; margin-bottom: 0.75rem; }
-    .prose th { background: #1C4B40; color: white; padding: 0.5rem 0.75rem; text-align: left; }
+    .prose th { background: #0019A6; color: white; padding: 0.5rem 0.75rem; text-align: left; }
     .prose td { border: 1px solid #e5e7eb; padding: 0.5rem 0.75rem; }
     .prose tr:nth-child(even) td { background: #f9fafb; }
-    .prose blockquote { border-left: 4px solid #B5E619; padding-left: 1rem; color: #6b7280; font-style: italic; margin-bottom: 0.75rem; }
+    .prose blockquote { border-left: 4px solid #45BEFF; padding-left: 1rem; color: #6b7280; font-style: italic; margin-bottom: 0.75rem; }
     .prose hr { border-color: #e5e7eb; margin: 1rem 0; }
   </style>
 </head>
@@ -84,7 +84,6 @@
           <span>📋</span><span>Logi</span>
         </a>
       </nav>
-      <span class="text-white/30 text-xs hidden lg:inline shrink-0">Brzyski &amp; Partners</span>
     </div>
   </header>
 
@@ -114,8 +113,9 @@
 {% block scripts %}{% endblock %}
 
 <footer class="mt-auto border-t border-gray-200 bg-white/60 py-2 px-6">
-  <div class="max-w-screen-2xl mx-auto text-center text-xs text-slate-text/30 font-mono">
-    build {{ BUILD }}
+  <div class="max-w-screen-2xl mx-auto flex items-center justify-between text-xs text-slate-text/30 font-mono">
+    <span>build {{ BUILD }}</span>
+    <span>by Brzyski &amp; Partners</span>
   </div>
 </footer>
 

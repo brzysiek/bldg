@@ -124,6 +124,13 @@
   <div id="submit-panel" style="display:none">
     <div class="bg-white rounded-xl border border-gray-100 p-5 mb-4">
       <h2 class="font-semibold text-bottle text-sm mb-3">Opcje porównania</h2>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-slate-text mb-1">Nazwa porównania</label>
+        <input type="text" name="job_label" id="job-label-input"
+               placeholder="np. FENG 2025 — edycja 1 → edycja 2"
+               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle" />
+        <p class="text-xs text-slate-text/40 mt-1">Opcjonalna — ułatwia identyfikację na liście porównań. Puste = nazwa konkursu.</p>
+      </div>
       <label class="flex items-start gap-3 cursor-pointer group">
         <input type="checkbox" name="skip_redactional" id="skip-redactional-chk"
                class="mt-0.5 w-4 h-4 rounded border-gray-300 text-bottle focus:ring-bottle/30 cursor-pointer">
@@ -274,6 +281,13 @@ async function loadFiles(oldId, newId) {
     document.getElementById('lbl-old-file').textContent = oldName;
     document.getElementById('lbl-new-file').textContent = newName;
 
+    // Suggest comparison name if user hasn't typed one
+    const labelInput = document.getElementById('job-label-input');
+    if (labelInput && !labelInput.dataset.userEdited) {
+      const compName = document.getElementById('competition-select').selectedOptions[0]?.text || '';
+      labelInput.value = `${compName} — ${oldName} → ${newName}`;
+    }
+
     renderSelects();
     renderPairsList();
 
@@ -300,6 +314,7 @@ function _byName(a, b) {
 }
 
 function _appendFileOptions(sel, files, usedIds) {
+  // usedIds excludes files already in OTHER pairs of same side, but same file may appear in multiple pairs
   const available   = files.filter(f => !usedIds.has(String(f.id)));
   const withDesc    = available.filter(f => f.description).sort(_byName);
   const withoutDesc = available.filter(f => !f.description).sort(_byName);
@@ -393,6 +408,10 @@ function removePair(idx) {
 }
 
 // Pre-select edition if passed via URL
+document.getElementById('job-label-input')?.addEventListener('input', function() {
+  this.dataset.userEdited = this.value ? '1' : '';
+});
+
 window.addEventListener('DOMContentLoaded', async () => {
   const params = new URLSearchParams(location.search);
   const editionOldParam = params.get('edition_old');

@@ -65,10 +65,13 @@
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <div>
         <label class="block text-sm font-medium text-slate-text mb-1">Model</label>
-        <input type="text" name="model" value="{{ cfg.model }}"
-               placeholder="domyślny: {{ default_model }}"
-               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle" />
-        <p class="text-xs text-slate-text/40 mt-1">Puste = globalny model z Integracji.</p>
+        <select name="model"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">
+          <option value="" {% if not cfg.model %}selected{% endif %}>domyślny ({{ default_model }})</option>
+          <option value="gemini-2.5-flash" {% if cfg.model == 'gemini-2.5-flash' %}selected{% endif %}>gemini-2.5-flash — szybki, najlepsza cena/jakość</option>
+          <option value="gemini-2.5-pro" {% if cfg.model == 'gemini-2.5-pro' %}selected{% endif %}>gemini-2.5-pro — najbardziej zaawansowany</option>
+          <option value="gemini-2.5-flash-lite" {% if cfg.model == 'gemini-2.5-flash-lite' %}selected{% endif %}>gemini-2.5-flash-lite — najszybszy, do zadań masowych</option>
+        </select>
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
@@ -167,7 +170,7 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-text mb-1">
-          Domyślny model Gemini
+          Domyślny model dla aplikacji
           <span id="models-loading" class="ml-2 text-xs text-slate-text/40 font-normal hidden">⏳ ładowanie listy...</span>
           <span id="models-error" class="ml-2 text-xs text-red-500 font-normal hidden"></span>
         </label>

@@ -88,20 +88,6 @@ def setup():
             flash("Nie wybrano żadnych par plików do porównania.", "error")
             return redirect(url_for("comparison.setup"))
 
-        # Enforce uniqueness: one active comparison per edition pair
-        existing = ComparisonJob.query.filter(
-            ComparisonJob.edition_old_id == edition_old_id,
-            ComparisonJob.edition_new_id == edition_new_id,
-            ComparisonJob.status != "cancelled",
-        ).first()
-        if existing:
-            flash(
-                f"Porównanie tych edycji już istnieje (#{existing.id}, status: {existing.status}). "
-                "Przejdź do niego lub usuń je, aby utworzyć nowe.",
-                "info",
-            )
-            return redirect(url_for("comparison.job_status", job_id=existing.id))
-
         active_statuses = ["pending", "comparing", "extracting", "chunking", "summarizing"]
         is_busy = ComparisonJob.query.filter(ComparisonJob.status.in_(active_statuses)).first() is not None
         initial_status = "queued" if is_busy else "pending"
@@ -118,6 +104,7 @@ def setup():
             progress_current   = 0,
             gemini_model_used  = settings.gemini_model,
             skip_redactional   = request.form.get("skip_redactional") == "on",
+            job_label          = request.form.get("job_label", "").strip() or None,
         )
         db.session.add(job)
         db.session.commit()
@@ -180,10 +167,7 @@ def run_pair(job_id):
         result.setdefault("compared_at", datetime.utcnow().strftime("%d.%m.%Y %H:%M"))
 
         per_file_results = json.loads(job.per_file_results_json or "[]")
-        # Usuń poprzedni wynik tej pary (obsługa ponowień)
-        per_file_results = [r for r in per_file_results
-                            if not (r.get("old_doc_id") == doc_old.id
-                                    and r.get("new_doc_id") == doc_new.id)]
+        per_file_results = [r for r in per_file_results if r.get("pair_idx") != pair_idx]
         per_file_results.append(result)
         job.per_file_results_json = json.dumps(per_file_results, ensure_ascii=False)
 
@@ -400,6 +384,7 @@ def finalize_pair(job_id):
         )
 
         result = {
+            "pair_idx":    pair_idx,
             "old_doc_id":  doc_old.id,
             "new_doc_id":  doc_new.id,
             "old_name":    doc_old.original_name or mapping.get("old_name", ""),
@@ -412,9 +397,7 @@ def finalize_pair(job_id):
         }
 
         per_file_results = json.loads(job.per_file_results_json or "[]")
-        per_file_results = [r for r in per_file_results
-                            if not (r.get("old_doc_id") == doc_old.id
-                                    and r.get("new_doc_id") == doc_new.id)]
+        per_file_results = [r for r in per_file_results if r.get("pair_idx") != pair_idx]
         per_file_results.append(result)
         job.per_file_results_json = json.dumps(per_file_results, ensure_ascii=False)
 
@@ -557,11 +540,14 @@ def job_status(job_id):
         edition_summary_html = md_lib.markdown(job.edition_summary, extensions=["extra"])
 
     all_mappings = json.loads(job.file_mappings_json or "[]")
-    done_pair_ids = {(r["old_doc_id"], r["new_doc_id"]) for r in per_file_results}
+    # Use pair_idx for deduplication (supports same file pair appearing multiple times)
+    done_indices = {r["pair_idx"] for r in per_file_results if "pair_idx" in r}
+    # Backward compat: old records without pair_idx use doc_id pair
+    done_doc_pairs = {(r["old_doc_id"], r["new_doc_id"]) for r in per_file_results if "pair_idx" not in r}
     pending_pairs = [
         {"idx": i, "old_name": m.get("old_name", ""), "new_name": m.get("new_name", "")}
         for i, m in enumerate(all_mappings)
-        if (m["old_doc_id"], m["new_doc_id"]) not in done_pair_ids
+        if i not in done_indices and (m["old_doc_id"], m["new_doc_id"]) not in done_doc_pairs
     ]
     used_old_ids = [m["old_doc_id"] for m in all_mappings]
     used_new_ids = [m["new_doc_id"] for m in all_mappings]
@@ -610,7 +596,13 @@ def pair_result(job_id, pair_idx):
     m = mappings[pair_idx]
     per_file_results = json.loads(job.per_file_results_json or "[]")
     for r in per_file_results:
-        if r.get("old_doc_id") == m["old_doc_id"] and r.get("new_doc_id") == m["new_doc_id"]:
+        # Match by pair_idx (new records) or by doc_id pair (old records)
+        matches = (r.get("pair_idx") == pair_idx) or (
+            "pair_idx" not in r
+            and r.get("old_doc_id") == m["old_doc_id"]
+            and r.get("new_doc_id") == m["new_doc_id"]
+        )
+        if matches:
             summary_html = md_lib.markdown(r.get("summary", ""), extensions=["extra"]) if r.get("summary") else ""
             return jsonify({
                 "done":         True,
@@ -625,6 +617,16 @@ def pair_result(job_id, pair_idx):
 
 
 # ── Skip pair ─────────────────────────────────────────────────────────────
+
+@bp.route("/job/<int:job_id>/rename", methods=["POST"])
+def rename_job(job_id):
+    job = ComparisonJob.query.get_or_404(job_id)
+    data = request.get_json() or {}
+    label = (data.get("label") or "").strip()
+    job.job_label = label or None
+    db.session.commit()
+    return jsonify({"ok": True, "label": job.job_label or job.competition_name or f"Porównanie #{job.id}"})
+
 
 @bp.route("/job/<int:job_id>/add-pair", methods=["POST"])
 def add_pair(job_id):
@@ -648,11 +650,6 @@ def add_pair(job_id):
         return jsonify({"ok": False, "error": "Dokument nie istnieje"}), 404
 
     mappings = json.loads(job.file_mappings_json or "[]")
-
-    for m in mappings:
-        if m.get("old_doc_id") == old_doc_id and m.get("new_doc_id") == new_doc_id:
-            return jsonify({"ok": False, "error": "Ta para jest już w porównaniu"}), 400
-
     new_idx = len(mappings)
     mappings.append({
         "old_doc_id": old_doc_id,
@@ -692,10 +689,9 @@ def skip_pair(job_id):
     new_doc_id = mapping["new_doc_id"]
 
     per_file_results = json.loads(job.per_file_results_json or "[]")
-    per_file_results = [r for r in per_file_results
-                        if not (r.get("old_doc_id") == old_doc_id
-                                and r.get("new_doc_id") == new_doc_id)]
+    per_file_results = [r for r in per_file_results if r.get("pair_idx") != pair_idx]
     per_file_results.append({
+        "pair_idx":    pair_idx,
         "old_doc_id":  old_doc_id,
         "new_doc_id":  new_doc_id,
         "old_name":    mapping.get("old_name", ""),
@@ -718,7 +714,7 @@ def skip_pair(job_id):
 
 # ── Excel export ───────────────────────────────────────────────────────────
 
-_BOTTLE     = "1C4B40"
+_BOTTLE     = "0019A6"
 _WAGA_FILL  = {"KRYTYCZNA": "FFCCCC", "WYSOKA": "FFE5CC", "SREDNIA": "FFFFCC", "NISKA": "E5FFE5"}
 
 _ILLEGAL_XML = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
