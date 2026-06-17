@@ -757,11 +757,11 @@ def _write_summary_sheet(ws, job, per_file_results):
 
     NCOLS = 7
     ws["A1"] = _xl_val(job.competition_name or "Porównanie edycji")
-    ws["A1"].font = Font(bold=True, size=15, color=_BOTTLE)
+    ws["A1"].font = Font(bold=True, size=14, color=_BOTTLE)
     ws["A2"] = _xl_val(f"{job.label_old or '?'}  →  {job.label_new or '?'}")
-    ws["A2"].font = Font(size=11, color="444444")
+    ws["A2"].font = Font(size=14, color="444444")
     ws["A3"] = f"Data: {job.created_at.strftime('%d.%m.%Y %H:%M') if job.created_at else '—'}"
-    ws["A3"].font = Font(size=9, color="888888")
+    ws["A3"].font = Font(size=14, color="888888")
     for r in [1, 2, 3]:
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=NCOLS)
 
@@ -771,7 +771,7 @@ def _write_summary_sheet(ws, job, per_file_results):
          "Zmian", "Krytyczne", "Wysokie", "Średnie", "Niskie"], 1
     ):
         c = ws.cell(row=ROW_HDR, column=col, value=label)
-        c.font = Font(bold=True, color="FFFFFF")
+        c.font = Font(bold=True, size=14, color="FFFFFF")
         c.fill = PatternFill("solid", fgColor=_BOTTLE)
         c.alignment = Alignment(wrap_text=True, horizontal="center" if col > 2 else "left")
 
@@ -806,7 +806,7 @@ def _write_summary_sheet(ws, job, per_file_results):
          sum(1 for c in all_ch if c.get("waga") == "NISKA")], 1
     ):
         cell = ws.cell(row=row, column=col, value=v)
-        cell.font = Font(bold=True)
+        cell.font = Font(bold=True, size=14)
         cell.fill = PatternFill("solid", fgColor="EEEEEE")
         cell.alignment = Alignment(horizontal="center" if col > 2 else "left")
 
@@ -814,7 +814,7 @@ def _write_summary_sheet(ws, job, per_file_results):
     if job.edition_summary:
         row += 2
         lbl = ws.cell(row=row, column=1, value="Podsumowanie AI całej edycji:")
-        lbl.font = Font(bold=True, size=11, color=_BOTTLE)
+        lbl.font = Font(bold=True, size=14, color=_BOTTLE)
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
         row += 1
         cell = ws.cell(row=row, column=1, value=_xl_val(job.edition_summary))
@@ -834,9 +834,9 @@ def _write_pair_sheet(ws, pfr, job):
     changes  = pfr.get("changes", [])
 
     ws["A1"] = old_name
-    ws["A1"].font = Font(bold=True, size=13, color=_BOTTLE)
+    ws["A1"].font = Font(bold=True, size=14, color=_BOTTLE)
     ws["A2"] = f"→  {new_name}"
-    ws["A2"].font = Font(size=11, color="555555")
+    ws["A2"].font = Font(size=14, color="555555")
     for r in [1, 2]:
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
 
@@ -845,7 +845,7 @@ def _write_pair_sheet(ws, pfr, job):
     if summary:
         row += 1
         lbl = ws.cell(row=row, column=1, value="Podsumowanie zmian w pliku:")
-        lbl.font = Font(bold=True, size=11, color=_BOTTLE)
+        lbl.font = Font(bold=True, size=14, color=_BOTTLE)
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
         row += 1
         cell = ws.cell(row=row, column=1, value=summary)
@@ -857,7 +857,7 @@ def _write_pair_sheet(ws, pfr, job):
     if not changes:
         ws.cell(row=row, column=1,
                 value="Brak zmian." if not pfr.get("skipped") else "Para pominięta.").font = \
-            Font(italic=True, color="888888")
+            Font(italic=True, size=14, color="888888")
         _xl_col_widths(ws, [20, 20, 12, 50, 50, 60])
         return
 
@@ -868,7 +868,7 @@ def _write_pair_sheet(ws, pfr, job):
          "Komentarz biznesowy"], 1
     ):
         c = ws.cell(row=tbl_row, column=col, value=h)
-        c.font = Font(bold=True, color="FFFFFF")
+        c.font = Font(bold=True, size=14, color="FFFFFF")
         c.fill = PatternFill("solid", fgColor=_BOTTLE)
         c.alignment = Alignment(wrap_text=True)
 

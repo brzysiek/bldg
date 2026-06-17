@@ -46,7 +46,7 @@
 <body class="bg-offwhite text-slate-text min-h-screen flex flex-col">
 
   <!-- Top navigation bar -->
-  <header class="bg-bottle text-white shadow-md sticky top-0 z-20">
+  <header class="text-white shadow-md sticky top-0 z-20" style="background:rgb(2,3,129)">
     <div class="max-w-screen-2xl mx-auto px-6 flex items-center gap-8 h-14">
       <a href="{{ url_for('competitions.index') }}" class="flex items-center gap-2 shrink-0">
         <span class="text-lime font-bold text-lg leading-none">BLDG</span>
@@ -55,32 +55,32 @@
       <nav class="flex items-center gap-1 flex-1">
         <a href="{{ url_for('competitions.index') }}"
            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                  {% if request.path == '/' or request.path.startswith('/competition') %}bg-white/20 text-white{% else %}text-white/65 hover:bg-white/10 hover:text-white{% endif %}">
+                  {% if request.path == '/' or request.path.startswith('/competition') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>📁</span><span>Konkursy</span>
         </a>
         <a href="{{ url_for('comparison.index') }}"
            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                  {% if request.path.startswith('/comparison') %}bg-white/20 text-white{% else %}text-white/65 hover:bg-white/10 hover:text-white{% endif %}">
+                  {% if request.path.startswith('/comparison') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>↔️</span><span>Porównania edycji</span>
         </a>
         <a href="{{ url_for('placeholders.questions') }}"
            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                  {% if request.path == '/questions' %}bg-white/20 text-white{% else %}text-white/65 hover:bg-white/10 hover:text-white{% endif %}">
+                  {% if request.path == '/questions' %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>❓</span><span>Pytania do dokumentacji</span>
         </a>
         <a href="{{ url_for('placeholders.applications') }}"
            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                  {% if request.path == '/applications' %}bg-white/20 text-white{% else %}text-white/65 hover:bg-white/10 hover:text-white{% endif %}">
+                  {% if request.path == '/applications' %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>📝</span><span>Generowanie wniosków</span>
         </a>
         <a href="{{ url_for('settings.index') }}"
            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                  {% if request.path.startswith('/settings') or request.path.startswith('/auth') %}bg-white/20 text-white{% else %}text-white/65 hover:bg-white/10 hover:text-white{% endif %}">
+                  {% if request.path.startswith('/settings') or request.path.startswith('/auth') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>⚙️</span><span>Ustawienia</span>
         </a>
         <a href="{{ url_for('logs_page') }}"
            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                  {% if request.path == '/logs' %}bg-white/20 text-white{% else %}text-white/65 hover:bg-white/10 hover:text-white{% endif %}">
+                  {% if request.path == '/logs' %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>📋</span><span>Logi</span>
         </a>
       </nav>
