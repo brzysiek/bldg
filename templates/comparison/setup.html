@@ -92,7 +92,6 @@
                   class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
             <option value="">— wybierz plik ze starszej edycji —</option>
           </select>
-          <p id="dbg-old" class="mt-1 text-xs text-slate-text/40"></p>
         </div>
         <div class="hidden sm:flex items-center pb-2 text-slate-text/25 shrink-0">
           <span class="text-xl">→</span>
@@ -103,7 +102,6 @@
                   class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle bg-white">
             <option value="">— wybierz plik z nowszej edycji —</option>
           </select>
-          <p id="dbg-new" class="mt-1 text-xs text-slate-text/40"></p>
         </div>
         <div class="shrink-0">
           <button type="button" onclick="addPair()"
@@ -257,12 +255,6 @@ async function loadFiles(oldId, newId) {
       a.name.localeCompare(b.name, 'pl', {sensitivity: 'base'}));
     filesOld = sortFiles(await rOld.json());
     filesNew = sortFiles(await rNew.json());
-    const _cntOld = filesOld.filter(f => f.description).length;
-    const _cntNew = filesNew.filter(f => f.description).length;
-    const dbgOld = document.getElementById('dbg-old');
-    const dbgNew = document.getElementById('dbg-new');
-    if (dbgOld) dbgOld.textContent = `[dbg] z opisem AI: ${_cntOld} / ${filesOld.length}`;
-    if (dbgNew) dbgNew.textContent = `[dbg] z opisem AI: ${_cntNew} / ${filesNew.length}`;
     pairs = [];
 
     const oldName = document.getElementById('edition-old-select').selectedOptions[0].text;
