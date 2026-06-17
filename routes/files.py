@@ -219,6 +219,12 @@ def summary(file_id):
     )
 
 
+@bp.route("/files/<int:file_id>/summary-json")
+def summary_json(file_id):
+    doc = Document.query.get_or_404(file_id)
+    return jsonify({"id": file_id, "summary": doc.ai_summary or ""})
+
+
 @bp.route("/files/<int:file_id>/summary/download")
 def summary_download(file_id):
     doc = Document.query.get_or_404(file_id)

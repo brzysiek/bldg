@@ -269,15 +269,26 @@ if (syncForm) {
 }
 
 /* ── Summary popup ── */
-const SUMMARIES = {
-  {% for doc in all_docs %}{% if doc.ai_summary %}{{ doc.id }}: {{ doc.ai_summary | tojson }},{% endif %}{% endfor %}
-};
+const SUMMARIES = {};  // lazy-loaded on first open per file
 
-function showSummary(id, name) {
+async function showSummary(id, name) {
   document.getElementById('modal-title').textContent = name;
-  document.getElementById('modal-body').innerHTML = marked.parse(SUMMARIES[id] || '');
+  const body = document.getElementById('modal-body');
   document.getElementById('summary-modal').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+  if (SUMMARIES[id] !== undefined) {
+    body.innerHTML = marked.parse(SUMMARIES[id]);
+    return;
+  }
+  body.innerHTML = '<p class="text-slate-text/40 text-sm">Ładowanie…</p>';
+  try {
+    const r = await fetch(`/files/${id}/summary-json`);
+    const data = await r.json();
+    SUMMARIES[id] = data.summary || '';
+    body.innerHTML = marked.parse(SUMMARIES[id]);
+  } catch (e) {
+    body.innerHTML = '<p class="text-red-500 text-sm">Błąd ładowania podsumowania.</p>';
+  }
 }
 function closeSummary() {
   document.getElementById('summary-modal').classList.add('hidden');

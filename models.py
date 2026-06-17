@@ -1,4 +1,5 @@
 from datetime import datetime
+from sqlalchemy.orm import deferred as _deferred
 from extensions import db
 
 
@@ -58,7 +59,8 @@ class Document(db.Model):
     ai_summary_error = db.Column(db.Text)
 
     extraction_cache_key  = db.Column(db.Text)
-    extraction_cache_json = db.Column(db.Text)
+    # deferred: never loaded in list queries — can be several MB per document
+    extraction_cache_json = _deferred(db.Column(db.Text))
 
 
 class AppSettings(db.Model):
