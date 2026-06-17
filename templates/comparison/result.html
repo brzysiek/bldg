@@ -371,8 +371,9 @@ const JOB_STATUS         = {{ job.status | tojson }};
 const PENDING_PAIRS      = {{ pending_pairs | tojson }};
 const USED_OLD_IDS       = new Set({{ used_old_ids | tojson }});
 const USED_NEW_IDS       = new Set({{ used_new_ids | tojson }});
-const PAIR_LOCK_AGE_SECS = {{ pair_lock_age_secs | tojson }};
-const LOCK_TTL           = 300;
+const PAIR_LOCK_AGE_SECS  = {{ pair_lock_age_secs | tojson }};
+const LOCK_TTL            = 300;
+const JOB_STARTED_AT_MS   = {{ (job.started_at.timestamp() * 1000) | int if job.started_at else 'null' }};
 
 const RUN_PAIR_BATCH_URL   = {{ url_for('comparison.run_pair_batch',           job_id=job.id) | tojson }};
 const FINALIZE_PAIR_URL    = {{ url_for('comparison.finalize_pair',            job_id=job.id) | tojson }};
@@ -444,7 +445,8 @@ function fmtClock(ms) {
 /* ── Timers ─────────────────────────────────────────────────────────────── */
 function startTotalTimer() {
   if (totalTimerIval) return;
-  totalStart = Date.now();
+  // Resume from job's server-side start time so refresh doesn't reset it
+  totalStart = JOB_STARTED_AT_MS !== null ? JOB_STARTED_AT_MS : Date.now();
   totalTimerIval = setInterval(() => {
     const el = document.getElementById('total-timer');
     if (el) el.textContent = fmtClock(Date.now() - totalStart);
@@ -453,8 +455,20 @@ function startTotalTimer() {
 function stopTotalTimer() {
   if (totalTimerIval) { clearInterval(totalTimerIval); totalTimerIval = null; }
 }
+
+function _pairTimerKey(idx) { return `bldg_pair_timer_${JOB_ID}_${idx}`; }
+
 function startPairTimer(idx) {
-  pairStart = Date.now();
+  // Restore start time from localStorage so timer survives page refresh
+  let saved = null;
+  try { saved = localStorage.getItem(_pairTimerKey(idx)); } catch(_) {}
+  const savedMs = saved ? parseInt(saved, 10) : NaN;
+  if (!isNaN(savedMs) && savedMs > 0 && savedMs <= Date.now()) {
+    pairStart = savedMs;
+  } else {
+    pairStart = Date.now();
+    try { localStorage.setItem(_pairTimerKey(idx), String(pairStart)); } catch(_) {}
+  }
   if (pairTimerIval) clearInterval(pairTimerIval);
   pairTimerIval = setInterval(() => {
     const el = document.getElementById(`pair-timer-${idx}`);
@@ -464,6 +478,9 @@ function startPairTimer(idx) {
 function stopPairTimer() {
   if (pairTimerIval) { clearInterval(pairTimerIval); pairTimerIval = null; }
   return pairStart ? Math.floor((Date.now() - pairStart) / 1000) : 0;
+}
+function _clearPairTimer(idx) {
+  try { localStorage.removeItem(_pairTimerKey(idx)); } catch(_) {}
 }
 function startPairPoll(idx) {
   if (pairPollIval) clearInterval(pairPollIval);
@@ -546,6 +563,7 @@ function setPairState(idx, state) {
 function setPairDone(idx, data) {
   const elapsed = stopPairTimer();
   stopPairPoll();
+  _clearPairTimer(idx);
   const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
   const body  = document.getElementById(`pair-body-${idx}`);
@@ -584,6 +602,7 @@ function setPairDone(idx, data) {
 function setPairError(idx, msg) {
   stopPairTimer();
   stopPairPoll();
+  _clearPairTimer(idx);
   const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
   const body  = document.getElementById(`pair-body-${idx}`);
@@ -609,6 +628,7 @@ function setPairError(idx, msg) {
 function setPairSkipped(idx) {
   stopPairTimer();
   stopPairPoll();
+  _clearPairTimer(idx);
   const icon  = document.getElementById(`pair-icon-${idx}`);
   const badge = document.getElementById(`pair-badge-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);
