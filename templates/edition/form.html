@@ -44,12 +44,12 @@
       <label class="block text-sm font-medium text-slate-text mb-1">Opis</label>
       <textarea name="description" rows="3"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
-                placeholder="Opcjonalny opis...">{{ edition.description if edition else '' }}</textarea>
+                placeholder="Opcjonalny opis...">{{ (edition.description or '') if edition else '' }}</textarea>
     </div>
     <div class="border-t border-gray-100 pt-5">
       <label class="block text-sm font-medium text-slate-text mb-1">Link do folderu Google Drive</label>
       <input type="url" name="gdrive_folder_url"
-             value="{{ edition.gdrive_folder_url if edition else '' }}"
+             value="{{ (edition.gdrive_folder_url or '') if edition else '' }}"
              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle"
              placeholder="https://drive.google.com/drive/folders/..." />
       <p class="text-xs text-slate-text/50 mt-1">Wklej link do folderu Drive zawierającego dokumenty tej edycji. Możesz go też ustawić później z poziomu edycji.</p>

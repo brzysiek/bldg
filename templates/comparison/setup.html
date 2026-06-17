@@ -252,6 +252,28 @@ function retryLoadFiles() {
   if (oldId && newId) loadFiles(oldId, newId);
 }
 
+function _setLoadingMsg(msg) {
+  const el = document.querySelector('#mapping-loading span:last-child');
+  if (el) el.textContent = ' ' + msg;
+}
+
+async function _fetchBothFiles(oldId, newId, timeoutMs) {
+  const ctrl = new AbortController();
+  const tid  = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const [rOld, rNew] = await Promise.all([
+      fetch(edFilesUrl(oldId), {signal: ctrl.signal}),
+      fetch(edFilesUrl(newId), {signal: ctrl.signal}),
+    ]);
+    clearTimeout(tid);
+    if (!rOld.ok || !rNew.ok) throw new Error(`HTTP ${rOld.status}/${rNew.status}`);
+    return [await rOld.json(), await rNew.json()];
+  } catch(e) {
+    clearTimeout(tid);
+    throw e;
+  }
+}
+
 async function loadFiles(oldId, newId) {
   document.getElementById('mapping-panel').style.display = '';
   document.getElementById('mapping-content').classList.add('hidden');
@@ -259,48 +281,55 @@ async function loadFiles(oldId, newId) {
   document.getElementById('mapping-loading').classList.remove('hidden');
   document.getElementById('submit-panel').style.display = 'none';
 
-  const controller = new AbortController();
-  const timeoutId  = setTimeout(() => controller.abort(), 15000);
-
+  let rawOld, rawNew;
   try {
-    const [rOld, rNew] = await Promise.all([
-      fetch(edFilesUrl(oldId), {signal: controller.signal}),
-      fetch(edFilesUrl(newId), {signal: controller.signal}),
-    ]);
-    clearTimeout(timeoutId);
-    if (!rOld.ok || !rNew.ok) throw new Error(`HTTP ${rOld.status}/${rNew.status}`);
-
-    const sortFiles = arr => arr.slice().sort((a, b) =>
-      a.name.localeCompare(b.name, 'pl', {sensitivity: 'base'}));
-    filesOld = sortFiles(await rOld.json());
-    filesNew = sortFiles(await rNew.json());
-    pairs = [];
-
-    const oldName = document.getElementById('edition-old-select').selectedOptions[0].text;
-    const newName = document.getElementById('edition-new-select').selectedOptions[0].text;
-    document.getElementById('lbl-old-file').textContent = oldName;
-    document.getElementById('lbl-new-file').textContent = newName;
-
-    // Suggest comparison name if user hasn't typed one
-    const labelInput = document.getElementById('job-label-input');
-    if (labelInput && !labelInput.dataset.userEdited) {
-      const compName = document.getElementById('competition-select').selectedOptions[0]?.text || '';
-      labelInput.value = `${compName} — ${oldName} → ${newName}`;
+    _setLoadingMsg('Wczytywanie plików...');
+    [rawOld, rawNew] = await _fetchBothFiles(oldId, newId, 10000);
+  } catch(e1) {
+    if (e1.name !== 'AbortError') {
+      _showLoadError(`Błąd wczytywania plików: ${e1.message}`);
+      return;
     }
-
-    autoPairs();
-
-    document.getElementById('mapping-loading').classList.add('hidden');
-    document.getElementById('mapping-content').classList.remove('hidden');
-  } catch (e) {
-    clearTimeout(timeoutId);
-    document.getElementById('mapping-loading').classList.add('hidden');
-    const msg = e.name === 'AbortError'
-      ? 'Przekroczono czas oczekiwania (15s). Serwer może się właśnie uruchamiać po przerwie — spróbuj ponownie.'
-      : `Błąd wczytywania plików: ${e.message}`;
-    document.getElementById('mapping-error-msg').textContent = msg;
-    document.getElementById('mapping-error').classList.remove('hidden');
+    // Timeout — worker mógł zostać zrestartowany, próbuj ponownie
+    _setLoadingMsg('Serwer się wznawia — próba ponowna (może potrwać chwilę)...');
+    try {
+      [rawOld, rawNew] = await _fetchBothFiles(oldId, newId, 30000);
+    } catch(e2) {
+      const msg = e2.name === 'AbortError'
+        ? 'Serwer nie odpowiada (timeout). Odczekaj chwilę i kliknij „Spróbuj ponownie".'
+        : `Błąd wczytywania plików: ${e2.message}`;
+      _showLoadError(msg);
+      return;
+    }
   }
+
+  const sortFiles = arr => arr.slice().sort((a, b) =>
+    a.name.localeCompare(b.name, 'pl', {sensitivity: 'base'}));
+  filesOld = sortFiles(rawOld);
+  filesNew = sortFiles(rawNew);
+  pairs = [];
+
+  const oldName = document.getElementById('edition-old-select').selectedOptions[0].text;
+  const newName = document.getElementById('edition-new-select').selectedOptions[0].text;
+  document.getElementById('lbl-old-file').textContent = oldName;
+  document.getElementById('lbl-new-file').textContent = newName;
+
+  const labelInput = document.getElementById('job-label-input');
+  if (labelInput && !labelInput.dataset.userEdited) {
+    const compName = document.getElementById('competition-select').selectedOptions[0]?.text || '';
+    labelInput.value = `${compName} — ${oldName} → ${newName}`;
+  }
+
+  autoPairs();
+
+  document.getElementById('mapping-loading').classList.add('hidden');
+  document.getElementById('mapping-content').classList.remove('hidden');
+}
+
+function _showLoadError(msg) {
+  document.getElementById('mapping-loading').classList.add('hidden');
+  document.getElementById('mapping-error-msg').textContent = msg;
+  document.getElementById('mapping-error').classList.remove('hidden');
 }
 
 // --- Auto-pairing (name + description similarity, no AI) ---

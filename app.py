@@ -40,8 +40,12 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 # Bump when adding new _migrate_db() columns. Workers skip migration checks when
 # the cached version matches, avoiding 5+ slow Inspector queries on cold start.
+# Bump _SCHEMA_VERSION whenever _migrate_db() grows new columns/tables.
+# Workers skip the 5+ Inspector SQL queries on warm restarts.
 _SCHEMA_VERSION = "12"
 _SCHEMA_CACHE_FILE = os.path.join(BASE_DIR, "_schema_version.txt")
+# Separate flag: skip run_seed() + _seed_comparison_prompts() after first run.
+_SEED_DONE_FILE = os.path.join(BASE_DIR, "_seed_done.txt")
 
 
 def _schema_up_to_date() -> bool:
@@ -55,6 +59,17 @@ def _mark_schema_current():
     try:
         with open(_SCHEMA_CACHE_FILE, "w") as f:
             f.write(_SCHEMA_VERSION)
+    except OSError:
+        pass
+
+
+def _seed_done() -> bool:
+    return os.path.exists(_SEED_DONE_FILE)
+
+
+def _mark_seed_done():
+    try:
+        open(_SEED_DONE_FILE, "w").close()
     except OSError:
         pass
 
@@ -401,9 +416,11 @@ def create_app():
         if not _schema_up_to_date():
             _migrate_db()
             _mark_schema_current()
-        from seed import run_seed
-        run_seed()
-        _seed_comparison_prompts()
+        if not _seed_done():
+            from seed import run_seed
+            run_seed()
+            _seed_comparison_prompts()
+            _mark_seed_done()
         timeout_minutes = float(os.environ.get("COMPARISON_TIMEOUT_MINUTES", "60"))
         _cleanup_stale_jobs(timeout_minutes)
 
