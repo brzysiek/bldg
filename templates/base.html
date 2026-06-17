@@ -41,6 +41,39 @@
     .prose tr:nth-child(even) td { background: #f9fafb; }
     .prose blockquote { border-left: 4px solid #45BEFF; padding-left: 1rem; color: #6b7280; font-style: italic; margin-bottom: 0.75rem; }
     .prose hr { border-color: #e5e7eb; margin: 1rem 0; }
+
+    /* ── Global button style ── */
+    /* Solid primary buttons (bg-bottle, bg-lime, bg-blue-600) */
+    button[class*="bg-bottle"], a[class*="bg-bottle"],
+    button[class*="bg-lime"],   a[class*="bg-lime"] {
+      min-height: 42px !important;
+      border-radius: 50px !important;
+      background-color: #45BEFF !important;
+      color: #fff !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    button[class*="bg-bottle"]:hover, a[class*="bg-bottle"]:hover,
+    button[class*="bg-lime"]:hover,   a[class*="bg-lime"]:hover {
+      background-color: #9245FF !important;
+    }
+    /* "Wznów" pulsing blue button */
+    button[class*="bg-blue-6"], a[class*="bg-blue-6"] {
+      min-height: 42px !important;
+      border-radius: 50px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
+    /* Outline / ghost buttons */
+    button[class*="border"][class*="px-"], a[class*="border"][class*="px-"][href] {
+      min-height: 42px !important;
+      border-radius: 50px !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    }
   </style>
 </head>
 <body class="bg-offwhite text-slate-text min-h-screen flex flex-col">
