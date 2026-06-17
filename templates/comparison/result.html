@@ -384,6 +384,7 @@ const STATUS_API_URL       = {{ url_for('comparison.job_status_api',           j
 const ADD_PAIR_URL         = {{ url_for('comparison.add_pair',                 job_id=job.id) | tojson }};
 const DOWNLOAD_PAIR_XLSX_TPL = {{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=0) | tojson }};
 const DOWNLOAD_PAIR_CSV_TPL  = {{ url_for('comparison.download_pair_csv',   job_id=job.id, pair_idx=0) | tojson }};
+const PAIR_RESULT_URL_TPL    = {{ url_for('comparison.pair_result',         job_id=job.id, pair_idx=0) | tojson }};
 {% if job.edition_old_id and job.edition_new_id %}
 const ED_OLD_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_old_id) | tojson }};
 const ED_NEW_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_new_id) | tojson }};
@@ -962,24 +963,81 @@ function onAllPairsComplete() {
   isProcessing = false;
 }
 
-/* ── Auto-run initial pending pairs ─────────────────────────────────────── */
-async function runPendingPairs() {
-  if (isProcessing) return;
-  isProcessing = true;
-  startTotalTimer();
-
-  for (const p of PENDING_PAIRS) {
+/* ── Core pair-processing loop ───────────────────────────────────────────── */
+async function runRemainingPairs(pairs) {
+  for (const p of pairs) {
     if (cancelled) break;
     if (skippedPairs.has(p.idx)) { sessionDone++; continue; }
-
     setProgress(sessionDone, sessionTotal, `⏳ Para ${sessionDone + 1} z ${sessionTotal}...`);
     const result = await runOnePair(p.idx);
     if (result?.cancelled) return;
     sessionDone++;
     if (cancelled) break;
   }
+}
 
+async function runPendingPairs() {
+  if (isProcessing) return;
+  isProcessing = true;
+  startTotalTimer();
+  await runRemainingPairs(PENDING_PAIRS);
   if (!cancelled) onAllPairsComplete();
+}
+
+/* ── Monitor a pair being processed by another worker (after page refresh) ── */
+async function monitorActivePair(pair) {
+  if (isProcessing) return;
+  isProcessing = true;
+  startTotalTimer();
+
+  const idx = pair.idx;
+  setPairState(idx, 'running');
+  startPairTimer(idx);
+  startPairPoll(idx);
+
+  const pairResultUrl = PAIR_RESULT_URL_TPL.replace(/\/pair-result\/0$/, `/pair-result/${idx}`);
+
+  while (true) {
+    await new Promise(r => setTimeout(r, 5000));
+    if (cancelled) { isProcessing = false; return; }
+
+    try {
+      // Check if the other worker finished this pair
+      const r = await fetch(pairResultUrl);
+      if (r.ok) {
+        const d = await r.json();
+        if (d.done) {
+          stopPairTimer();
+          stopPairPoll();
+          if (d.skipped) setPairSkipped(idx); else setPairDone(idx, d);
+          sessionDone++;
+          await runRemainingPairs(PENDING_PAIRS.slice(1));
+          if (!cancelled) onAllPairsComplete();
+          return;
+        }
+      }
+
+      // Check if the other worker crashed (lock expired)
+      const sr = await fetch(STATUS_API_URL);
+      if (sr.ok) {
+        const sd = await sr.json();
+        if (sd.status === 'cancelled') { isProcessing = false; return; }
+        if (sd.pair_lock_age_secs != null && sd.pair_lock_age_secs > LOCK_TTL) {
+          // Other worker is dead — take over this pair
+          stopPairTimer();
+          stopPairPoll();
+          isProcessing = false;
+          const result = await runOnePair(idx);
+          isProcessing = true;
+          sessionDone++;
+          if (result?.cancelled) { isProcessing = false; return; }
+          await runRemainingPairs(PENDING_PAIRS.slice(1));
+          if (!cancelled) onAllPairsComplete();
+          return;
+        }
+      }
+    } catch(e) {}
+  }
 }
 
 /* ── Edition summary generation ─────────────────────────────────────────── */
@@ -1145,27 +1203,6 @@ async function pollQueued() {
   setTimeout(pollQueued, 3000);
 }
 
-/* ── Duplicate-worker guard ──────────────────────────────────────────────── */
-function showLockBanner(reloadInSecs) {
-  const panel = document.getElementById('progress-panel');
-  if (!panel) return;
-  let secs = reloadInSecs;
-  const banner = document.createElement('div');
-  banner.id = 'lock-banner';
-  banner.className = 'px-5 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 flex items-center justify-between gap-4';
-  banner.innerHTML =
-    `<span>⏳ Przetwarzanie jest aktywne w innej karcie lub oknie. Wznowię automatycznie za <strong id="lock-countdown">${secs}</strong>s...</span>` +
-    `<button onclick="location.reload()" class="shrink-0 px-3 py-1 bg-amber-600 text-white rounded text-xs font-medium hover:bg-amber-700 transition-colors">Odśwież teraz</button>`;
-  panel.insertBefore(banner, panel.firstChild);
-
-  const iv = setInterval(() => {
-    secs--;
-    const el = document.getElementById('lock-countdown');
-    if (el) el.textContent = secs;
-    if (secs <= 0) { clearInterval(iv); location.reload(); }
-  }, 1000);
-}
-
 /* ── Initialisation ─────────────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
   if (PENDING_PAIRS.length > 0 && !['cancelled', 'queued'].includes(JOB_STATUS)) {
@@ -1174,10 +1211,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const lockIsActive = PAIR_LOCK_AGE_SECS !== null && PAIR_LOCK_AGE_SECS < LOCK_TTL;
     if (lockIsActive) {
-      // Another Passenger worker is actively processing — don't start a duplicate.
-      // Show a countdown and reload; by then either the pair is done or the lock expired.
-      const waitSecs = Math.max(10, LOCK_TTL - PAIR_LOCK_AGE_SECS + 5);
-      showLockBanner(Math.min(waitSecs, 30));
+      // Another worker is actively processing the first pending pair.
+      // Monitor it passively (live status updates) and take over remaining pairs when it finishes.
+      monitorActivePair(PENDING_PAIRS[0]);
     } else {
       runPendingPairs();
     }

@@ -584,13 +584,42 @@ def job_status(job_id):
 @bp.route("/job/<int:job_id>/status-api")
 def job_status_api(job_id):
     job = ComparisonJob.query.get_or_404(job_id)
+    pair_lock_age_secs = None
+    if job.pair_lock_at:
+        pair_lock_age_secs = int((datetime.utcnow() - job.pair_lock_at).total_seconds())
     return jsonify({
-        "status":           job.status,
-        "status_detail":    job.status_detail or "",
-        "progress_current": job.progress_current,
-        "progress_total":   job.progress_total,
-        "error_message":    job.error_message,
+        "status":             job.status,
+        "status_detail":      job.status_detail or "",
+        "progress_current":   job.progress_current,
+        "progress_total":     job.progress_total,
+        "error_message":      job.error_message,
+        "pair_lock_age_secs": pair_lock_age_secs,
     })
+
+
+@bp.route("/job/<int:job_id>/pair-result/<int:pair_idx>")
+def pair_result(job_id, pair_idx):
+    """Return the saved result for one pair (or done=false if not yet finished)."""
+    import markdown as md_lib
+    job = ComparisonJob.query.get_or_404(job_id)
+    mappings = json.loads(job.file_mappings_json or "[]")
+    if pair_idx >= len(mappings):
+        return jsonify({"done": False})
+    m = mappings[pair_idx]
+    per_file_results = json.loads(job.per_file_results_json or "[]")
+    for r in per_file_results:
+        if r.get("old_doc_id") == m["old_doc_id"] and r.get("new_doc_id") == m["new_doc_id"]:
+            summary_html = md_lib.markdown(r.get("summary", ""), extensions=["extra"]) if r.get("summary") else ""
+            return jsonify({
+                "done":         True,
+                "skipped":      r.get("skipped", False),
+                "old_name":     r.get("old_name", ""),
+                "new_name":     r.get("new_name", ""),
+                "changes":      r.get("changes", []),
+                "summary":      r.get("summary", ""),
+                "summary_html": summary_html,
+            })
+    return jsonify({"done": False})
 
 
 # ── Skip pair ─────────────────────────────────────────────────────────────
