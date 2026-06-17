@@ -255,6 +255,10 @@ async function loadFiles(oldId, newId) {
       a.name.localeCompare(b.name, 'pl', {sensitivity: 'base'}));
     filesOld = sortFiles(await rOld.json());
     filesNew = sortFiles(await rNew.json());
+    console.log('[DEBUG] filesOld z opisem:', filesOld.filter(f => f.description).length, '/', filesOld.length,
+      filesOld.filter(f => f.description).map(f => f.description + ' → ' + f.name));
+    console.log('[DEBUG] filesNew z opisem:', filesNew.filter(f => f.description).length, '/', filesNew.length,
+      filesNew.filter(f => f.description).map(f => f.description + ' → ' + f.name));
     pairs = [];
 
     const oldName = document.getElementById('edition-old-select').selectedOptions[0].text;

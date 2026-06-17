@@ -118,6 +118,8 @@ def _run_summarize(doc, settings):
 
     doc_id = doc.id
     local_path = doc.stored_path
+    # Capture existing description now — will be preserved if Gemini returns empty one
+    _old_description = doc.ai_description or ""
     _tmp_dir = None
 
     if doc.gdrive_file_id:
@@ -166,7 +168,8 @@ def _run_summarize(doc, settings):
     try:
         fresh = db.session.get(Document, doc_id)
         fresh.ai_summary = result["summary"]
-        fresh.ai_description = result.get("description", "") or ""
+        new_desc = result.get("description", "") or ""
+        fresh.ai_description = new_desc if new_desc else _old_description
         fresh.ai_summary_model = gemini_model
         fresh.ai_summarized_at = datetime.utcnow()
         fresh.ai_summary_status = "done"
