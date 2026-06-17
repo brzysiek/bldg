@@ -3,7 +3,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from extensions import db
 from models import AppSettings, PromptVersion
 from services.gemini import test_connection
-from services.prompt_history import record_prompt_version, get_prompt_history
+from services.prompt_history import record_prompt_version, get_prompt_history, get_all_prompt_histories
 from seed import DEFAULT_PROMPT
 
 bp = Blueprint("settings", __name__)
@@ -99,7 +99,7 @@ def index():
     import os
     settings = _get_or_create_settings()
     redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
-    history = {key: get_prompt_history(key) for key in PROMPT_KEYS}
+    history = get_all_prompt_histories(PROMPT_KEYS)
     stage_data = _build_stage_data(settings)
     return render_template(
         "settings/index.html",
@@ -317,7 +317,7 @@ def test():
         return redirect(url_for("settings.index"))
     result = test_connection(settings.gemini_api_key, settings.gemini_model)
     redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
-    history = {key: get_prompt_history(key) for key in PROMPT_KEYS}
+    history = get_all_prompt_histories(PROMPT_KEYS)
     stage_data = _build_stage_data(settings)
     return render_template(
         "settings/index.html",

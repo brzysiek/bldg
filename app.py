@@ -65,7 +65,8 @@ def _mysql_uri():
     user     = os.environ.get("MYSQL_USER",     "root")
     password = os.environ.get("MYSQL_PASSWORD", "")
     database = os.environ.get("MYSQL_DATABASE", "grant_docs")
-    return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4"
+    # connect_timeout prevents infinite hangs when MySQL is slow/overloaded on shared hosting
+    return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}?charset=utf8mb4&connect_timeout=10"
 
 
 def _migrate_db():
@@ -80,7 +81,19 @@ def _migrate_db():
             for col, typ in col_map.items():
                 if col not in existing:
                     sql_type = _MYSQL_COL_TYPES.get(typ, typ)
-                    conn.execute(text(f"ALTER TABLE `{table}` ADD COLUMN `{col}` {sql_type}"))
+                    try:
+                        conn.execute(text(f"ALTER TABLE `{table}` ADD COLUMN `{col}` {sql_type}"))
+                    except Exception as exc:
+                        # MySQL error 1060 = "Duplicate column name" — another worker already
+                        # ran this ALTER TABLE concurrently (race between min_instances workers
+                        # both starting at the same time). Safe to ignore.
+                        if "1060" in str(exc) or "Duplicate column" in str(exc):
+                            _logging.getLogger(__name__).debug(
+                                "_migrate_db: column %s.%s already added by another worker, skipping",
+                                table, col,
+                            )
+                        else:
+                            raise
 
         add_cols("app_settings", {
             "comparison_prompt_extraction":  "TEXT",
@@ -244,10 +257,16 @@ def create_app():
 
     app.config["SQLALCHEMY_DATABASE_URI"] = _mysql_uri()
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "pool_recycle": 280,
-        "pool_pre_ping": True,
-    }
+    db_uri = app.config["SQLALCHEMY_DATABASE_URI"]
+    engine_opts: dict = {"pool_pre_ping": True}
+    if "mysql" in db_uri:
+        engine_opts.update({
+            "pool_recycle": 55,    # recycle before MySQL wait_timeout (often 60s on shared hosting)
+            "pool_timeout": 10,    # give up waiting for a free pool slot after 10s (prevents hang)
+            "pool_size": 2,        # match Passenger min_instances — no point in a larger pool
+            "max_overflow": 1,     # allow 1 extra connection burst
+        })
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_opts
 
     db.init_app(app)
 
