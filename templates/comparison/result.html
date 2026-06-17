@@ -231,8 +231,8 @@
               <div class="flex items-center gap-3 min-w-0">
                 <span class="text-base shrink-0">{{ pfr.old_name | file_icon }}</span>
                 <div class="min-w-0">
-                  <div class="font-medium text-bottle text-sm truncate">{{ pfr.old_name }}</div>
-                  <div class="text-xs text-slate-text/50">→ {{ pfr.new_name }}</div>
+                  <div class="font-medium text-bottle text-sm truncate" title="{{ pfr.old_name }}">{{ pfr.old_name }}</div>
+                  <div class="text-xs text-slate-text/50 truncate" title="{{ pfr.new_name }}">→ {{ pfr.new_name }}</div>
                   {% if pfr.get('compared_at') %}<div class="text-xs text-slate-text/30 mt-0.5">{{ pfr.compared_at }}</div>{% endif %}
                 </div>
               </div>
@@ -505,8 +505,8 @@ function createLivePairCard(idx, oldName, newName) {
     `<div class="flex items-center gap-3 px-5 py-3.5">` +
       `<div id="pair-icon-${idx}" class="text-lg shrink-0 text-gray-300">○</div>` +
       `<div class="min-w-0 flex-1">` +
-        `<div class="font-medium text-slate-text text-sm truncate">${esc(oldName)}</div>` +
-        `<div class="text-xs text-slate-text/40">→ ${esc(newName)}</div>` +
+        `<div class="font-medium text-slate-text text-sm truncate" title="${esc(oldName)}">${esc(oldName)}</div>` +
+        `<div class="text-xs text-slate-text/40 truncate" title="${esc(newName)}">→ ${esc(newName)}</div>` +
       `</div>` +
       `<div id="pair-badge-${idx}" class="shrink-0 flex items-center gap-1">` +
         `<button onclick="skipPair(${idx})" class="px-2 py-0.5 text-xs text-slate-text/35 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors">⏭ Pomiń</button>` +
