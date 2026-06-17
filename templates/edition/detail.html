@@ -9,15 +9,11 @@
   <span class="text-slate-text font-medium">{{ edition.name }}</span>
 </nav>
 
-{% set status_map = {'aktywna': ('bg-green-100 text-green-800','🟢'), 'archiwalna': ('bg-gray-100 text-gray-600','⬛'), 'planowana': ('bg-yellow-100 text-yellow-800','🟡')} %}
-{% set badge_cls, badge_icon = status_map.get(edition.status, ('bg-gray-100 text-gray-600','⬜')) %}
-
 <!-- Header -->
 <div class="flex items-start justify-between mb-6">
   <div>
     <div class="flex items-center gap-3 mb-1 flex-wrap">
       <h1 class="text-xl font-bold text-bottle">{{ edition.name }}</h1>
-      <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold {{ badge_cls }}">{{ badge_icon }} {{ edition.status }}</span>
     </div>
     <div class="text-sm text-slate-text/60 flex items-center gap-4 flex-wrap">
       {% if edition.year %}<span>{{ edition.year }}</span>{% endif %}
