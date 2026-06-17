@@ -92,10 +92,31 @@ def delete(file_id):
     return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
 
 
+def _db_write_error(doc_id: int, error: str) -> None:
+    """Write error status with a fresh DB connection (safe after broken pipe)."""
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    db.session.expire_all()
+    try:
+        d = db.session.get(Document, doc_id)
+        if d:
+            d.ai_summary_status = "error"
+            d.ai_summary_error = error
+            db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
+
 def _run_summarize(doc, settings):
     """Extracts text and runs Gemini summarization. Returns (ok, error_msg)."""
     import shutil
 
+    doc_id = doc.id
     local_path = doc.stored_path
     _tmp_dir = None
 
@@ -123,20 +144,40 @@ def _run_summarize(doc, settings):
     if len(text) > 400_000:
         text = text[:400_000] + "\n[TEKST OBCIĘTY DO 400 000 ZNAKÓW]"
 
+    # Capture model name before the long Gemini call (settings object will be expired after)
+    gemini_model = settings.gemini_model
+
     try:
         result = summarize_document(text, settings)
-        doc.ai_summary = result["summary"]
-        doc.ai_description = result.get("description", "") or ""
-        doc.ai_summary_model = settings.gemini_model
-        doc.ai_summarized_at = datetime.utcnow()
-        doc.ai_summary_status = "done"
-        doc.ai_summary_error = None
+    except Exception as e:
+        _db_write_error(doc_id, str(e))
+        return False, str(e)
+
+    # The Gemini call above can take minutes. The MySQL connection checked out at
+    # request start is likely dead by now ("MySQL server has gone away").
+    # rollback() + expire_all() tells SQLAlchemy to discard that dead connection
+    # and check out a fresh one (pool_pre_ping will validate it) for the write.
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    db.session.expire_all()
+
+    try:
+        fresh = db.session.get(Document, doc_id)
+        fresh.ai_summary = result["summary"]
+        fresh.ai_description = result.get("description", "") or ""
+        fresh.ai_summary_model = gemini_model
+        fresh.ai_summarized_at = datetime.utcnow()
+        fresh.ai_summary_status = "done"
+        fresh.ai_summary_error = None
         db.session.commit()
+        # Sync caller's in-memory reference so summarize_json can read attributes
+        doc.ai_summary = fresh.ai_summary
+        doc.ai_description = fresh.ai_description
         return True, None
     except Exception as e:
-        doc.ai_summary_status = "error"
-        doc.ai_summary_error = str(e)
-        db.session.commit()
+        _db_write_error(doc_id, str(e))
         return False, str(e)
 
 
