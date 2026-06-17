@@ -366,11 +366,13 @@
 
 {% block scripts %}
 <script>
-const JOB_ID            = {{ job.id }};
-const JOB_STATUS        = {{ job.status | tojson }};
-const PENDING_PAIRS     = {{ pending_pairs | tojson }};
-const USED_OLD_IDS      = new Set({{ used_old_ids | tojson }});
-const USED_NEW_IDS      = new Set({{ used_new_ids | tojson }});
+const JOB_ID             = {{ job.id }};
+const JOB_STATUS         = {{ job.status | tojson }};
+const PENDING_PAIRS      = {{ pending_pairs | tojson }};
+const USED_OLD_IDS       = new Set({{ used_old_ids | tojson }});
+const USED_NEW_IDS       = new Set({{ used_new_ids | tojson }});
+const PAIR_LOCK_AGE_SECS = {{ pair_lock_age_secs | tojson }};
+const LOCK_TTL           = 90;
 
 const RUN_PAIR_BATCH_URL   = {{ url_for('comparison.run_pair_batch',           job_id=job.id) | tojson }};
 const FINALIZE_PAIR_URL    = {{ url_for('comparison.finalize_pair',            job_id=job.id) | tojson }};
@@ -1143,12 +1145,42 @@ async function pollQueued() {
   setTimeout(pollQueued, 3000);
 }
 
+/* ── Duplicate-worker guard ──────────────────────────────────────────────── */
+function showLockBanner(reloadInSecs) {
+  const panel = document.getElementById('progress-panel');
+  if (!panel) return;
+  let secs = reloadInSecs;
+  const banner = document.createElement('div');
+  banner.id = 'lock-banner';
+  banner.className = 'px-5 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-800 flex items-center justify-between gap-4';
+  banner.innerHTML =
+    `<span>⏳ Przetwarzanie jest aktywne w innej karcie lub oknie. Wznowię automatycznie za <strong id="lock-countdown">${secs}</strong>s...</span>` +
+    `<button onclick="location.reload()" class="shrink-0 px-3 py-1 bg-amber-600 text-white rounded text-xs font-medium hover:bg-amber-700 transition-colors">Odśwież teraz</button>`;
+  panel.insertBefore(banner, panel.firstChild);
+
+  const iv = setInterval(() => {
+    secs--;
+    const el = document.getElementById('lock-countdown');
+    if (el) el.textContent = secs;
+    if (secs <= 0) { clearInterval(iv); location.reload(); }
+  }, 1000);
+}
+
 /* ── Initialisation ─────────────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
   if (PENDING_PAIRS.length > 0 && !['cancelled', 'queued'].includes(JOB_STATUS)) {
     showProgressPanel();
     PENDING_PAIRS.forEach(p => createLivePairCard(p.idx, p.old_name, p.new_name));
-    runPendingPairs();
+
+    const lockIsActive = PAIR_LOCK_AGE_SECS !== null && PAIR_LOCK_AGE_SECS < LOCK_TTL;
+    if (lockIsActive) {
+      // Another Passenger worker is actively processing — don't start a duplicate.
+      // Show a countdown and reload; by then either the pair is done or the lock expired.
+      const waitSecs = Math.max(10, LOCK_TTL - PAIR_LOCK_AGE_SECS + 5);
+      showLockBanner(Math.min(waitSecs, 30));
+    } else {
+      runPendingPairs();
+    }
   }
   if (JOB_STATUS === 'queued') {
     setTimeout(pollQueued, 3000);

@@ -168,6 +168,7 @@ def _migrate_db():
             "file_mappings_json":     "TEXT",
             "per_file_results_json":  "TEXT",
             "edition_summary":        "TEXT",
+            "pair_lock_at":           "DATETIME",
         })
         conn.commit()
 

@@ -269,6 +269,7 @@ def run_pair_batch(job_id):
     if not job.started_at:
         job.started_at = datetime.utcnow()
     job.status = "comparing"
+    job.pair_lock_at = datetime.utcnow()
     pair_prefix = f"Para {pair_idx + 1}/{len(mappings)}"
     job.status_detail = f"{pair_prefix}: ekstrakcja struktury"
     db.session.commit()
@@ -303,6 +304,7 @@ def run_pair_batch(job_id):
 
         def _on_progress(stage):
             job.status_detail = stage
+            job.pair_lock_at = datetime.utcnow()
             try:
                 db.session.commit()
             except Exception:
@@ -380,6 +382,7 @@ def finalize_pair(job_id):
 
     pair_prefix = f"Para {pair_idx + 1}/{len(mappings)}"
     job.status_detail = f"{pair_prefix}: generuję podsumowanie pliku..."
+    job.pair_lock_at = datetime.utcnow()
     db.session.commit()
 
     log.debug("finalize_pair START  job=%d  para=%d  zmian=%d",
@@ -559,6 +562,10 @@ def job_status(job_id):
     used_old_ids = [m["old_doc_id"] for m in all_mappings]
     used_new_ids = [m["new_doc_id"] for m in all_mappings]
 
+    pair_lock_age_secs = None
+    if job.pair_lock_at:
+        pair_lock_age_secs = int((datetime.utcnow() - job.pair_lock_at).total_seconds())
+
     return render_template(
         "comparison/result.html",
         job=job,
@@ -568,6 +575,7 @@ def job_status(job_id):
         pending_pairs=pending_pairs,
         used_old_ids=used_old_ids,
         used_new_ids=used_new_ids,
+        pair_lock_age_secs=pair_lock_age_secs,
     )
 
 
