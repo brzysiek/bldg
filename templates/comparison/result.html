@@ -372,7 +372,7 @@ const PENDING_PAIRS      = {{ pending_pairs | tojson }};
 const USED_OLD_IDS       = new Set({{ used_old_ids | tojson }});
 const USED_NEW_IDS       = new Set({{ used_new_ids | tojson }});
 const PAIR_LOCK_AGE_SECS = {{ pair_lock_age_secs | tojson }};
-const LOCK_TTL           = 90;
+const LOCK_TTL           = 300;
 
 const RUN_PAIR_BATCH_URL   = {{ url_for('comparison.run_pair_batch',           job_id=job.id) | tojson }};
 const FINALIZE_PAIR_URL    = {{ url_for('comparison.finalize_pair',            job_id=job.id) | tojson }};

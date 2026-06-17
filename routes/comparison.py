@@ -283,6 +283,8 @@ def run_pair_batch(job_id):
             doc_old, doc_new, settings
         )
 
+        # Renew lock after structure extraction (can take several minutes for large docs)
+        job.pair_lock_at  = datetime.utcnow()
         job.tokens_input  = (job.tokens_input  or 0) + t_in_struct
         job.tokens_output = (job.tokens_output or 0) + t_out_struct
 
