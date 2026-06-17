@@ -231,7 +231,7 @@
           {% set n_ch   = pfr.get('changes', []) | length %}
           {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
           {% set spfr_idx = pfr.get('pair_idx', loop.index0) %}
-          <div id="static-pair-{{ spfr_idx }}" class="bg-green-50 rounded-xl border border-green-200 overflow-hidden">
+          <div id="static-pair-{{ spfr_idx }}" class="bg-green-50 rounded-xl border border-green-200 border-l-4 border-l-green-500 overflow-hidden">
             <div class="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-green-100/50 transition-colors"
                  onclick="toggleAccordion('pfr-{{ loop.index0 }}')">
               <div class="flex items-center gap-3 min-w-0">
@@ -246,7 +246,7 @@
                 {% if n_crit %}<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">{{ n_crit }} kryt.</span>{% endif %}
                 <span class="px-2 py-0.5 {% if n_ch > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_ch }} zmian</span>
                 <a href="{{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=loop.index0) }}"
-                   class="no-btn px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded-full font-medium hover:bg-lime transition-colors"
+                   class="no-btn px-2 py-0.5 text-white text-xs rounded-full font-medium transition-colors" style="background:#1D6F42" onmouseover="this.style.background='#155230'" onmouseout="this.style.background='#1D6F42'"
                    title="Pobierz XLSX">⬇️ XLSX</a>
                 <a href="{{ url_for('comparison.download_pair_csv', job_id=job.id, pair_idx=loop.index0) }}"
                    class="no-btn px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded-full font-medium hover:bg-lime/20 transition-colors"
@@ -533,7 +533,7 @@ function createLivePairCard(idx, oldName, newName) {
   if (!container || document.getElementById(`pair-${idx}`)) return;
   const div = document.createElement('div');
   div.id = `pair-${idx}`;
-  div.className = 'bg-white rounded-xl border border-gray-100 overflow-hidden transition-colors duration-300';
+  div.className = 'bg-white rounded-xl border border-gray-100 border-l-4 border-l-gray-200 overflow-hidden transition-colors duration-300';
   div.innerHTML =
     `<div class="flex items-center gap-3 px-5 py-3.5">` +
       `<div id="pair-icon-${idx}" class="text-lg shrink-0 text-gray-300">○</div>` +
@@ -547,6 +547,12 @@ function createLivePairCard(idx, oldName, newName) {
     `</div>` +
     `<div id="pair-body-${idx}" class="hidden border-t border-gray-50"></div>`;
   container.appendChild(div);
+}
+
+function _setPairStripe(card, color) {
+  if (!card) return;
+  card.classList.remove('border-l-gray-200','border-l-blue-400','border-l-green-500','border-l-red-500','border-l-gray-300');
+  card.classList.add(color);
 }
 
 function setPairState(idx, state) {
@@ -567,6 +573,7 @@ function setPairState(idx, state) {
       card.classList.remove('border-gray-100');
       card.classList.add('bg-blue-50', 'border-blue-200');
     }
+    _setPairStripe(card, 'border-l-blue-400');
     startPairTimer(idx);
     startPairPoll(idx);
   } else if (state === 'waiting') {
@@ -593,6 +600,7 @@ function setPairDone(idx, data) {
   if (card) {
     card.classList.remove('bg-blue-50', 'border-blue-200', 'border-lime/40', 'border-gray-100');
     card.classList.add('bg-green-50', 'border-green-200');
+    _setPairStripe(card, 'border-l-green-500');
   }
 
   const critBadge = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
@@ -601,7 +609,7 @@ function setPairDone(idx, data) {
   const dlUrl  = pairDownloadUrl(idx);
   const csvUrl = pairCsvUrl(idx);
   badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}` +
-    `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded-full font-medium hover:bg-lime transition-colors" title="XLSX">⬇️ XLSX</a>` +
+    `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 text-white text-xs rounded-full font-medium transition-colors" style="background:#1D6F42" onmouseover="this.style.background='#155230'" onmouseout="this.style.background='#1D6F42'" title="XLSX">⬇️ XLSX</a>` +
     `<a href="${csvUrl}" class="ml-1 px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded-full font-medium hover:bg-lime/20 transition-colors" title="CSV">⬇️ CSV</a>` +
     `<button onclick="rerunPair(${idx}, null)" class="ml-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Regeneruj</button>` +
     `<button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
@@ -631,6 +639,7 @@ function setPairError(idx, msg) {
   if (card) {
     card.classList.remove('bg-blue-50', 'border-blue-200', 'border-lime/40', 'border-gray-100');
     card.classList.add('bg-red-50', 'border-red-200');
+    _setPairStripe(card, 'border-l-red-500');
   }
   badge.innerHTML =
     `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium">Błąd</span>` +
@@ -656,6 +665,7 @@ function setPairSkipped(idx) {
   if (card) {
     card.classList.remove('bg-blue-50', 'border-blue-200', 'border-lime/40', 'border-gray-100');
     card.classList.add('opacity-50');
+    _setPairStripe(card, 'border-l-gray-300');
   }
 }
 

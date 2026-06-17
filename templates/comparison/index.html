@@ -84,7 +84,8 @@
               {% endif %}
               {% if job.status == 'done' %}
                 <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-                   class="no-btn px-2 py-0.5 bg-lime/70 text-bottle rounded-full text-xs font-semibold hover:bg-lime transition-colors">
+                   class="no-btn px-2 py-0.5 text-white rounded-full text-xs font-semibold transition-colors"
+                   style="background:#1D6F42" onmouseover="this.style.background='#155230'" onmouseout="this.style.background='#1D6F42'">
                   ⬇️ XLSX
                 </a>
               {% endif %}

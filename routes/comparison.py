@@ -754,7 +754,13 @@ def skip_pair(job_id):
 _BOTTLE     = "0019A6"
 _WAGA_FILL  = {"KRYTYCZNA": "FFCCCC", "WYSOKA": "FFE5CC", "SREDNIA": "FFFFCC", "NISKA": "E5FFE5"}
 
-_ILLEGAL_XML = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]')
+# XML 1.0 legal: #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD]
+# Strip everything that produces invalid XML inside XLSX (openpyxl writes XML)
+_ILLEGAL_XML = re.compile(
+    u'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f'  # C0 + C1 controls
+    u'﷐-﷯'                            # Unicode non-characters
+    u'￾￿]'                            # BOM / non-characters
+)
 _XL_MAX_LEN  = 32000  # Excel hard limit is 32 767; leave a small buffer
 
 
