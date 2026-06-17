@@ -1,0 +1,132 @@
+import logging
+import os
+
+from flask import (
+    Blueprint, redirect, render_template, request,
+    session, url_for, flash, jsonify,
+)
+
+log = logging.getLogger(__name__)
+
+bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+ALLOWED_DOMAINS = {"bldg.pl", "lukaszbrzyski.com"}
+
+
+def _redirect_uri():
+    uri = os.environ.get("GOOGLE_REDIRECT_URI")
+    if uri:
+        return uri
+    # Fallback: build from request; honour reverse-proxy scheme
+    scheme = "https" if (
+        request.headers.get("X-Forwarded-Proto") == "https"
+        or os.environ.get("FORCE_HTTPS")
+    ) else request.scheme
+    return url_for("auth.callback", _external=True, _scheme=scheme)
+
+
+def _make_flow(state=None):
+    from google_auth_oauthlib.flow import Flow
+    client_config = {
+        "web": {
+            "client_id":     os.environ["GOOGLE_CLIENT_ID"],
+            "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
+            "auth_uri":      "https://accounts.google.com/o/oauth2/auth",
+            "token_uri":     "https://oauth2.googleapis.com/token",
+            "redirect_uris": [_redirect_uri()],
+        }
+    }
+    kwargs = {"state": state} if state else {}
+    return Flow.from_client_config(
+        client_config,
+        scopes=[
+            "openid",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+        ],
+        redirect_uri=_redirect_uri(),
+        **kwargs,
+    )
+
+
+@bp.route("/login")
+def login():
+    if session.get("user_email"):
+        return redirect(url_for("competitions.index"))
+
+    if not os.environ.get("GOOGLE_CLIENT_ID"):
+        return render_template("auth/login.html", unconfigured=True)
+
+    flow = _make_flow()
+    auth_url, state = flow.authorization_url(
+        access_type="offline",
+        prompt="select_account",
+    )
+    session["oauth_state"] = state
+    return redirect(auth_url)
+
+
+@bp.route("/callback")
+def callback():
+    state = session.get("oauth_state")
+    if not state:
+        flash("Nieprawidłowa sesja OAuth — spróbuj ponownie.", "error")
+        return redirect(url_for("auth.login"))
+
+    try:
+        flow = _make_flow(state=state)
+        # On cPanel behind HTTPS proxy the redirect URL may arrive as http://
+        auth_response = request.url
+        if request.headers.get("X-Forwarded-Proto") == "https" or os.environ.get("FORCE_HTTPS"):
+            auth_response = auth_response.replace("http://", "https://", 1)
+        flow.fetch_token(authorization_response=auth_response)
+        credentials = flow.credentials
+    except Exception as exc:
+        log.error("OAuth callback błąd: %s", exc, exc_info=True)
+        flash(f"Błąd logowania Google: {exc}", "error")
+        return redirect(url_for("auth.login"))
+
+    import requests as _http
+    try:
+        r = _http.get(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {credentials.token}"},
+            timeout=10,
+        )
+        r.raise_for_status()
+        info = r.json()
+    except Exception as exc:
+        log.error("Userinfo fetch błąd: %s", exc)
+        flash("Nie udało się pobrać danych konta Google.", "error")
+        return redirect(url_for("auth.login"))
+
+    email  = info.get("email", "")
+    domain = email.split("@")[-1].lower() if "@" in email else ""
+
+    if domain not in ALLOWED_DOMAINS:
+        log.warning("Zablokowana próba logowania: %s (domena %s)", email, domain)
+        flash(
+            f"Dostęp tylko dla kont @bldg.pl i @lukaszbrzyski.com. "
+            f"Zalogowano jako: {email}",
+            "error",
+        )
+        return redirect(url_for("auth.login"))
+
+    session.permanent = True
+    session["user_email"]   = email
+    session["user_name"]    = info.get("name", email)
+    session["user_picture"] = info.get("picture", "")
+    session.pop("oauth_state", None)
+
+    log.info("Zalogowano: %s", email)
+
+    next_url = session.pop("next_url", None)
+    return redirect(next_url or url_for("competitions.index"))
+
+
+@bp.route("/logout")
+def logout():
+    email = session.get("user_email", "—")
+    session.clear()
+    log.info("Wylogowano: %s", email)
+    return redirect(url_for("auth.login"))

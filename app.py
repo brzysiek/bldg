@@ -4,7 +4,7 @@ import threading
 import time as _time
 from collections import deque
 from datetime import datetime, timedelta
-from flask import Flask, render_template, jsonify, request as _req
+from flask import Flask, render_template, jsonify, request as _req, session, redirect, url_for
 from extensions import db
 from sqlalchemy import text, inspect as sa_inspect
 from dotenv import load_dotenv
@@ -302,19 +302,41 @@ def create_app():
 
     db.init_app(app)
 
+    from datetime import timedelta as _td
+    app.permanent_session_lifetime = _td(days=30)
+
+    # Allow http:// during local dev when OAUTHLIB_INSECURE_TRANSPORT is set
+    if os.environ.get("OAUTHLIB_INSECURE_TRANSPORT"):
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+
     from routes.competitions import bp as comp_bp
     from routes.editions import bp as ed_bp
     from routes.files import bp as files_bp
     from routes.settings import bp as settings_bp
     from routes.comparison import bp as comparison_bp
     from routes.placeholders import bp as placeholders_bp
+    from routes.auth import bp as auth_bp
 
+    app.register_blueprint(auth_bp)
     app.register_blueprint(comp_bp)
     app.register_blueprint(ed_bp)
     app.register_blueprint(files_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(comparison_bp)
     app.register_blueprint(placeholders_bp)
+
+    _AUTH_SKIP = {"auth.login", "auth.callback", "auth.logout", "static"}
+
+    @app.before_request
+    def require_login():
+        endpoint = _req.endpoint
+        if not endpoint or endpoint in _AUTH_SKIP:
+            return
+        if not session.get("user_email"):
+            if _req.is_json or _req.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return jsonify({"ok": False, "error": "Wymagane logowanie", "login_required": True}), 401
+            session["next_url"] = _req.url
+            return redirect(url_for("auth.login"))
 
     @app.route("/logs")
     def logs_page():
