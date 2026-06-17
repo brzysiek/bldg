@@ -283,6 +283,25 @@ function _fileLabel(f) {
   return f.description ? `${prefix}${f.description} (${f.name})` : `${prefix}${f.name}`;
 }
 
+function _appendFileOptions(sel, files, usedIds) {
+  const withDesc    = files.filter(f => f.description && !usedIds.has(String(f.id)));
+  const withoutDesc = files.filter(f => !f.description && !usedIds.has(String(f.id)));
+
+  if (withDesc.length > 0 && withoutDesc.length > 0) {
+    const grpA = document.createElement('optgroup');
+    grpA.label = 'Z opisem AI';
+    withDesc.forEach(f => grpA.appendChild(new Option(_fileLabel(f), String(f.id))));
+    sel.appendChild(grpA);
+
+    const grpB = document.createElement('optgroup');
+    grpB.label = 'Pozostałe';
+    withoutDesc.forEach(f => grpB.appendChild(new Option(_fileLabel(f), String(f.id))));
+    sel.appendChild(grpB);
+  } else {
+    [...withDesc, ...withoutDesc].forEach(f => sel.appendChild(new Option(_fileLabel(f), String(f.id))));
+  }
+}
+
 function renderSelects() {
   const usedNewIds = new Set(pairs.map(p => String(p.new_id)));
   const usedOldIds = new Set(pairs.map(p => String(p.old_id)));
@@ -294,15 +313,11 @@ function renderSelects() {
   const newName = document.getElementById('lbl-new-file').textContent;
 
   oldSel.innerHTML = `<option value="">— wybierz plik z: ${oldName} —</option>`;
-  filesOld.filter(f => !usedOldIds.has(String(f.id))).forEach(f => {
-    oldSel.appendChild(new Option(_fileLabel(f), String(f.id)));
-  });
+  _appendFileOptions(oldSel, filesOld, usedOldIds);
   if (prevOld && !usedOldIds.has(prevOld)) oldSel.value = prevOld;
 
   newSel.innerHTML = `<option value="">— wybierz plik z: ${newName} —</option>`;
-  filesNew.filter(f => !usedNewIds.has(String(f.id))).forEach(f => {
-    newSel.appendChild(new Option(_fileLabel(f), String(f.id)));
-  });
+  _appendFileOptions(newSel, filesNew, usedNewIds);
   if (prevNew && !usedNewIds.has(prevNew)) newSel.value = prevNew;
 }
 
