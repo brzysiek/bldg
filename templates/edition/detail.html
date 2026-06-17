@@ -80,7 +80,7 @@
 
 <!-- Documents -->
 <div class="flex items-center justify-between mb-3">
-  <h2 class="font-semibold text-slate-text">Dokumenty ({{ all_docs | length }})</h2>
+  <h2 class="font-semibold text-slate-text">Dokumenty (<span id="visible-count">{{ all_docs | length }}</span>)</h2>
   <div class="flex items-center gap-2">
     {% if not has_gemini %}
       <span class="text-xs text-yellow-700 bg-yellow-50 border border-yellow-100 px-2 py-1 rounded">
@@ -99,6 +99,16 @@
     </a>
   </div>
 </div>
+
+{% if unique_exts | length > 1 %}
+<div class="flex items-center gap-1.5 flex-wrap mb-3">
+  <span class="text-xs text-slate-text/50 mr-1">Typ:</span>
+  <button class="ext-filter px-2.5 py-1 rounded-full text-xs font-medium bg-bottle text-white transition-colors" data-ext="">Wszystkie</button>
+  {% for ext in unique_exts %}
+  <button class="ext-filter px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-slate-text hover:bg-gray-200 transition-colors" data-ext="{{ ext }}">{{ ext }}</button>
+  {% endfor %}
+</div>
+{% endif %}
 
 <!-- Bulk progress bar (hidden until bulk summarize starts) -->
 <div id="bulk-progress" class="hidden mb-4 bg-white rounded-xl border border-gray-100 px-5 py-4">
@@ -132,7 +142,8 @@
         </thead>
         <tbody class="divide-y divide-gray-50">
           {% for doc in all_docs %}
-            <tr id="doc-row-{{ doc.id }}" class="hover:bg-gray-50/50 transition-colors">
+            {%- set row_ext = doc.original_name.rsplit('.', 1)[-1].upper() if '.' in doc.original_name else '?' -%}
+            <tr id="doc-row-{{ doc.id }}" data-ext="{{ row_ext }}" class="hover:bg-gray-50/50 transition-colors">
               <td class="px-3 py-3">
                 <input type="checkbox"
                        class="doc-cb rounded border-gray-300 text-bottle focus:ring-bottle/30 cursor-pointer
@@ -284,20 +295,59 @@ function closeSummary() {
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSummary(); });
 
+/* ── Type filter ── */
+let _activeExt = '';
+const _totalDocs = {{ all_docs | length }};
+
+document.querySelectorAll('.ext-filter').forEach(btn => {
+  btn.addEventListener('click', () => {
+    _activeExt = btn.dataset.ext;
+    document.querySelectorAll('.ext-filter').forEach(b => {
+      const active = b === btn;
+      b.classList.toggle('bg-bottle',    active);
+      b.classList.toggle('text-white',   active);
+      b.classList.toggle('bg-gray-100',  !active);
+      b.classList.toggle('text-slate-text', !active);
+    });
+    let visible = 0;
+    document.querySelectorAll('tbody tr[data-ext]').forEach(row => {
+      const show = !_activeExt || row.dataset.ext === _activeExt;
+      row.classList.toggle('hidden', !show);
+      if (!show) {
+        const cb = row.querySelector('.doc-cb');
+        if (cb) cb.checked = false;
+      } else {
+        visible++;
+      }
+    });
+    const vc = document.getElementById('visible-count');
+    if (vc) vc.textContent = _activeExt ? `${visible} / ${_totalDocs}` : _totalDocs;
+    updateBulkBtn();
+  });
+});
+
 /* ── Bulk summarize ── */
+function _visibleRows() {
+  return document.querySelectorAll('tbody tr[data-ext]:not(.hidden)');
+}
+
 function toggleAll(el) {
-  document.querySelectorAll('.doc-cb:not(:disabled)').forEach(cb => { cb.checked = el.checked; });
+  _visibleRows().forEach(row => {
+    const cb = row.querySelector('.doc-cb:not(:disabled)');
+    if (cb) cb.checked = el.checked;
+  });
   updateBulkBtn();
 }
 
 function updateBulkBtn() {
-  const n = document.querySelectorAll('.doc-cb:checked').length;
+  const checked = document.querySelectorAll('tbody tr[data-ext]:not(.hidden) .doc-cb:checked');
+  const n = checked.length;
   const btn = document.getElementById('btn-bulk');
   if (!btn) return;
   document.getElementById('sel-count').textContent = n;
   btn.classList.toggle('hidden', n === 0);
-  const allCbs = document.querySelectorAll('.doc-cb:not(:disabled)');
-  const allChecked = allCbs.length > 0 && document.querySelectorAll('.doc-cb:not(:disabled):checked').length === allCbs.length;
+  const visibleEnabled = document.querySelectorAll('tbody tr[data-ext]:not(.hidden) .doc-cb:not(:disabled)');
+  const allChecked = visibleEnabled.length > 0 && [...visibleEnabled].every(cb => cb.checked);
   document.getElementById('check-all').checked = allChecked;
 }
 

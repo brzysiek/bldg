@@ -67,6 +67,14 @@ def detail(c_slug, e_slug):
     settings = AppSettings.query.first()
     has_gemini = bool(settings and settings.gemini_api_key)
     all_docs = sorted(edition.documents, key=lambda d: d.uploaded_at or datetime.min, reverse=True)
+    seen_exts: set = set()
+    unique_exts: list = []
+    for doc in all_docs:
+        ext = doc.original_name.rsplit('.', 1)[-1].upper() if '.' in doc.original_name else '?'
+        if ext not in seen_exts:
+            seen_exts.add(ext)
+            unique_exts.append(ext)
+    unique_exts.sort()
     return render_template(
         "edition/detail.html",
         competition=competition,
@@ -74,6 +82,7 @@ def detail(c_slug, e_slug):
         has_gemini=has_gemini,
         has_drive=_has_drive(settings),
         all_docs=all_docs,
+        unique_exts=unique_exts,
         settings=settings,
     )
 
