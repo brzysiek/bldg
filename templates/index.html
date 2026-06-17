@@ -13,48 +13,55 @@
 </div>
 
 {% if competitions %}
-  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-    {% for c in competitions %}
-      <a href="{{ url_for('competitions.detail', slug=c.slug) }}"
-         class="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md hover:border-lime/50 transition-all group block">
-        <div class="flex items-start justify-between mb-3">
-          <div class="flex-1 min-w-0">
-            <h2 class="font-semibold text-bottle text-base leading-tight group-hover:text-bottle/80 truncate">{{ c.name }}</h2>
-            {% if c.program %}
-              <span class="inline-block mt-1.5 px-2 py-0.5 bg-bottle/10 text-bottle text-xs font-medium rounded-full">{{ c.program }}</span>
-            {% endif %}
-          </div>
-          <div class="ml-3 text-2xl">📋</div>
-        </div>
-        {% if c.description %}
-          <p class="text-slate-text/70 text-sm mb-3 line-clamp-2">{{ c.description }}</p>
-        {% endif %}
-        <div class="pt-3 border-t border-gray-50">
-          {% if c.editions %}
-            {% set eds = c.editions | sort(attribute='year', reverse=True) %}
-            <div class="flex flex-col gap-0.5 mb-2">
-              {% for e in eds[:6] %}
-                <div class="flex items-center gap-1.5 text-xs">
-                  <span class="w-1.5 h-1.5 rounded-full bg-bottle/30 shrink-0"></span>
-                  <span class="text-bottle font-medium">{{ e.name }}</span>
-                  {% if e.year %}<span class="text-slate-text/35">({{ e.year }})</span>{% endif %}
-                </div>
-              {% endfor %}
-              {% if eds | length > 6 %}
-                <div class="text-xs text-slate-text/40 pl-3">+{{ (eds | length) - 6 }} więcej</div>
-              {% endif %}
+  {% for program, group in competitions | groupby('program') %}
+    <div class="mb-8">
+      <div class="flex items-center gap-3 mb-3 px-1">
+        <h2 class="text-sm font-bold text-bottle uppercase tracking-wide shrink-0">
+          {{ program or '— bez programu —' }}
+        </h2>
+        <div class="flex-1 h-px bg-bottle/15"></div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+        {% for c in group %}
+          <a href="{{ url_for('competitions.detail', slug=c.slug) }}"
+             class="bg-white rounded-xl border border-gray-100 p-5 hover:shadow-md hover:border-lime/50 transition-all group block">
+            <div class="flex items-start justify-between mb-3">
+              <div class="flex-1 min-w-0">
+                <h2 class="font-semibold text-bottle text-base leading-tight group-hover:text-bottle/80 truncate">{{ c.name }}</h2>
+              </div>
+              <div class="ml-3 text-2xl">📋</div>
             </div>
-          {% else %}
-            <p class="text-xs text-slate-text/35 mb-2">Brak edycji</p>
-          {% endif %}
-          <div class="flex items-center justify-between text-xs text-slate-text/40">
-            <span>{{ c.editions | length }} edycj{% if c.editions | length == 1 %}a{% elif c.editions | length in [2,3,4] %}e{% else %}i{% endif %}</span>
-            <span class="text-bottle/60 font-semibold">Szczegóły →</span>
-          </div>
-        </div>
-      </a>
-    {% endfor %}
-  </div>
+            {% if c.description %}
+              <p class="text-slate-text/70 text-sm mb-3 line-clamp-2">{{ c.description }}</p>
+            {% endif %}
+            <div class="pt-3 border-t border-gray-50">
+              {% if c.editions %}
+                {% set eds = c.editions | sort(attribute='year', reverse=True) %}
+                <div class="flex flex-col gap-0.5 mb-2">
+                  {% for e in eds[:6] %}
+                    <div class="flex items-center gap-1.5 text-xs">
+                      <span class="w-1.5 h-1.5 rounded-full bg-bottle/30 shrink-0"></span>
+                      <span class="text-bottle font-medium">{{ e.name }}</span>
+                      {% if e.year %}<span class="text-slate-text/35">({{ e.year }})</span>{% endif %}
+                    </div>
+                  {% endfor %}
+                  {% if eds | length > 6 %}
+                    <div class="text-xs text-slate-text/40 pl-3">+{{ (eds | length) - 6 }} więcej</div>
+                  {% endif %}
+                </div>
+              {% else %}
+                <p class="text-xs text-slate-text/35 mb-2">Brak edycji</p>
+              {% endif %}
+              <div class="flex items-center justify-between text-xs text-slate-text/40">
+                <span>{{ c.editions | length }} edycj{% if c.editions | length == 1 %}a{% elif c.editions | length in [2,3,4] %}e{% else %}i{% endif %}</span>
+                <span class="text-bottle/60 font-semibold">Szczegóły →</span>
+              </div>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
 {% else %}
   <div class="bg-white rounded-xl border border-dashed border-gray-200 p-12 text-center">
     <div class="text-5xl mb-4">📁</div>
