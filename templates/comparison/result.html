@@ -1073,6 +1073,31 @@ async function generateSummary() {
 }
 
 /* ── Add pair form ───────────────────────────────────────────────────────── */
+function _addPairFileLabel(f) {
+  const prefix = f.from_gdrive ? '☁️ ' : '';
+  return f.description ? `${prefix}${f.description} (${f.name})` : `${prefix}${f.name}`;
+}
+
+function _addPairAppendOptions(sel, files, placeholder) {
+  sel.innerHTML = '';
+  sel.appendChild(new Option(placeholder, ''));
+  const byName = (a, b) => a.name.localeCompare(b.name, 'pl', {sensitivity: 'base'});
+  const withDesc    = files.filter(f => f.description).sort(byName);
+  const withoutDesc = files.filter(f => !f.description).sort(byName);
+  if (withDesc.length > 0) {
+    const grp = document.createElement('optgroup');
+    grp.label = 'Z opisem AI';
+    withDesc.forEach(f => grp.appendChild(new Option(_addPairFileLabel(f), f.id)));
+    sel.appendChild(grp);
+  }
+  if (withoutDesc.length > 0) {
+    const grp = document.createElement('optgroup');
+    grp.label = withDesc.length > 0 ? 'Pozostałe (bez opisu)' : '';
+    withoutDesc.forEach(f => grp.appendChild(new Option(_addPairFileLabel(f), f.id)));
+    sel.appendChild(grp);
+  }
+}
+
 async function loadAddPairFiles() {
   if (!ED_OLD_FILES_URL || !ED_NEW_FILES_URL) return;
 
@@ -1100,12 +1125,16 @@ async function loadAddPairFiles() {
     const avOld = oldFiles.filter(f => !USED_OLD_IDS.has(f.id));
     const avNew = newFiles.filter(f => !USED_NEW_IDS.has(f.id));
 
-    selOld.innerHTML = avOld.length
-      ? '<option value="">— wybierz plik starszej edycji —</option>' + avOld.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('')
-      : '<option value="">— brak dostępnych plików —</option>';
-    selNew.innerHTML = avNew.length
-      ? '<option value="">— wybierz plik nowszej edycji —</option>' + avNew.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('')
-      : '<option value="">— brak dostępnych plików —</option>';
+    if (avOld.length > 0) {
+      _addPairAppendOptions(selOld, avOld, '— wybierz plik starszej edycji —');
+    } else {
+      selOld.innerHTML = '<option value="">— brak dostępnych plików —</option>';
+    }
+    if (avNew.length > 0) {
+      _addPairAppendOptions(selNew, avNew, '— wybierz plik nowszej edycji —');
+    } else {
+      selNew.innerHTML = '<option value="">— brak dostępnych plików —</option>';
+    }
 
     const msg = document.getElementById('add-pair-msg');
     if (avOld.length === 0 || avNew.length === 0) {
