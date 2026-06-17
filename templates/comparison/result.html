@@ -527,7 +527,7 @@ function setPairState(idx, state) {
     icon.className = 'text-lg shrink-0';
     badge.innerHTML =
       `<span class="text-xs text-slate-text/40 animate-pulse">analizuję...</span>` +
-      `<span id="pair-stage-${idx}" class="ml-2 text-xs text-slate-text/40 italic truncate max-w-[220px]"></span>` +
+      `<span id="pair-stage-${idx}" class="ml-2 text-xs text-slate-text/40 italic"></span>` +
       `<span id="pair-timer-${idx}" class="ml-2 text-xs font-mono text-slate-text/30 tabular-nums">0:00</span>`;
     if (body) body.classList.add('hidden');
     if (card) card.classList.add('border-lime/40');

@@ -295,21 +295,14 @@ def run_pair_batch(job_id):
         sekcje_old = struct_old.get("sekcje", {})
         sekcje_new = struct_new.get("sekcje", {})
 
-        job.status_detail = (
-            f"{pair_prefix}: sekcja {section_offset + 1}/{sections_total}"
-            f" (batch {batch_num}/{total_batches})"
-        )
+        pct_start = round(section_offset / sections_total * 100) if sections_total > 0 else 0
+        job.status_detail = f"sekcja {section_offset + 1}/{sections_total} ({pct_start}%)"
         db.session.commit()
 
         call_fn, batch_tokens = make_gemini_caller(settings)
 
         def _on_progress(stage):
-            # stage = "sekcja i/n: tytuł" from compare_sections_batch
-            # prefix it with batch info for the polling view
-            job.status_detail = (
-                f"{pair_prefix}: {stage}"
-                f" (batch {batch_num}/{total_batches})"
-            )
+            job.status_detail = stage
             try:
                 db.session.commit()
             except Exception:
@@ -319,6 +312,8 @@ def run_pair_batch(job_id):
             sekcje_old, sekcje_new, batch_keys,
             job.label_old, job.label_new,
             call_fn, settings, _on_progress,
+            section_offset=section_offset,
+            sections_total=sections_total,
         )
 
         job.tokens_input  = (job.tokens_input  or 0) + batch_tokens["in"]

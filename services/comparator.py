@@ -524,14 +524,17 @@ def get_pair_structures(doc_old, doc_new, settings):
 
 def compare_sections_batch(sekcje_old, sekcje_new, section_keys,
                             label_old, label_new, call_gemini, settings,
-                            on_progress=None):
+                            on_progress=None, section_offset=0, sections_total=None):
     """Process the given section keys and return a list of changes."""
     changes = []
     n = len(section_keys)
+    total = sections_total if sections_total is not None else n
     for i, sekcja in enumerate(section_keys, 1):
         if on_progress:
+            global_i = section_offset + i
+            pct = round(global_i / total * 100) if total > 0 else 0
             try:
-                on_progress(f"sekcja {i}/{n}: {sekcja[:50]}")
+                on_progress(f"sekcja {global_i}/{total} ({pct}%) {sekcja}")
             except Exception:
                 pass
 
