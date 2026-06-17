@@ -38,6 +38,26 @@ load_dotenv()
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
+# Bump when adding new _migrate_db() columns. Workers skip migration checks when
+# the cached version matches, avoiding 5+ slow Inspector queries on cold start.
+_SCHEMA_VERSION = "12"
+_SCHEMA_CACHE_FILE = os.path.join(BASE_DIR, "_schema_version.txt")
+
+
+def _schema_up_to_date() -> bool:
+    try:
+        return open(_SCHEMA_CACHE_FILE).read().strip() == _SCHEMA_VERSION
+    except OSError:
+        return False
+
+
+def _mark_schema_current():
+    try:
+        with open(_SCHEMA_CACHE_FILE, "w") as f:
+            f.write(_SCHEMA_VERSION)
+    except OSError:
+        pass
+
 _MYSQL_COL_TYPES = {
     "TEXT":     "TEXT",
     "DATETIME": "DATETIME",
@@ -378,11 +398,12 @@ def create_app():
 
     with app.app_context():
         db.create_all()
-        _migrate_db()
+        if not _schema_up_to_date():
+            _migrate_db()
+            _mark_schema_current()
         from seed import run_seed
         run_seed()
         _seed_comparison_prompts()
-        # Sweep any jobs left hanging from previous server run
         timeout_minutes = float(os.environ.get("COMPARISON_TIMEOUT_MINUTES", "60"))
         _cleanup_stale_jobs(timeout_minutes)
 

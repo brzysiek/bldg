@@ -29,9 +29,26 @@
         {% if c.description %}
           <p class="text-slate-text/70 text-sm mb-3 line-clamp-2">{{ c.description }}</p>
         {% endif %}
-        <div class="flex items-center justify-between text-xs text-slate-text/50 pt-3 border-t border-gray-50">
-          <span>{{ c.editions | length }} edycj{% if c.editions | length == 1 %}a{% elif c.editions | length in [2,3,4] %}e{% else %}i{% endif %}</span>
-          <span class="text-lime font-semibold text-xs">Szczegóły →</span>
+        <div class="pt-3 border-t border-gray-50">
+          {% if c.editions %}
+            {% set eds = c.editions | sort(attribute='year', reverse=True) %}
+            <div class="flex flex-wrap gap-1 mb-2">
+              {% for e in eds[:5] %}
+                <span class="px-1.5 py-0.5 bg-bottle/8 text-bottle text-xs rounded-md font-medium leading-tight">
+                  {{- e.name -}}{% if e.year %}<span class="text-bottle/50 ml-0.5 font-normal">({{ e.year }})</span>{% endif %}
+                </span>
+              {% endfor %}
+              {% if eds | length > 5 %}
+                <span class="px-1.5 py-0.5 text-slate-text/40 text-xs leading-tight">+{{ (eds | length) - 5 }} więcej</span>
+              {% endif %}
+            </div>
+          {% else %}
+            <p class="text-xs text-slate-text/35 mb-2">Brak edycji</p>
+          {% endif %}
+          <div class="flex items-center justify-between text-xs text-slate-text/40">
+            <span>{{ c.editions | length }} edycj{% if c.editions | length == 1 %}a{% elif c.editions | length in [2,3,4] %}e{% else %}i{% endif %}</span>
+            <span class="text-bottle/60 font-semibold">Szczegóły →</span>
+          </div>
         </div>
       </a>
     {% endfor %}
