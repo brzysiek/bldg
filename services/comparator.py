@@ -388,6 +388,13 @@ def _get_structure_cached(doc, text, call_gemini, settings):
         log.info("Ekstrakcja zapisana do cache: %s", doc.original_name)
     except Exception as e:
         log.warning("Zapis cache ekstrakcji nieudany (%s): %s", doc.original_name, e)
+        # MySQL może zamknąć połączenie podczas długiego wywołania Gemini (wait_timeout).
+        # Rollback przywraca sesję do czystego stanu — bez tego wszystkie kolejne
+        # db.session.commit() w route handlerze failują z PendingRollbackError.
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
     return structure
 

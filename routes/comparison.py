@@ -27,6 +27,31 @@ from services.comparator import (
 
 bp = Blueprint("comparison", __name__, url_prefix="/comparison")
 
+
+def _safe_commit():
+    """Commit, recovering automatically if the session is in PendingRollbackError state.
+
+    MySQL closes idle connections during long Gemini API calls (wait_timeout).
+    The resulting OperationalError (2006) leaves the SQLAlchemy session in
+    PendingRollbackError state. This helper rolls back first if needed so the
+    route handler can write the final job state even after a broken-pipe event.
+    """
+    from sqlalchemy.exc import PendingRollbackError, OperationalError
+    try:
+        db.session.commit()
+    except PendingRollbackError:
+        log.warning("_safe_commit: PendingRollbackError — rollback i próba ponowna")
+        db.session.rollback()
+        db.session.commit()
+    except OperationalError as exc:
+        if "2006" in str(exc) or "gone away" in str(exc).lower():
+            log.warning("_safe_commit: MySQL gone away — rollback i próba ponowna")
+            db.session.rollback()
+            db.session.commit()
+        else:
+            raise
+
+
 PRICING = {
     "gemini-2.5-flash":      {"input": 0.30,  "output": 2.50},
     "gemini-2.5-pro":        {"input": 1.25,  "output": 10.00},
@@ -285,7 +310,7 @@ def run_pair_batch(job_id):
 
         pct_start = round(section_offset / sections_total * 100) if sections_total > 0 else 0
         job.status_detail = f"sekcja {section_offset + 1}/{sections_total} ({pct_start}%)"
-        db.session.commit()
+        _safe_commit()
 
         call_fn, batch_tokens = make_gemini_caller(settings)
 
@@ -295,7 +320,10 @@ def run_pair_batch(job_id):
             try:
                 db.session.commit()
             except Exception:
-                pass
+                try:
+                    db.session.rollback()
+                except Exception:
+                    pass
 
         changes_batch = compare_sections_batch(
             sekcje_old, sekcje_new, batch_keys,
@@ -317,7 +345,7 @@ def run_pair_batch(job_id):
                   job_id, pair_idx + 1, section_offset, next_offset, sections_total,
                   batch_num, total_batches, len(changes_batch), done)
 
-        db.session.commit()
+        _safe_commit()
 
         return jsonify({
             "ok":            True,
