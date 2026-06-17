@@ -283,22 +283,27 @@ function _fileLabel(f) {
   return f.description ? `${prefix}${f.description} (${f.name})` : `${prefix}${f.name}`;
 }
 
+function _byName(a, b) {
+  return a.name.localeCompare(b.name, 'pl', {sensitivity: 'base'});
+}
+
 function _appendFileOptions(sel, files, usedIds) {
-  const withDesc    = files.filter(f => f.description && !usedIds.has(String(f.id)));
-  const withoutDesc = files.filter(f => !f.description && !usedIds.has(String(f.id)));
+  const available   = files.filter(f => !usedIds.has(String(f.id)));
+  const withDesc    = available.filter(f => f.description).sort(_byName);
+  const withoutDesc = available.filter(f => !f.description).sort(_byName);
 
-  if (withDesc.length > 0 && withoutDesc.length > 0) {
-    const grpA = document.createElement('optgroup');
-    grpA.label = 'Z opisem AI';
-    withDesc.forEach(f => grpA.appendChild(new Option(_fileLabel(f), String(f.id))));
-    sel.appendChild(grpA);
+  if (withDesc.length > 0) {
+    const grp = document.createElement('optgroup');
+    grp.label = 'Z opisem AI';
+    withDesc.forEach(f => grp.appendChild(new Option(_fileLabel(f), String(f.id))));
+    sel.appendChild(grp);
+  }
 
-    const grpB = document.createElement('optgroup');
-    grpB.label = 'Pozostałe';
-    withoutDesc.forEach(f => grpB.appendChild(new Option(_fileLabel(f), String(f.id))));
-    sel.appendChild(grpB);
-  } else {
-    [...withDesc, ...withoutDesc].forEach(f => sel.appendChild(new Option(_fileLabel(f), String(f.id))));
+  if (withoutDesc.length > 0) {
+    const grp = document.createElement('optgroup');
+    grp.label = withDesc.length > 0 ? 'Pozostałe (bez opisu)' : '';
+    withoutDesc.forEach(f => grp.appendChild(new Option(_fileLabel(f), String(f.id))));
+    sel.appendChild(grp);
   }
 }
 
