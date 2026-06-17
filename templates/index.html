@@ -32,14 +32,16 @@
         <div class="pt-3 border-t border-gray-50">
           {% if c.editions %}
             {% set eds = c.editions | sort(attribute='year', reverse=True) %}
-            <div class="flex flex-wrap gap-1 mb-2">
-              {% for e in eds[:5] %}
-                <span class="px-1.5 py-0.5 bg-bottle/8 text-bottle text-xs rounded-md font-medium leading-tight">
-                  {{- e.name -}}{% if e.year %}<span class="text-bottle/50 ml-0.5 font-normal">({{ e.year }})</span>{% endif %}
-                </span>
+            <div class="flex flex-col gap-0.5 mb-2">
+              {% for e in eds[:6] %}
+                <div class="flex items-center gap-1.5 text-xs">
+                  <span class="w-1.5 h-1.5 rounded-full bg-bottle/30 shrink-0"></span>
+                  <span class="text-bottle font-medium">{{ e.name }}</span>
+                  {% if e.year %}<span class="text-slate-text/35">({{ e.year }})</span>{% endif %}
+                </div>
               {% endfor %}
-              {% if eds | length > 5 %}
-                <span class="px-1.5 py-0.5 text-slate-text/40 text-xs leading-tight">+{{ (eds | length) - 5 }} więcej</span>
+              {% if eds | length > 6 %}
+                <div class="text-xs text-slate-text/40 pl-3">+{{ (eds | length) - 6 }} więcej</div>
               {% endif %}
             </div>
           {% else %}
