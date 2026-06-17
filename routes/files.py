@@ -100,16 +100,12 @@ def _run_summarize(doc, settings):
     _tmp_dir = None
 
     if doc.gdrive_file_id:
-        if not settings.google_drive_api_key and not settings.google_access_token:
+        if not settings.google_drive_api_key:
             return False, "Brak klucza Drive API — nie można pobrać pliku do analizy"
         try:
             _tmp_dir = tempfile.mkdtemp()
-            if settings.google_access_token:
-                from services.google_drive import download_file
-                local_path = download_file(doc.gdrive_file_id, doc.original_name, doc.mime_type or "application/pdf", _tmp_dir, settings)
-            else:
-                from services.google_drive import download_file_public
-                local_path = download_file_public(doc.gdrive_file_id, doc.original_name, doc.mime_type or "application/pdf", _tmp_dir, settings.google_drive_api_key)
+            from services.google_drive import download_file
+            local_path = download_file(doc.gdrive_file_id, doc.original_name, doc.mime_type or "application/pdf", _tmp_dir, settings.google_drive_api_key)
         except Exception as e:
             return False, f"Błąd pobierania z Drive: {e}"
 

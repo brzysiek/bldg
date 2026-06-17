@@ -96,16 +96,13 @@ def _build_stage_data(settings):
 
 @bp.route("/settings")
 def index():
-    import os
     settings = _get_or_create_settings()
-    redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
     history = get_all_prompt_histories(PROMPT_KEYS)
     stage_data = _build_stage_data(settings)
     return render_template(
         "settings/index.html",
         settings=settings,
         test_result=None,
-        google_redirect_uri=redirect_uri,
         history=history,
         stage_data=stage_data,
     )
@@ -290,40 +287,31 @@ def gemini_models():
         return jsonify({"error": str(e), "models": []})
 
 
-@bp.route("/settings/save-google-oauth", methods=["POST"])
-def save_google_oauth():
+@bp.route("/settings/save-google-drive", methods=["POST"])
+def save_google_drive():
     settings = _get_or_create_settings()
-    drive_api_key = request.form.get("google_drive_api_key", "").strip()
-    client_id = request.form.get("google_oauth_client_id", "").strip()
-    client_secret = request.form.get("google_oauth_client_secret", "").strip()
-    if drive_api_key:
-        settings.google_drive_api_key = drive_api_key
-    if client_id:
-        settings.google_oauth_client_id = client_id
-    if client_secret:
-        settings.google_oauth_client_secret = client_secret
+    api_key = request.form.get("google_drive_api_key", "").strip()
+    if api_key:
+        settings.google_drive_api_key = api_key
     settings.updated_at = datetime.utcnow()
     db.session.commit()
-    flash("Ustawienia Google Drive zapisane.", "success")
+    flash("Klucz Drive API zapisany.", "success")
     return redirect(url_for("settings.index", tab="integracje"))
 
 
 @bp.route("/settings/test", methods=["POST"])
 def test():
-    import os
     settings = _get_or_create_settings()
     if not settings.gemini_api_key:
         flash("Najpierw zapisz klucz Gemini API.", "warning")
         return redirect(url_for("settings.index"))
     result = test_connection(settings.gemini_api_key, settings.gemini_model)
-    redirect_uri = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
     history = get_all_prompt_histories(PROMPT_KEYS)
     stage_data = _build_stage_data(settings)
     return render_template(
         "settings/index.html",
         settings=settings,
         test_result=result,
-        google_redirect_uri=redirect_uri,
         history=history,
         stage_data=stage_data,
     )

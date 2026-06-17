@@ -56,13 +56,8 @@ def new(c_slug):
     return render_template("edition/form.html", competition=competition, edition=None)
 
 
-def _gdrive_mode(settings) -> str:
-    """Returns 'oauth', 'public', or 'none'."""
-    if settings and settings.google_access_token:
-        return "oauth"
-    if settings and settings.google_drive_api_key:
-        return "public"
-    return "none"
+def _has_drive(settings) -> bool:
+    return bool(settings and settings.google_drive_api_key)
 
 
 @bp.route("/competition/<c_slug>/edition/<e_slug>")
@@ -77,7 +72,7 @@ def detail(c_slug, e_slug):
         competition=competition,
         edition=edition,
         has_gemini=has_gemini,
-        gdrive_mode=_gdrive_mode(settings),
+        has_drive=_has_drive(settings),
         all_docs=all_docs,
         settings=settings,
     )
@@ -124,23 +119,18 @@ def sync_drive(c_slug, e_slug):
     edition = Edition.query.filter_by(competition_id=competition.id, slug=e_slug).first_or_404()
     settings = AppSettings.query.first()
 
-    mode = _gdrive_mode(settings)
-    if mode == "none":
-        flash("Brak dostępu do Google Drive. Skonfiguruj OAuth lub klucz API w Ustawieniach.", "warning")
+    if not _has_drive(settings):
+        flash("Brak klucza Drive API. Skonfiguruj go w Ustawieniach.", "warning")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
     if not edition.gdrive_folder_id:
         flash("Ustaw link do folderu Google Drive dla tej edycji.", "warning")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
-    _logger.info("sync_drive: listing folder=%s mode=%s", edition.gdrive_folder_id, mode)
+    _logger.info("sync_drive: listing folder=%s", edition.gdrive_folder_id)
     try:
-        if mode == "oauth":
-            from services.google_drive import list_folder_files
-            files = list_folder_files(edition.gdrive_folder_id, settings)
-        else:
-            from services.google_drive import list_folder_files_public
-            files = list_folder_files_public(edition.gdrive_folder_id, settings.google_drive_api_key)
+        from services.google_drive import list_folder_files
+        files = list_folder_files(edition.gdrive_folder_id, settings.google_drive_api_key)
     except Exception as exc:
         _logger.error("sync_drive: list error: %s", exc)
         flash(f"Błąd pobierania listy plików z Drive: {exc}", "error")

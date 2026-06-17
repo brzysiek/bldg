@@ -215,21 +215,15 @@ def _resolve_local_path(doc, settings):
     import tempfile, shutil
     tmp_dir = tempfile.mkdtemp()
     try:
-        if settings and settings.google_access_token:
+        if settings and settings.google_drive_api_key:
             from services.google_drive import download_file
             path = download_file(
-                doc.gdrive_file_id, doc.original_name,
-                doc.mime_type or "application/pdf", tmp_dir, settings,
-            )
-        elif settings and settings.google_drive_api_key:
-            from services.google_drive import download_file_public
-            path = download_file_public(
                 doc.gdrive_file_id, doc.original_name,
                 doc.mime_type or "application/pdf", tmp_dir, settings.google_drive_api_key,
             )
         else:
             shutil.rmtree(tmp_dir, ignore_errors=True)
-            raise ValueError("Brak konfiguracji Drive — nie można pobrać pliku")
+            raise ValueError("Brak klucza Drive API — nie można pobrać pliku")
         return path, tmp_dir
     except Exception:
         shutil.rmtree(tmp_dir, ignore_errors=True)

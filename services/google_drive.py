@@ -5,18 +5,9 @@ import ssl
 import socket
 import unicodedata
 from contextlib import contextmanager
-from datetime import datetime, timezone
 
 import requests as _requests
 from requests.adapters import HTTPAdapter
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import Flow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-REDIRECT_URI = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5002/auth/google/callback")
 
 _PL_TRANSLIT = {
     "ą": "a", "ć": "c", "ę": "e", "ł": "l", "ń": "n", "ó": "o", "ś": "s", "ź": "z", "ż": "z",
@@ -59,18 +50,7 @@ DOWNLOADABLE_MIME = {
 }
 
 
-@contextmanager
-def _socket_timeout(seconds: int):
-    """Temporarily set socket default timeout — applies to googleapiclient httplib2 calls."""
-    old = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(seconds)
-    try:
-        yield
-    finally:
-        socket.setdefaulttimeout(old)
-
-
-def _make_public_session() -> _requests.Session:
+def _make_session() -> _requests.Session:
     """Session with a permissive SSL context — needed on CloudLinux/cPanel hosts
     where Python 3.13's default TLS context causes SSLEOFError during handshake."""
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -117,134 +97,8 @@ def extract_folder_id(url: str) -> str | None:
     return None
 
 
-def get_oauth_url(client_id: str, client_secret: str) -> str:
-    flow = Flow.from_client_config(
-        {"web": {"client_id": client_id, "client_secret": client_secret,
-                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                 "token_uri": "https://oauth2.googleapis.com/token"}},
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI,
-    )
-    url, _ = flow.authorization_url(access_type="offline", prompt="consent")
-    return url
-
-
-def exchange_code(code: str, client_id: str, client_secret: str) -> dict:
-    flow = Flow.from_client_config(
-        {"web": {"client_id": client_id, "client_secret": client_secret,
-                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                 "token_uri": "https://oauth2.googleapis.com/token"}},
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI,
-    )
-    flow.fetch_token(code=code)
-    creds = flow.credentials
-    email = _get_user_email(creds)
-    return {
-        "access_token": creds.token,
-        "refresh_token": creds.refresh_token,
-        "expiry": creds.expiry,
-        "email": email,
-    }
-
-
-def _make_credentials(settings) -> Credentials:
-    creds = Credentials(
-        token=settings.google_access_token,
-        refresh_token=settings.google_refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=settings.google_oauth_client_id,
-        client_secret=settings.google_oauth_client_secret,
-        scopes=SCOPES,
-    )
-    if settings.google_token_expiry:
-        expiry = settings.google_token_expiry
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
-        creds.expiry = expiry
-    return creds
-
-
-def _get_user_email(creds: Credentials) -> str:
-    try:
-        svc = build("oauth2", "v2", credentials=creds)
-        info = svc.userinfo().get().execute()
-        return info.get("email", "")
-    except Exception:
-        return ""
-
-
-def _refresh_if_needed(creds: Credentials, settings):
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        settings.google_access_token = creds.token
-        if creds.expiry:
-            expiry = creds.expiry
-            if expiry.tzinfo is not None:
-                expiry = expiry.replace(tzinfo=None)
-            settings.google_token_expiry = expiry
-        from extensions import db
-        db.session.commit()
-
-
-# ── OAuth mode ────────────────────────────────────────────────────────────────
-
-def list_folder_files(folder_id: str, settings) -> list[dict]:
-    creds = _make_credentials(settings)
-    _refresh_if_needed(creds, settings)
-    results = []
-    page_token = None
-    with _socket_timeout(30):
-        svc = build("drive", "v3", credentials=creds)
-        while True:
-            resp = svc.files().list(
-                q=f"'{folder_id}' in parents and trashed=false",
-                fields="nextPageToken, files(id, name, mimeType, size, modifiedTime)",
-                pageSize=100,
-                pageToken=page_token,
-            ).execute()
-            for f in resp.get("files", []):
-                mime = f.get("mimeType", "")
-                if mime.startswith("application/vnd.google-apps.folder"):
-                    continue
-                if mime not in DOWNLOADABLE_MIME and mime not in EXPORT_MIME:
-                    continue
-                results.append({"id": f["id"], "name": f["name"], "mime_type": mime, "size": int(f.get("size", 0))})
-            page_token = resp.get("nextPageToken")
-            if not page_token:
-                break
-    return results
-
-
-def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, settings) -> str:
-    creds = _make_credentials(settings)
-    _refresh_if_needed(creds, settings)
-    os.makedirs(dest_dir, exist_ok=True)
-    safe_name = _safe_filename(file_name)
-    with _socket_timeout(120):
-        svc = build("drive", "v3", credentials=creds)
-        if mime_type in EXPORT_MIME:
-            export_mime, ext = EXPORT_MIME[mime_type]
-            base = os.path.splitext(safe_name)[0]
-            dest_path = os.path.join(dest_dir, f"{base}{ext}")
-            request = svc.files().export_media(fileId=file_id, mimeType=export_mime)
-        else:
-            dest_path = os.path.join(dest_dir, safe_name)
-            request = svc.files().get_media(fileId=file_id)
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-    with open(dest_path, "wb") as f:
-        f.write(buf.getvalue())
-    return dest_path
-
-
-# ── Public mode (no OAuth, uses Gemini/Drive API key) ────────────────────────
-
-def list_folder_files_public(folder_id: str, api_key: str) -> list[dict]:
-    """List publicly shared folder using Drive API key (no OAuth)."""
+def list_folder_files(folder_id: str, api_key: str) -> list[dict]:
+    """List a publicly shared Drive folder using an API key."""
     url = "https://www.googleapis.com/drive/v3/files"
     params = {
         "q": f"'{folder_id}' in parents and trashed=false",
@@ -253,7 +107,7 @@ def list_folder_files_public(folder_id: str, api_key: str) -> list[dict]:
         "key": api_key,
     }
     results = []
-    session = _make_public_session()
+    session = _make_session()
     while True:
         resp = session.get(url, params=params, timeout=20)
         resp.raise_for_status()
@@ -272,8 +126,8 @@ def list_folder_files_public(folder_id: str, api_key: str) -> list[dict]:
     return results
 
 
-def download_file_public(file_id: str, file_name: str, mime_type: str, dest_dir: str, api_key: str) -> str:
-    """Download a publicly shared file using Drive API key (no OAuth)."""
+def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, api_key: str) -> str:
+    """Download a publicly shared Drive file using an API key."""
     os.makedirs(dest_dir, exist_ok=True)
     safe_name = _safe_filename(file_name)
     if mime_type in EXPORT_MIME:
@@ -286,7 +140,7 @@ def download_file_public(file_id: str, file_name: str, mime_type: str, dest_dir:
         dest_path = os.path.join(dest_dir, safe_name)
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
         params = {"alt": "media", "key": api_key}
-    session = _make_public_session()
+    session = _make_session()
     resp = session.get(url, params=params, timeout=120, stream=True)
     resp.raise_for_status()
     with open(dest_path, "wb") as fh:

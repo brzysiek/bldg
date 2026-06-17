@@ -100,12 +100,6 @@ def _migrate_db():
             "comparison_prompt_comparison":  "TEXT",
             "comparison_prompt_summary":     "TEXT",
             "google_drive_api_key":          "TEXT",
-            "google_oauth_client_id":        "TEXT",
-            "google_oauth_client_secret":    "TEXT",
-            "google_access_token":           "TEXT",
-            "google_refresh_token":          "TEXT",
-            "google_token_expiry":           "DATETIME",
-            "google_user_email":             "TEXT",
             # Per-stage AI config
             "doc_summary_model":             "TEXT",
             "doc_summary_temperature":       "REAL",
@@ -275,7 +269,6 @@ def create_app():
     from routes.files import bp as files_bp
     from routes.settings import bp as settings_bp
     from routes.comparison import bp as comparison_bp
-    from routes.auth import bp as auth_bp
     from routes.placeholders import bp as placeholders_bp
 
     app.register_blueprint(comp_bp)
@@ -283,7 +276,6 @@ def create_app():
     app.register_blueprint(files_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(comparison_bp)
-    app.register_blueprint(auth_bp)
     app.register_blueprint(placeholders_bp)
 
     @app.route("/logs")
