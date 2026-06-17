@@ -93,6 +93,28 @@ def _migrate_db():
             "google_refresh_token":          "TEXT",
             "google_token_expiry":           "DATETIME",
             "google_user_email":             "TEXT",
+            # Per-stage AI config
+            "doc_summary_model":             "TEXT",
+            "doc_summary_temperature":       "REAL",
+            "doc_summary_max_tokens":        "INTEGER",
+            "doc_summary_system":            "TEXT",
+            "comparison_prompt_edition":     "TEXT",
+            "cmp_extraction_model":          "TEXT",
+            "cmp_extraction_temperature":    "REAL",
+            "cmp_extraction_max_tokens":     "INTEGER",
+            "cmp_extraction_system":         "TEXT",
+            "cmp_comparison_model":          "TEXT",
+            "cmp_comparison_temperature":    "REAL",
+            "cmp_comparison_max_tokens":     "INTEGER",
+            "cmp_comparison_system":         "TEXT",
+            "cmp_summary_model":             "TEXT",
+            "cmp_summary_temperature":       "REAL",
+            "cmp_summary_max_tokens":        "INTEGER",
+            "cmp_summary_system":            "TEXT",
+            "cmp_edition_model":             "TEXT",
+            "cmp_edition_temperature":       "REAL",
+            "cmp_edition_max_tokens":        "INTEGER",
+            "cmp_edition_system":            "TEXT",
         })
         add_cols("editions", {
             "gdrive_folder_url":  "TEXT",
@@ -155,6 +177,11 @@ def _seed_comparison_prompts():
         record_prompt_version("comparison_prompt_extraction", DEFAULT_PROMPT_EXTRACTION, source="seed")
         record_prompt_version("comparison_prompt_comparison", DEFAULT_PROMPT_COMPARISON, source="seed")
         record_prompt_version("comparison_prompt_summary", DEFAULT_PROMPT_SUMMARY, source="seed")
+        db.session.commit()
+    if settings and not settings.comparison_prompt_edition:
+        from services.comparator import DEFAULT_PROMPT_EDITION_SUMMARY
+        settings.comparison_prompt_edition = DEFAULT_PROMPT_EDITION_SUMMARY
+        record_prompt_version("comparison_prompt_edition", DEFAULT_PROMPT_EDITION_SUMMARY, source="seed")
         db.session.commit()
 
 

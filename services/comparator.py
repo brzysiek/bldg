@@ -105,6 +105,102 @@ Na podstawie powyzszych danych napisz syntetyczne PODSUMOWANIE CALEJ EDYCJI w je
 Formatuj w Markdown. Badz precyzyjny i praktyczny."""
 
 
+def _stage_config(settings, stage: str):
+    """Return (model_name, GenerateContentConfig|None) for a pipeline stage.
+
+    Each stage can override model, temperature, max_output_tokens, and
+    system_instruction independently. Any field left blank falls back to the
+    global gemini_model with no extra config.
+    """
+    from google.genai import types
+
+    prefix = f"cmp_{stage}_"
+    model = (getattr(settings, f"{prefix}model", None) or "").strip() \
+            or (settings.gemini_model or "").strip() \
+            or "gemini-2.5-flash"
+
+    temp       = getattr(settings, f"{prefix}temperature", None)
+    max_tokens = getattr(settings, f"{prefix}max_tokens", None)
+    system     = (getattr(settings, f"{prefix}system", None) or "").strip()
+
+    config_kwargs = {}
+    if temp is not None:
+        config_kwargs["temperature"] = float(temp)
+    if max_tokens:
+        config_kwargs["max_output_tokens"] = int(max_tokens)
+    if system:
+        config_kwargs["system_instruction"] = system
+
+    config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+    return model, config
+
+
+def _make_stage_caller(client, settings, stage: str, tokens: dict):
+    """Return a call_gemini(prompt) closure for a specific pipeline stage.
+
+    The closure tracks cumulative input/output tokens in the provided dict
+    and emits verbose DEBUG logs covering every request/response detail.
+    """
+    model, config = _stage_config(settings, stage)
+
+    temp_val   = getattr(settings, f"cmp_{stage}_temperature", None)
+    max_val    = getattr(settings, f"cmp_{stage}_max_tokens", None)
+    system_val = (getattr(settings, f"cmp_{stage}_system", None) or "").strip()
+
+    log.debug(
+        "Stage config  stage=%s  model=%s  temperature=%s  max_output_tokens=%s  "
+        "system_instruction=%s znaków",
+        stage, model,
+        temp_val if temp_val is not None else "API default",
+        max_val  if max_val  is not None else "API default",
+        len(system_val) if system_val else 0,
+    )
+
+    def caller(prompt):
+        log.debug(
+            "Gemini REQUEST  stage=%s  model=%s  prompt=%d znaków  "
+            "temperature=%s  max_output_tokens=%s  system=%d znaków",
+            stage, model, len(prompt),
+            temp_val if temp_val is not None else "default",
+            max_val  if max_val  is not None else "default",
+            len(system_val) if system_val else 0,
+        )
+        kwargs = dict(model=model, contents=prompt)
+        if config:
+            kwargs["config"] = config
+
+        import time as _t
+        t0 = _t.monotonic()
+        resp = client.models.generate_content(**kwargs)
+        elapsed = _t.monotonic() - t0
+
+        t_in = t_out = 0
+        u = getattr(resp, "usage_metadata", None)
+        if u:
+            t_in  = getattr(u, "prompt_token_count",     0) or 0
+            t_out = getattr(u, "candidates_token_count", 0) or 0
+            tokens["in"]  += t_in
+            tokens["out"] += t_out
+
+        resp_text = getattr(resp, "text", "") or ""
+        log.debug(
+            "Gemini RESPONSE  stage=%s  elapsed=%.2fs  "
+            "tok_in=%d  tok_out=%d  (total: in=%d out=%d)  "
+            "response_len=%d znaków  preview=%.120r",
+            stage, elapsed, t_in, t_out,
+            tokens["in"], tokens["out"],
+            len(resp_text), resp_text[:120],
+        )
+
+        if _GEMINI_SLEEP > 0:
+            log.debug("Gemini SLEEP  stage=%s  sleep=%.1fs", stage, _GEMINI_SLEEP)
+            time.sleep(_GEMINI_SLEEP)
+
+        return resp
+
+    return caller
+
+
 PRICING = {
     "gemini-2.5-flash":      {"input": 0.30,  "output": 2.50},
     "gemini-2.5-pro":        {"input": 1.25,  "output": 10.00},
@@ -153,29 +249,17 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
             except Exception:
                 pass
 
-    log.debug("compare_one_pair START  job=%d  stary=%s  nowy=%s  model=%s",
-              job.id, doc_old.original_name, doc_new.original_name,
-              settings.gemini_model or "gemini-2.5-flash")
+    log.debug(
+        "compare_one_pair START  job=%d  stary=%s  nowy=%s  "
+        "default_model=%s",
+        job.id, doc_old.original_name, doc_new.original_name,
+        settings.gemini_model or "gemini-2.5-flash",
+    )
 
-    client    = genai.Client(api_key=settings.gemini_api_key)
-    model     = settings.gemini_model or "gemini-2.5-flash"
-    t_in = t_out = 0
-
-    def call_gemini(prompt):
-        nonlocal t_in, t_out
-        log.debug("Gemini call  model=%s  prompt=%d znaków  sleep=%.1fs", model, len(prompt), _GEMINI_SLEEP)
-        resp = client.models.generate_content(model=model, contents=prompt)
-        u = getattr(resp, "usage_metadata", None)
-        if u:
-            tokens_in  = getattr(u, "prompt_token_count",     0) or 0
-            tokens_out = getattr(u, "candidates_token_count", 0) or 0
-            t_in  += tokens_in
-            t_out += tokens_out
-            log.debug("Gemini odpowiedź  +%d tok_wej  +%d tok_wyj  (łącznie: %d/%d)",
-                      tokens_in, tokens_out, t_in, t_out)
-        if _GEMINI_SLEEP > 0:
-            time.sleep(_GEMINI_SLEEP)
-        return resp
+    client = genai.Client(api_key=settings.gemini_api_key)
+    tokens = {"in": 0, "out": 0}
+    call_extraction = _make_stage_caller(client, settings, "extraction", tokens)
+    call_comparison = _make_stage_caller(client, settings, "comparison", tokens)
 
     _status("Ekstrakcja tekstu")
     log.debug("compare_one_pair  ekstrakcja tekstu z plików")
@@ -192,22 +276,24 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
               len(text_old), len(text_new))
 
     _status(f"Analiza struktury: {doc_old.original_name}")
-    struct_old = _get_structure_cached(doc_old, text_old, call_gemini, settings)
+    struct_old = _get_structure_cached(doc_old, text_old, call_extraction, settings)
     log.debug("compare_one_pair  struktura stara: %d sekcji", len(struct_old.get("sekcje", {})))
 
     _status(f"Analiza struktury: {doc_new.original_name}")
-    struct_new = _get_structure_cached(doc_new, text_new, call_gemini, settings)
+    struct_new = _get_structure_cached(doc_new, text_new, call_extraction, settings)
     log.debug("compare_one_pair  struktura nowa: %d sekcji", len(struct_new.get("sekcje", {})))
 
     n_sekcji = len(set(struct_old.get("sekcje", {}).keys()) | set(struct_new.get("sekcje", {}).keys()))
     _status(f"Porównywanie sekcji (0/{n_sekcji})")
     log.debug("compare_one_pair  porównuję %d sekcji", n_sekcji)
+    call_summary = _make_stage_caller(client, settings, "summary", tokens)
     changes = _compare_pair(
         text_old, text_new,
         job.label_old or "Edycja starsza",
         job.label_new or "Edycja nowsza",
-        call_gemini, _status, settings,
+        call_comparison, _status, settings,
         struct_old=struct_old, struct_new=struct_new,
+        call_extraction=call_extraction,
     )
     log.debug("compare_one_pair  porównanie zakończone: %d zmian", len(changes))
 
@@ -218,10 +304,12 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
         job.label_old or "Edycja starsza",
         job.label_new or "Edycja nowsza",
         job.competition_name or "konkurs",
-        call_gemini, settings,
+        call_summary, settings,
     )
-    log.debug("compare_one_pair KONIEC  job=%d  stary=%s  zmian=%d  tok_wej=%d  tok_wyj=%d",
-              job.id, doc_old.original_name, len(changes), t_in, t_out)
+    log.debug(
+        "compare_one_pair KONIEC  job=%d  stary=%s  zmian=%d  tok_in=%d  tok_out=%d",
+        job.id, doc_old.original_name, len(changes), tokens["in"], tokens["out"],
+    )
     return {
         "old_doc_id": doc_old.id,
         "new_doc_id": doc_new.id,
@@ -229,8 +317,8 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
         "new_name":   doc_new.original_name,
         "changes":    changes,
         "summary":    summary,
-        "tokens_in":  t_in,
-        "tokens_out": t_out,
+        "tokens_in":  tokens["in"],
+        "tokens_out": tokens["out"],
     }
 
 
@@ -240,31 +328,22 @@ def generate_edition_summary_text(per_file_results, job, settings):
     from google import genai
 
     client = genai.Client(api_key=settings.gemini_api_key)
-    model  = settings.gemini_model or "gemini-2.5-flash"
-    t_in = t_out = 0
-
-    def call_gemini(prompt):
-        nonlocal t_in, t_out
-        resp = client.models.generate_content(model=model, contents=prompt)
-        u = getattr(resp, "usage_metadata", None)
-        if u:
-            t_in  += getattr(u, "prompt_token_count",     0) or 0
-            t_out += getattr(u, "candidates_token_count", 0) or 0
-        return resp
+    tokens = {"in": 0, "out": 0}
+    call_edition = _make_stage_caller(client, settings, "edition", tokens)
 
     per_file_summaries = "\n\n".join(
         f"### {r['old_name']} vs {r['new_name']}\n{r.get('summary','')[:1000]}"
         for r in per_file_results
     )
     prompt = (
-        DEFAULT_PROMPT_EDITION_SUMMARY
+        (settings.comparison_prompt_edition or DEFAULT_PROMPT_EDITION_SUMMARY)
         .replace("{label_old}",          job.label_old or "Edycja starsza")
         .replace("{label_new}",          job.label_new or "Edycja nowsza")
         .replace("{competition_name}",   job.competition_name or "konkurs")
         .replace("{n_files}",            str(len(per_file_results)))
         .replace("{per_file_summaries}", per_file_summaries[:30_000])
     )
-    return call_gemini(prompt).text, t_in, t_out
+    return call_edition(prompt).text, tokens["in"], tokens["out"]
 
 
 def _extract_structure(text, label, call_gemini, settings):
@@ -320,11 +399,12 @@ def _get_structure_cached(doc, text, call_gemini, settings):
 
 
 def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_progress, settings,
-                  struct_old=None, struct_new=None):
+                  struct_old=None, struct_new=None, call_extraction=None):
+    _call_ext = call_extraction or call_gemini
     if struct_old is None:
-        struct_old = _extract_structure(text_old, label_old, call_gemini, settings)
+        struct_old = _extract_structure(text_old, label_old, _call_ext, settings)
     if struct_new is None:
-        struct_new = _extract_structure(text_new, label_new, call_gemini, settings)
+        struct_new = _extract_structure(text_new, label_new, _call_ext, settings)
 
     sekcje_old = struct_old.get("sekcje", {})
     sekcje_new = struct_new.get("sekcje", {})
@@ -404,28 +484,17 @@ def _file_summary(changes, label_old, label_new, competition_name, call_gemini, 
 
 # ── Batch-comparison helpers (browser-driven, one HTTP req per N sections) ──
 
-def make_gemini_caller(settings):
-    """Create a tracked Gemini caller. Returns (call_fn, tokens_dict)."""
+def make_gemini_caller(settings, stage: str = "comparison"):
+    """Create a tracked Gemini caller for a specific pipeline stage.
+
+    Returns (call_fn, tokens_dict).  The default stage is "comparison"
+    since that is what routes/comparison.py uses for batch section calls.
+    """
     from google import genai
     client = genai.Client(api_key=settings.gemini_api_key)
-    model  = settings.gemini_model or "gemini-2.5-flash"
     tokens = {"in": 0, "out": 0}
-
-    def call_gemini(prompt):
-        log.debug("Gemini call  model=%s  prompt=%d znaków", model, len(prompt))
-        resp = client.models.generate_content(model=model, contents=prompt)
-        u = getattr(resp, "usage_metadata", None)
-        if u:
-            t_in  = getattr(u, "prompt_token_count",     0) or 0
-            t_out = getattr(u, "candidates_token_count", 0) or 0
-            tokens["in"]  += t_in
-            tokens["out"] += t_out
-            log.debug("Gemini odpowiedź  +%d tok_wej  +%d tok_wyj", t_in, t_out)
-        if _GEMINI_SLEEP > 0:
-            time.sleep(_GEMINI_SLEEP)
-        return resp
-
-    return call_gemini, tokens
+    call_fn = _make_stage_caller(client, settings, stage, tokens)
+    return call_fn, tokens
 
 
 def get_pair_structures(doc_old, doc_new, settings):
@@ -435,7 +504,7 @@ def get_pair_structures(doc_old, doc_new, settings):
     Extraction is cached per-document in the DB so repeated calls are fast.
     """
     import shutil
-    call_gemini, tokens = make_gemini_caller(settings)
+    call_gemini, tokens = make_gemini_caller(settings, stage="extraction")
 
     old_path, old_tmp = _resolve_local_path(doc_old, settings)
     new_path, new_tmp = _resolve_local_path(doc_new, settings)
@@ -519,7 +588,7 @@ def generate_pair_summary(changes, label_old, label_new, competition_name, setti
 
     Returns (summary_text, t_in, t_out).
     """
-    call_gemini, tokens = make_gemini_caller(settings)
+    call_gemini, tokens = make_gemini_caller(settings, stage="summary")
     text = _file_summary(
         changes,
         label_old or "Edycja starsza",
@@ -549,17 +618,11 @@ def run_comparison(job_id: int, app):
         model_name = settings.gemini_model or "gemini-2.5-flash"
         price = PRICING.get(model_name, {"input": 0.30, "output": 2.50})
 
-        total_input = 0
-        total_output = 0
-
-        def call_gemini(prompt):
-            nonlocal total_input, total_output
-            resp = client.models.generate_content(model=model_name, contents=prompt)
-            usage = getattr(resp, "usage_metadata", None)
-            if usage:
-                total_input  += getattr(usage, "prompt_token_count", 0) or 0
-                total_output += getattr(usage, "candidates_token_count", 0) or 0
-            return resp
+        total_tokens = {"in": 0, "out": 0}
+        call_extraction = _make_stage_caller(client, settings, "extraction", total_tokens)
+        call_comparison = _make_stage_caller(client, settings, "comparison", total_tokens)
+        call_summary_st = _make_stage_caller(client, settings, "summary",    total_tokens)
+        call_edition    = _make_stage_caller(client, settings, "edition",    total_tokens)
 
         def save(detail=None):
             if detail is not None:
@@ -567,12 +630,14 @@ def run_comparison(job_id: int, app):
             db.session.commit()
 
         def finish(ok=True):
-            cost = (total_input / 1_000_000 * price["input"]) + (total_output / 1_000_000 * price["output"])
-            job.tokens_input = total_input
-            job.tokens_output = total_output
+            t_in  = total_tokens["in"]
+            t_out = total_tokens["out"]
+            cost  = (t_in / 1_000_000 * price["input"]) + (t_out / 1_000_000 * price["output"])
+            job.tokens_input       = t_in
+            job.tokens_output      = t_out
             job.estimated_cost_usd = round(cost, 6)
-            job.finished_at = datetime.utcnow()
-            job.gemini_model_used = model_name
+            job.finished_at        = datetime.utcnow()
+            job.gemini_model_used  = model_name
 
         try:
             job.started_at = datetime.utcnow()
@@ -612,7 +677,8 @@ def run_comparison(job_id: int, app):
                     text_old, text_new,
                     job.label_old or "Edycja starsza",
                     job.label_new or "Edycja nowsza",
-                    call_gemini, on_progress, settings,
+                    call_comparison, on_progress, settings,
+                    call_extraction=call_extraction,
                 )
 
                 save(f"Plik {idx + 1}/{n}: {old_name} — Generuje podsumowanie pliku...")
@@ -621,7 +687,7 @@ def run_comparison(job_id: int, app):
                     job.label_old or "Edycja starsza",
                     job.label_new or "Edycja nowsza",
                     job.competition_name or "konkurs",
-                    call_gemini, settings,
+                    call_summary_st, settings,
                 )
 
                 per_file_results.append({
@@ -649,14 +715,14 @@ def run_comparison(job_id: int, app):
                 for r in per_file_results
             )
             edition_prompt = (
-                DEFAULT_PROMPT_EDITION_SUMMARY
+                (settings.comparison_prompt_edition or DEFAULT_PROMPT_EDITION_SUMMARY)
                 .replace("{label_old}", job.label_old or "Edycja starsza")
                 .replace("{label_new}", job.label_new or "Edycja nowsza")
                 .replace("{competition_name}", job.competition_name or "konkurs")
                 .replace("{n_files}", str(len(per_file_results)))
                 .replace("{per_file_summaries}", per_file_summaries[:30_000])
             )
-            job.edition_summary = call_gemini(edition_prompt).text
+            job.edition_summary = call_edition(edition_prompt).text
 
             finish()
             job.status = "done"

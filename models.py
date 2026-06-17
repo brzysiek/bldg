@@ -82,6 +82,35 @@ class AppSettings(db.Model):
     google_token_expiry = db.Column(db.DateTime)
     google_user_email = db.Column(db.Text)
 
+    # Per-stage config for AI document summary (services/gemini.py)
+    doc_summary_model = db.Column(db.Text)
+    doc_summary_temperature = db.Column(db.Float)
+    doc_summary_max_tokens = db.Column(db.Integer)
+    doc_summary_system = db.Column(db.Text)
+
+    # Per-stage config for comparison pipeline (services/comparator.py)
+    comparison_prompt_edition = db.Column(db.Text)
+
+    cmp_extraction_model = db.Column(db.Text)
+    cmp_extraction_temperature = db.Column(db.Float)
+    cmp_extraction_max_tokens = db.Column(db.Integer)
+    cmp_extraction_system = db.Column(db.Text)
+
+    cmp_comparison_model = db.Column(db.Text)
+    cmp_comparison_temperature = db.Column(db.Float)
+    cmp_comparison_max_tokens = db.Column(db.Integer)
+    cmp_comparison_system = db.Column(db.Text)
+
+    cmp_summary_model = db.Column(db.Text)
+    cmp_summary_temperature = db.Column(db.Float)
+    cmp_summary_max_tokens = db.Column(db.Integer)
+    cmp_summary_system = db.Column(db.Text)
+
+    cmp_edition_model = db.Column(db.Text)
+    cmp_edition_temperature = db.Column(db.Float)
+    cmp_edition_max_tokens = db.Column(db.Integer)
+    cmp_edition_system = db.Column(db.Text)
+
 
 class PromptVersion(db.Model):
     __tablename__ = "prompt_versions"

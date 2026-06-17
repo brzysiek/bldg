@@ -1,5 +1,9 @@
+import logging as _logging
+
 from google import genai
 from google.genai import types
+
+log = _logging.getLogger(__name__)
 
 
 def test_connection(api_key: str, model_name: str) -> dict:
@@ -17,14 +21,58 @@ def test_connection(api_key: str, model_name: str) -> dict:
 def summarize_document(text: str, settings) -> dict:
     """Returns {"summary": str, "description": str}."""
     import json as _json
+    import time as _time
     from seed import DEFAULT_PROMPT
-    client = genai.Client(api_key=settings.gemini_api_key)
+
+    model = (getattr(settings, "doc_summary_model", None) or "").strip() \
+            or (settings.gemini_model or "").strip() \
+            or "gemini-2.5-flash"
+    temp       = getattr(settings, "doc_summary_temperature", None)
+    max_tokens = getattr(settings, "doc_summary_max_tokens", None)
+    system     = (getattr(settings, "doc_summary_system", None) or "").strip()
+
+    config_kwargs = {}
+    if temp is not None:
+        config_kwargs["temperature"] = float(temp)
+    if max_tokens:
+        config_kwargs["max_output_tokens"] = int(max_tokens)
+    if system:
+        config_kwargs["system_instruction"] = system
+    config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+
     prompt = (settings.gemini_summary_prompt or DEFAULT_PROMPT).replace("{document_text}", text)
-    response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=prompt,
+
+    log.debug(
+        "summarize_document REQUEST  model=%s  prompt=%d znaków  "
+        "temperature=%s  max_output_tokens=%s  system=%d znaków",
+        model, len(prompt),
+        temp       if temp       is not None else "default",
+        max_tokens if max_tokens is not None else "default",
+        len(system) if system else 0,
     )
-    raw = response.text.strip()
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    kwargs = dict(model=model, contents=prompt)
+    if config:
+        kwargs["config"] = config
+
+    t0 = _time.monotonic()
+    response = client.models.generate_content(**kwargs)
+    elapsed  = _time.monotonic() - t0
+
+    t_in = t_out = 0
+    u = getattr(response, "usage_metadata", None)
+    if u:
+        t_in  = getattr(u, "prompt_token_count",     0) or 0
+        t_out = getattr(u, "candidates_token_count", 0) or 0
+
+    raw = (response.text or "").strip()
+    log.debug(
+        "summarize_document RESPONSE  elapsed=%.2fs  tok_in=%d  tok_out=%d  "
+        "response_len=%d znaków  preview=%.120r",
+        elapsed, t_in, t_out, len(raw), raw[:120],
+    )
+
     # Strip markdown code fences if present
     if raw.startswith("```"):
         parts = raw.split("```")

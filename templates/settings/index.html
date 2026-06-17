@@ -2,6 +2,7 @@
 {% block title %}Ustawienia – BLDG{% endblock %}
 {% block content %}
 
+{# ── shared history macro ──────────────────────────────────────────────── #}
 {% macro _prompt_history(prompt_key, versions) %}
   {% if versions %}
     <details class="mt-3">
@@ -38,9 +39,92 @@
   {% endif %}
 {% endmacro %}
 
+{# ── per-stage config card macro ──────────────────────────────────────── #}
+{% macro _stage_card(stage, icon, title, purpose, prompt_key, prompt_vars, prompt_rows, cfg, default_model, hist) %}
+<div class="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+  <h2 class="text-base font-semibold text-bottle pb-3 border-b border-gray-100">{{ icon }} {{ title }}</h2>
+  <p class="text-xs text-slate-text/60"><strong>Do czego służy:</strong> {{ purpose }}</p>
+
+  <details class="text-xs">
+    <summary class="text-slate-text/50 cursor-pointer hover:text-bottle select-none">🔌 Szczegóły żądania API</summary>
+    <div class="mt-2 p-3 bg-gray-50 rounded-lg text-xs space-y-1 text-slate-text/70">
+      <div><span class="font-semibold text-bottle">POST</span> <code class="font-mono">https://generativelanguage.googleapis.com/v1beta/models/<em>{model}</em>:generateContent</code></div>
+      <div class="text-slate-text/50">Header: <code class="font-mono">x-goog-api-key: {API_KEY}</code></div>
+      <div class="mt-2 font-medium">Pola body (JSON):</div>
+      <div class="pl-3 space-y-0.5 font-mono">
+        <div><code>contents[0].parts[0].text</code> → prompt</div>
+        <div><code>systemInstruction.parts[0].text</code> → system message (jeśli ustawiony)</div>
+        <div><code>generationConfig.temperature</code> → temperatura (jeśli ustawiona)</div>
+        <div><code>generationConfig.maxOutputTokens</code> → limit tokenów (jeśli ustawiony)</div>
+      </div>
+    </div>
+  </details>
+
+  <form method="POST" action="{{ url_for('settings.save_stage', stage=stage) }}" class="space-y-4">
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-text mb-1">Model</label>
+        <input type="text" name="model" value="{{ cfg.model }}"
+               placeholder="domyślny: {{ default_model }}"
+               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle" />
+        <p class="text-xs text-slate-text/40 mt-1">Puste = globalny model z Integracji.</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-slate-text mb-1">Temperatura</label>
+          <input type="number" name="temperature" min="0" max="2" step="0.05"
+                 value="{{ cfg.temperature if cfg.temperature is not none else '' }}"
+                 placeholder="API default"
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle" />
+          <p class="text-xs text-slate-text/40 mt-1">0.0 – 2.0</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-text mb-1">Max tokenów</label>
+          <input type="number" name="max_tokens" min="100" max="65536" step="100"
+                 value="{{ cfg.max_tokens if cfg.max_tokens is not none else '' }}"
+                 placeholder="API default"
+                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle" />
+          <p class="text-xs text-slate-text/40 mt-1">max 65 536</p>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">
+        System instruction <span class="text-slate-text/40 font-normal">(opcjonalna)</span>
+      </label>
+      <textarea name="system_instruction" rows="3"
+                placeholder="Opcjonalna instrukcja systemowa — wysyłana jako pole systemInstruction oddzielnie od promptu..."
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ cfg.system }}</textarea>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-slate-text mb-1">Prompt</label>
+      <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: {{ prompt_vars }}</p>
+      <textarea name="prompt" rows="{{ prompt_rows }}"
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ cfg.prompt }}</textarea>
+      {{ _prompt_history(prompt_key, hist) }}
+    </div>
+
+    <div class="flex items-center gap-3 pt-1 border-t border-gray-50">
+      <button type="submit" class="px-4 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
+        💾 Zapisz konfigurację
+      </button>
+      <form method="POST" action="{{ url_for('settings.reset_stage', stage=stage) }}"
+            onsubmit="return confirm('Przywrócić domyślną konfigurację tego etapu? Model/temperatura/tokeny/system zostaną wyczyszczone, prompt przywrócony do domyślnego.')"
+            style="display:inline">
+        <button type="submit" class="px-3 py-2 border border-gray-200 text-slate-text/60 rounded-lg text-xs hover:bg-gray-50 transition-colors">
+          🔄 Przywróć domyślne
+        </button>
+      </form>
+    </div>
+  </form>
+</div>
+{% endmacro %}
+
 <h1 class="text-2xl font-bold text-bottle mb-5">⚙️ Ustawienia</h1>
 
-<!-- Tabs -->
 {% set active_tab = request.args.get('tab', 'integracje') %}
 <div class="flex gap-1 mb-6 border-b border-gray-200">
   <a href="{{ url_for('settings.index', tab='integracje') }}"
@@ -48,10 +132,15 @@
             {% if active_tab == 'integracje' %}border-bottle text-bottle bg-white{% else %}border-transparent text-slate-text/60 hover:text-bottle hover:border-gray-300{% endif %}">
     🔗 Integracje
   </a>
+  <a href="{{ url_for('settings.index', tab='podsumowanie') }}"
+     class="px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 transition-colors
+            {% if active_tab == 'podsumowanie' %}border-bottle text-bottle bg-white{% else %}border-transparent text-slate-text/60 hover:text-bottle hover:border-gray-300{% endif %}">
+    📄 Podsumowanie dokumentów
+  </a>
   <a href="{{ url_for('settings.index', tab='porownania') }}"
      class="px-4 py-2.5 text-sm font-semibold rounded-t-lg border-b-2 transition-colors
             {% if active_tab == 'porownania' %}border-bottle text-bottle bg-white{% else %}border-transparent text-slate-text/60 hover:text-bottle hover:border-gray-300{% endif %}">
-    🔍 Porównanie edycji
+    ↔️ Porównanie edycji
   </a>
 </div>
 
@@ -78,7 +167,7 @@
       </div>
       <div>
         <label class="block text-sm font-medium text-slate-text mb-1">
-          Model Gemini
+          Domyślny model Gemini
           <span id="models-loading" class="ml-2 text-xs text-slate-text/40 font-normal hidden">⏳ ładowanie listy...</span>
           <span id="models-error" class="ml-2 text-xs text-red-500 font-normal hidden"></span>
         </label>
@@ -88,7 +177,7 @@
           <option value="gemini-2.5-pro" {% if settings.gemini_model == 'gemini-2.5-pro' %}selected{% endif %}>gemini-2.5-pro — najbardziej zaawansowany</option>
           <option value="gemini-2.5-flash-lite" {% if settings.gemini_model == 'gemini-2.5-flash-lite' %}selected{% endif %}>gemini-2.5-flash-lite — najszybszy, do zadań masowych</option>
         </select>
-        <p class="text-xs text-slate-text/40 mt-1" id="models-hint">Lista modeli ładuje się automatycznie po wpisaniu klucza API.</p>
+        <p class="text-xs text-slate-text/40 mt-1" id="models-hint">Domyślny model używany przez wszystkie etapy (jeśli etap nie ma własnego modelu). Lista ładuje się po wpisaniu klucza API.</p>
       </div>
       <div class="flex items-center gap-3 pt-1">
         <button type="submit" form="form-gemini-save"
@@ -141,7 +230,7 @@
                value="{{ settings.google_drive_api_key or '' }}"
                placeholder="AIza..."
                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-bottle/20 focus:border-bottle font-mono" />
-        <p class="text-xs text-slate-text/40 mt-1">Klucz API z <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a> z włączonym <strong>Drive API</strong>. Pozwala synchronizować publicznie udostępnione foldery bez logowania OAuth.</p>
+        <p class="text-xs text-slate-text/40 mt-1">Klucz API z <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a> z włączonym <strong>Drive API</strong>.</p>
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
@@ -173,89 +262,89 @@
     </form>
 
     <p class="text-xs text-slate-text/40">
-      Redirect URI do wpisania w
-      <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="underline">Google Cloud Console</a>:
+      Redirect URI:
       <code class="font-mono bg-gray-100 px-1 rounded">{{ google_redirect_uri }}</code>
     </p>
   </div>
 
+{% elif active_tab == 'podsumowanie' %}
+
+  {{ _stage_card(
+    'doc_summary',
+    '🧠',
+    'Podsumowanie dokumentu',
+    'Uruchamiany przy każdym wgraniu lub synchronizacji pliku z Google Drive — Gemini analizuje treść dokumentu i generuje krótki opis oraz podsumowanie widoczne na liście plików edycji.',
+    'gemini_summary_prompt',
+    '{document_text}',
+    14,
+    stage_data['doc_summary'],
+    settings.gemini_model or 'gemini-2.5-flash',
+    history.get('gemini_summary_prompt', [])
+  ) }}
+
+  <div class="bg-gray-50 rounded-xl border border-gray-100 p-4 text-xs text-slate-text/50">
+    <strong class="text-slate-text/70">Oczekiwany format odpowiedzi (JSON):</strong>
+    <pre class="mt-1 font-mono">{"opis": "1–4 słowa", "podsumowanie": "1 akapit tekstu"}</pre>
+    Użyj <code class="bg-gray-100 px-1 rounded">{document_text}</code> jako placeholder dla treści dokumentu.
+  </div>
+
 {% else %}{# tab == porownania #}
 
-  <!-- Prompt podsumowania pliku -->
-  <div class="bg-white rounded-xl border border-gray-100 p-6">
-    <h2 class="text-base font-semibold text-bottle mb-1 pb-3 border-b border-gray-100">🧠 Prompt podsumowania dokumentu</h2>
-    <p class="text-xs text-slate-text/60 mt-3 mb-1">
-      <strong>Do czego służy:</strong> uruchamiany przy każdym wgraniu lub synchronizacji pliku z Google Drive — Gemini analizuje treść dokumentu i generuje krótki opis oraz podsumowanie widoczne na liście plików edycji.
-    </p>
-    <p class="text-xs text-slate-text/60 mb-3">Użyj <code class="bg-gray-100 px-1 rounded">{document_text}</code> jako placeholder dla treści dokumentu. Prompt powinien zwracać JSON z polami <code class="bg-gray-100 px-1 rounded">opis</code> (1–4 słowa) i <code class="bg-gray-100 px-1 rounded">podsumowanie</code> (1 akapit).</p>
-    <form method="POST" action="{{ url_for('settings.save_prompt') }}" class="space-y-4">
-      <textarea name="gemini_summary_prompt" rows="14"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.gemini_summary_prompt or '' }}</textarea>
-      <div class="flex items-center gap-3">
-        <button type="submit" class="px-4 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-          💾 Zapisz prompt
-        </button>
-        <form method="POST" action="{{ url_for('settings.reset_prompt') }}"
-              onsubmit="return confirm('Przywrócić domyślny prompt?')">
-          <button type="submit" class="px-4 py-2.5 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
-            🔄 Przywróć domyślny
-          </button>
-        </form>
-      </div>
-    </form>
-    {{ _prompt_history('gemini_summary_prompt', history.get('gemini_summary_prompt', [])) }}
-  </div>
+  <p class="text-xs text-slate-text/50 -mt-2 mb-2">
+    Każdy etap może używać innego modelu, temperatury i system instruction. Puste pole = wartość domyślna z zakładki Integracje.
+  </p>
 
-  <!-- Prompty porównania -->
-  <div class="bg-white rounded-xl border border-gray-100 p-6">
-    <h2 class="text-base font-semibold text-bottle mb-1 pb-3 border-b border-gray-100">🔍 Prompty porównania edycji</h2>
-    <form method="POST" action="{{ url_for('settings.save_comparison_prompts') }}" class="space-y-5 mt-4">
+  {{ _stage_card(
+    'extraction',
+    '📄',
+    'Etap 1: Ekstrakcja struktury dokumentu',
+    'Pierwszy etap porównania edycji — Gemini dzieli treść dokumentu na ponumerowane sekcje/akapity, które następnie są parowane i porównywane między starszą i nowszą edycją.',
+    'comparison_prompt_extraction',
+    '{document_text}',
+    8,
+    stage_data['extraction'],
+    settings.gemini_model or 'gemini-2.5-flash',
+    history.get('comparison_prompt_extraction', [])
+  ) }}
 
-      <div>
-        <label class="block text-sm font-medium text-slate-text mb-1">Ekstrakcja struktury dokumentu</label>
-        <p class="text-xs text-slate-text/60 mb-1.5">
-          <strong>Do czego służy:</strong> pierwszy etap porównania edycji — Gemini dzieli treść dokumentu na ponumerowane sekcje/akapity, które następnie są parowane i porównywane między starszą i nowszą edycją.
-        </p>
-        <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: <code class="bg-gray-100 px-1 rounded">{document_text}</code></p>
-        <textarea name="comparison_prompt_extraction" rows="8"
-                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.comparison_prompt_extraction or '' }}</textarea>
-        {{ _prompt_history('comparison_prompt_extraction', history.get('comparison_prompt_extraction', [])) }}
-      </div>
+  {{ _stage_card(
+    'comparison',
+    '🔍',
+    'Etap 2: Porównanie per sekcja',
+    'Główny etap porównania — dla każdej sparowanej sekcji starej i nowej wersji dokumentu Gemini ocenia, czy treść się zmieniła, jaki to typ zmiany i jak istotna jest ta zmiana biznesowo (waga).',
+    'comparison_prompt_comparison',
+    '{label_old}, {label_new}, {sekcja}, {tresc_stara}, {tresc_nowa}',
+    12,
+    stage_data['comparison'],
+    settings.gemini_model or 'gemini-2.5-flash',
+    history.get('comparison_prompt_comparison', [])
+  ) }}
 
-      <div>
-        <label class="block text-sm font-medium text-slate-text mb-1">Porównanie per sekcja</label>
-        <p class="text-xs text-slate-text/60 mb-1.5">
-          <strong>Do czego służy:</strong> główny etap porównania — dla każdej sparowanej sekcji starej i nowej wersji dokumentu Gemini ocenia, czy treść się zmieniła, jaki to typ zmiany i jak istotna jest ta zmiana biznesowo (waga).
-        </p>
-        <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: <code class="bg-gray-100 px-1 rounded">{label_old}</code>, <code class="bg-gray-100 px-1 rounded">{label_new}</code>, <code class="bg-gray-100 px-1 rounded">{sekcja}</code>, <code class="bg-gray-100 px-1 rounded">{tresc_stara}</code>, <code class="bg-gray-100 px-1 rounded">{tresc_nowa}</code></p>
-        <textarea name="comparison_prompt_comparison" rows="12"
-                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.comparison_prompt_comparison or '' }}</textarea>
-        {{ _prompt_history('comparison_prompt_comparison', history.get('comparison_prompt_comparison', [])) }}
-      </div>
+  {{ _stage_card(
+    'summary',
+    '📋',
+    'Etap 3: Podsumowanie pliku (per para)',
+    'Po porównaniu wszystkich sekcji jednej pary dokumentów — Gemini generuje executive summary zmian wykrytych w tej parze, widoczne w rozwijanej karcie wyniku.',
+    'comparison_prompt_summary',
+    '{label_old}, {label_new}, {competition_name}, {changes_list}',
+    10,
+    stage_data['summary'],
+    settings.gemini_model or 'gemini-2.5-flash',
+    history.get('comparison_prompt_summary', [])
+  ) }}
 
-      <div>
-        <label class="block text-sm font-medium text-slate-text mb-1">Executive Summary</label>
-        <p class="text-xs text-slate-text/60 mb-1.5">
-          <strong>Do czego służy:</strong> etap końcowy — na podstawie listy wykrytych zmian Gemini generuje podsumowanie wykonawcze (executive summary) całego porównania edycji, prezentowane na górze wyniku.
-        </p>
-        <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: <code class="bg-gray-100 px-1 rounded">{label_old}</code>, <code class="bg-gray-100 px-1 rounded">{label_new}</code>, <code class="bg-gray-100 px-1 rounded">{competition_name}</code>, <code class="bg-gray-100 px-1 rounded">{changes_list}</code></p>
-        <textarea name="comparison_prompt_summary" rows="10"
-                  class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ settings.comparison_prompt_summary or '' }}</textarea>
-        {{ _prompt_history('comparison_prompt_summary', history.get('comparison_prompt_summary', [])) }}
-      </div>
-
-      <div class="flex items-center gap-3 pt-1">
-        <button type="submit" class="px-4 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
-          💾 Zapisz prompty
-        </button>
-        <a href="{{ url_for('settings.reset_comparison_prompts') }}"
-           onclick="return confirm('Przywrócić domyślne prompty porównań?')"
-           class="px-4 py-2.5 border border-gray-200 text-slate-text rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
-          🔄 Przywróć domyślne
-        </a>
-      </div>
-    </form>
-  </div>
+  {{ _stage_card(
+    'edition',
+    '📊',
+    'Etap 4: Podsumowanie edycji (końcowe)',
+    'Etap końcowy — po zakończeniu porównania wszystkich par Gemini generuje zbiorcze podsumowanie całej edycji na podstawie podsumowań per plik, prezentowane na górze strony wyników.',
+    'comparison_prompt_edition',
+    '{label_old}, {label_new}, {competition_name}, {n_files}, {per_file_summaries}',
+    10,
+    stage_data['edition'],
+    settings.gemini_model or 'gemini-2.5-flash',
+    history.get('comparison_prompt_edition', [])
+  ) }}
 
 {% endif %}
 
