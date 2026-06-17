@@ -69,37 +69,37 @@
               <span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ s_cls }}">{{ s_icon }} {{ job.status | status_pl }}</span>
             </div>
 
-            {# Akcje #}
-            <div class="flex items-center gap-2 shrink-0">
+            {# Akcje — badge style #}
+            <div class="flex items-center gap-1.5 shrink-0">
               {% if job.status in ['comparing', 'extracting', 'chunking', 'summarizing'] %}
                 <a href="{{ url_for('comparison.job_status', job_id=job.id) }}"
-                   class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors animate-pulse">
+                   class="no-btn px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold hover:bg-blue-200 transition-colors animate-pulse">
                   ▶ Wznów
                 </a>
               {% else %}
                 <a href="{{ url_for('comparison.job_status', job_id=job.id) }}"
-                   class="px-3 py-1.5 border border-gray-200 text-slate-text rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors">
+                   class="no-btn px-2 py-0.5 bg-gray-100 text-slate-text rounded-full text-xs font-medium hover:bg-gray-200 transition-colors">
                   Szczegóły
                 </a>
               {% endif %}
               {% if job.status == 'done' %}
                 <a href="{{ url_for('comparison.download_excel', job_id=job.id) }}"
-                   class="px-3 py-1.5 bg-lime text-bottle rounded-lg text-xs font-bold hover:bg-lime/80 transition-colors">
-                  Excel
+                   class="no-btn px-2 py-0.5 bg-lime/70 text-bottle rounded-full text-xs font-semibold hover:bg-lime transition-colors">
+                  ⬇️ XLSX
                 </a>
               {% endif %}
               {% if job.status in ['queued', 'pending', 'comparing', 'extracting', 'chunking', 'summarizing'] %}
                 <form method="POST" action="{{ url_for('comparison.cancel_job', job_id=job.id) }}"
                       onsubmit="return confirm('Anulować porównanie?')">
                   <button type="submit"
-                          class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">
+                          class="no-btn px-2 py-0.5 border border-red-100 text-red-500 rounded-full text-xs hover:bg-red-50 transition-colors">
                     Anuluj
                   </button>
                 </form>
               {% endif %}
               <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
                     onsubmit="return confirm('Usunąć porównanie?')">
-                <button type="submit" class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded-lg text-xs hover:bg-red-50 transition-colors">🗑</button>
+                <button type="submit" class="no-btn px-2 py-0.5 border border-red-100 text-red-500 rounded-full text-xs hover:bg-red-50 transition-colors">🗑</button>
               </form>
             </div>
 

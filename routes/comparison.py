@@ -618,6 +618,43 @@ def pair_result(job_id, pair_idx):
 
 # ── Skip pair ─────────────────────────────────────────────────────────────
 
+@bp.route("/job/<int:job_id>/reset-pair", methods=["POST"])
+def reset_pair(job_id):
+    """Remove a completed pair result so it can be re-run."""
+    job = ComparisonJob.query.get_or_404(job_id)
+    data = request.get_json() or {}
+    pair_idx = data.get("pair_idx")
+    if pair_idx is None:
+        return jsonify({"ok": False, "error": "pair_idx required"}), 400
+
+    per_file_results = json.loads(job.per_file_results_json or "[]")
+    per_file_results = [r for r in per_file_results if r.get("pair_idx") != pair_idx]
+    job.per_file_results_json = json.dumps(per_file_results, ensure_ascii=False)
+
+    # Clear edition summary — it's now stale
+    job.edition_summary = None
+
+    # Allow pair to be processed again
+    job.pair_lock_at = None
+    if job.status in ("done", "awaiting_summary"):
+        job.status = "comparing"
+        job.finished_at = None
+
+    # Provide mapping info so the browser can queue the pair
+    all_mappings = json.loads(job.file_mappings_json or "[]")
+    mapping = all_mappings[pair_idx] if pair_idx < len(all_mappings) else {}
+
+    db.session.commit()
+    return jsonify({
+        "ok":        True,
+        "pair_idx":  pair_idx,
+        "old_doc_id": mapping.get("old_doc_id"),
+        "new_doc_id": mapping.get("new_doc_id"),
+        "old_name":   mapping.get("old_name", ""),
+        "new_name":   mapping.get("new_name", ""),
+    })
+
+
 @bp.route("/job/<int:job_id>/rename", methods=["POST"])
 def rename_job(job_id):
     job = ComparisonJob.query.get_or_404(job_id)

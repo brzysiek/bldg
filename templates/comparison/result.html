@@ -119,9 +119,7 @@
     <h1 class="text-xl font-bold text-bottle mb-1 flex items-center gap-2">
       <span id="job-display-name">{{ job.job_label or job.competition_name or 'Porównanie #' ~ job.id }}</span>
       <button onclick="startRename()" title="Zmień nazwę"
-              class="px-2 py-0.5 text-xs font-medium border border-bottle/30 text-bottle/60 rounded hover:bg-bottle hover:text-white hover:border-bottle transition-colors leading-none">
-        Zmień nazwę
-      </button>
+              class="px-1.5 py-0.5 text-sm border border-bottle/30 text-bottle/60 rounded hover:bg-bottle hover:text-white hover:border-bottle transition-colors leading-none">✏️</button>
     </h1>
     <div class="text-sm text-slate-text/70 flex items-center gap-3 flex-wrap">
       <span class="font-medium">{{ job.label_old or '?' }}</span>
@@ -232,7 +230,8 @@
         {% if not pfr.get('skipped') %}
           {% set n_ch   = pfr.get('changes', []) | length %}
           {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
-          <div class="bg-green-50 rounded-xl border border-green-200 overflow-hidden">
+          {% set spfr_idx = pfr.get('pair_idx', loop.index0) %}
+          <div id="static-pair-{{ spfr_idx }}" class="bg-green-50 rounded-xl border border-green-200 overflow-hidden">
             <div class="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-green-100/50 transition-colors"
                  onclick="toggleAccordion('pfr-{{ loop.index0 }}')">
               <div class="flex items-center gap-3 min-w-0">
@@ -247,11 +246,15 @@
                 {% if n_crit %}<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">{{ n_crit }} kryt.</span>{% endif %}
                 <span class="px-2 py-0.5 {% if n_ch > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_ch }} zmian</span>
                 <a href="{{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=loop.index0) }}"
-                   class="px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors"
+                   class="no-btn px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded-full font-medium hover:bg-lime transition-colors"
                    title="Pobierz XLSX">⬇️ XLSX</a>
                 <a href="{{ url_for('comparison.download_pair_csv', job_id=job.id, pair_idx=loop.index0) }}"
-                   class="px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded font-medium hover:bg-lime/20 transition-colors"
+                   class="no-btn px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded-full font-medium hover:bg-lime/20 transition-colors"
                    title="Pobierz CSV">⬇️ CSV</a>
+                <button onclick="rerunPair({{ spfr_idx }}, 'static-pair-{{ spfr_idx }}')"
+                        class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">
+                  ↺ Regeneruj
+                </button>
                 <span class="text-slate-text/30 text-sm transition-transform duration-200"
                       id="arrow-pfr-{{ loop.index0 }}"
                       onclick="toggleAccordion('pfr-{{ loop.index0 }}'); event.stopPropagation()">▼</span>
@@ -394,6 +397,8 @@ const DOWNLOAD_PAIR_XLSX_TPL = {{ url_for('comparison.download_pair_excel', job_
 const DOWNLOAD_PAIR_CSV_TPL  = {{ url_for('comparison.download_pair_csv',   job_id=job.id, pair_idx=0) | tojson }};
 const PAIR_RESULT_URL_TPL    = {{ url_for('comparison.pair_result',         job_id=job.id, pair_idx=0) | tojson }};
 const RENAME_URL             = {{ url_for('comparison.rename_job',           job_id=job.id) | tojson }};
+const RESET_PAIR_URL_TPL     = {{ url_for('comparison.reset_pair',            job_id=job.id) | tojson }};
+const FILE_MAPPINGS          = {{ (job.file_mappings_json or '[]') | safe }};
 {% if job.edition_old_id and job.edition_new_id %}
 const ED_OLD_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_old_id) | tojson }};
 const ED_NEW_FILES_URL  = {{ url_for('editions.api_edition_files', edition_id=job.edition_new_id) | tojson }};
@@ -596,8 +601,9 @@ function setPairDone(idx, data) {
   const dlUrl  = pairDownloadUrl(idx);
   const csvUrl = pairCsvUrl(idx);
   badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}` +
-    `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded font-medium hover:bg-lime transition-colors" title="XLSX">⬇️ XLSX</a>` +
-    `<a href="${csvUrl}" class="ml-1 px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded font-medium hover:bg-lime/20 transition-colors" title="CSV">⬇️ CSV</a>` +
+    `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 bg-lime/70 text-bottle text-xs rounded-full font-medium hover:bg-lime transition-colors" title="XLSX">⬇️ XLSX</a>` +
+    `<a href="${csvUrl}" class="ml-1 px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded-full font-medium hover:bg-lime/20 transition-colors" title="CSV">⬇️ CSV</a>` +
+    `<button onclick="rerunPair(${idx}, null)" class="ml-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Regeneruj</button>` +
     `<button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
 
   if (body) {
@@ -1261,6 +1267,58 @@ async function pollQueued() {
     if (d.status !== 'queued') { window.location.reload(); return; }
   } catch(e) {}
   setTimeout(pollQueued, 3000);
+}
+
+/* ── Rerun pair ─────────────────────────────────────────────────────────── */
+function markSummaryStale() {
+  const section = document.getElementById('edition-summary-section');
+  if (!section) return;
+  section.innerHTML =
+    `<div class="flex items-center gap-3 text-sm text-amber-800">
+      <span class="text-xl shrink-0">⚠️</span>
+      <div>
+        <strong>Podsumowanie jest nieaktualne</strong> — przynajmniej jedna para została wygenerowana ponownie.
+        <button onclick="generateSummary()"
+                class="ml-3 px-3 py-1 bg-bottle text-white rounded-lg text-xs font-semibold hover:bg-bottle/90 transition-colors">
+          Wygeneruj ponownie
+        </button>
+      </div>
+    </div>`;
+}
+
+async function rerunPair(pairIdx, staticCardId) {
+  const mapping = FILE_MAPPINGS[pairIdx] || {};
+  const oldName = mapping.old_name || '';
+  const newName = mapping.new_name || '';
+
+  // Reset pair on server
+  let d = {};
+  try {
+    const r = await fetch(RESET_PAIR_URL_TPL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pair_idx: pairIdx}),
+    });
+    d = await r.json();
+  } catch(e) { alert('Błąd połączenia'); return; }
+  if (!d.ok) { alert('Błąd resetowania: ' + (d.error || '?')); return; }
+
+  // Remove static card from DOM
+  if (staticCardId) document.getElementById(staticCardId)?.remove();
+
+  // Mark summary as stale
+  markSummaryStale();
+
+  // Show live panel and create card
+  showProgressPanel();
+  createLivePairCard(pairIdx, oldName, newName);
+  setProgress(0, 1, `⏳ Regenerowanie pary...`);
+
+  const result = await runOnePair(pairIdx);
+  if (result?.ok) {
+    setProgress(1, 1, '✅ Para wygenerowana ponownie');
+    try { await fetch(FINISH_PAIRS_URL, {method: 'POST'}); } catch(_) {}
+  }
 }
 
 /* ── Inline rename ───────────────────────────────────────────────────────── */
