@@ -231,23 +231,40 @@ def _seed_comparison_prompts():
 
 
 def _cleanup_stale_jobs(timeout_minutes: float) -> int:
-    """Marks in-progress jobs older than timeout_minutes as error. Requires app context."""
+    """Marks genuinely stuck jobs older than timeout_minutes as error. Requires app context."""
+    import json as _json
     from models import ComparisonJob
     cutoff = datetime.utcnow() - timedelta(minutes=timeout_minutes)
-    in_progress = ["pending", "comparing", "extracting", "chunking", "awaiting_summary", "summarizing"]
+
+    # "awaiting_summary" is intentionally excluded: it means all pairs finished
+    # successfully and we're waiting for the user to trigger summary generation.
+    # Killing it here would erase valid work.
+    in_progress = ["pending", "comparing", "extracting", "chunking", "summarizing"]
 
     stale = ComparisonJob.query.filter(ComparisonJob.status.in_(in_progress)).all()
     cleaned = 0
     for job in stale:
         ref = job.started_at or job.created_at
-        if ref and ref < cutoff:
-            job.status = "error"
-            job.error_message = (
-                f"Przekroczono limit czasu ({timeout_minutes:.0f} min). "
-                "Proces zostal przerwany automatycznie przez monitor zadan."
-            )
-            job.finished_at = datetime.utcnow()
-            cleaned += 1
+        if not ref or ref >= cutoff:
+            continue
+
+        # Skip if all pairs already have results — job is done processing,
+        # just stuck in an intermediate status (e.g. finish-pairs request dropped).
+        try:
+            mappings = _json.loads(job.file_mappings_json or "[]")
+            results  = _json.loads(job.per_file_results_json or "[]")
+            if mappings and len(results) >= len(mappings):
+                continue
+        except Exception:
+            pass
+
+        job.status = "error"
+        job.error_message = (
+            f"Przekroczono limit czasu ({timeout_minutes:.0f} min). "
+            "Proces zostal przerwany automatycznie przez monitor zadan."
+        )
+        job.finished_at = datetime.utcnow()
+        cleaned += 1
 
     if cleaned:
         db.session.commit()
