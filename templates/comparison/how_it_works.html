@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Jak działa porównanie — BLDG{% endblock %}
+{% block content %}
+
+<nav class="text-sm text-slate-text/60 mb-6 flex items-center gap-2">
+  <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porównania</a>
+  <span class="text-slate-text/30">›</span>
+  <span>Jak działa algorytm</span>
+</nav>
+
+<div class="max-w-3xl mx-auto">
+
+  <h1 class="text-2xl font-bold text-bottle mb-2">Jak działa algorytm porównania edycji</h1>
+  <p class="text-slate-text/50 text-sm mb-8">Opis techniczny dla zainteresowanych tym, co dzieje się za kulisami.</p>
+
+  <!-- Phase overview -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+    <div class="bg-white rounded-xl border border-gray-100 p-5 text-center">
+      <div class="text-3xl mb-2">📄</div>
+      <div class="text-xs font-semibold text-bottle uppercase tracking-wide mb-1">Faza 1</div>
+      <div class="text-sm font-medium text-slate-text">Ekstrakcja struktury</div>
+      <div class="text-xs text-slate-text/50 mt-1">Gemini czyta każdy dokument i wyodrębnia sekcje</div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-100 p-5 text-center">
+      <div class="text-3xl mb-2">🔗</div>
+      <div class="text-xs font-semibold text-bottle uppercase tracking-wide mb-1">Faza 2</div>
+      <div class="text-sm font-medium text-slate-text">Dopasowanie sekcji</div>
+      <div class="text-xs text-slate-text/50 mt-1">AI paruje sekcje semantycznie, nie po numerze</div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-100 p-5 text-center">
+      <div class="text-3xl mb-2">🔍</div>
+      <div class="text-xs font-semibold text-bottle uppercase tracking-wide mb-1">Faza 3</div>
+      <div class="text-sm font-medium text-slate-text">Analiza merytoryczna</div>
+      <div class="text-xs text-slate-text/50 mt-1">Każda para sekcji trafia do osobnego wywołania AI</div>
+    </div>
+  </div>
+
+  <div class="space-y-8">
+
+    <!-- Phase 1 -->
+    <section class="bg-white rounded-xl border border-gray-100 p-6">
+      <h2 class="text-base font-bold text-bottle mb-3 flex items-center gap-2">
+        <span class="w-6 h-6 bg-bottle text-white rounded-full text-xs flex items-center justify-center shrink-0">1</span>
+        Ekstrakcja struktury dokumentu
+      </h2>
+      <div class="prose text-sm text-slate-text/80 space-y-3">
+        <p>
+          Każdy plik (PDF, DOCX, XLSX) jest najpierw zamieniany na czysty tekst. Następnie Gemini
+          analizuje ten tekst i rozpoznaje jego strukturę — paragrafy (§1, §2…), rozdziały,
+          artykuły lub inne podziały logiczne zdefiniowane przez autora dokumentu.
+        </p>
+        <p>
+          Wynik to słownik sekcji: <code class="bg-gray-100 px-1 rounded text-xs">{"§1": "pełna treść…", "§2": "pełna treść…"}</code>.
+          Jeśli dokument nie ma wyraźnej struktury, AI dzieli go na bloki po ~300 słów.
+        </p>
+        <p class="text-slate-text/50 text-xs">
+          Wyodrębniona struktura jest zapisywana w bazie danych i używana ponownie przy kolejnych porównaniach
+          tego samego pliku — Gemini jest wywoływany tylko przy pierwszym przetworzeniu lub gdy plik się zmieni.
+        </p>
+      </div>
+    </section>
+
+    <!-- Phase 2 -->
+    <section class="bg-white rounded-xl border border-gray-100 p-6">
+      <h2 class="text-base font-bold text-bottle mb-3 flex items-center gap-2">
+        <span class="w-6 h-6 bg-bottle text-white rounded-full text-xs flex items-center justify-center shrink-0">2</span>
+        Semantyczne dopasowanie sekcji
+      </h2>
+      <div class="prose text-sm text-slate-text/80 space-y-3">
+        <p>
+          To kluczowa faza, która odróżnia ten algorytm od prostego porównania po numerze sekcji.
+          AI otrzymuje listę sekcji z obu edycji (z krótkimi fragmentami treści) i ma za zadanie
+          zbudować mapę odpowiedników — bez zakładania, że §2 w nowej edycji to to samo co §2 w starej.
+        </p>
+
+        <div class="bg-amber-50 border border-amber-100 rounded-lg p-4 text-xs text-amber-800">
+          <p class="font-semibold mb-2">Dlaczego to ważne?</p>
+          <p>
+            Wyobraź sobie: stara edycja ma §1, §2, §3. W nowej edycji dodano całkowicie nowy §2
+            (np. nowe przepisy ogólne), a stary §2 stał się §3 i stary §3 stał się §4.
+          </p>
+          <p class="mt-2">
+            Bez dopasowania semantycznego algorytm porównałby stary §2 z nowym §2 (błąd),
+            stary §3 z nowym §3 (błąd) i wskazał nowy §4 jako dodaną sekcję (częściowo
+            prawda, ale to faktycznie stary §3 przesunięty na inne miejsce).
+          </p>
+          <p class="mt-2 font-semibold">
+            Z dopasowaniem AI: stary §2 → nowy §3, stary §3 → nowy §4, nowy §2 = nowa sekcja bez odpowiednika.
+          </p>
+        </div>
+
+        <p>
+          Wynikiem tej fazy są trzy listy:
+        </p>
+        <ul class="list-none space-y-1 text-xs">
+          <li class="flex items-start gap-2">
+            <span class="text-green-600 font-bold mt-0.5">✓</span>
+            <span><strong>Pary dopasowane</strong> — sekcja z jednej edycji i jej odpowiednik w drugiej (mogą mieć różne numery)</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="text-red-500 font-bold mt-0.5">−</span>
+            <span><strong>Tylko w starszej edycji</strong> — sekcja usunięta w nowej edycji</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="text-blue-500 font-bold mt-0.5">+</span>
+            <span><strong>Tylko w nowszej edycji</strong> — sekcja całkowicie nowa, bez odpowiednika w starszej</span>
+          </li>
+        </ul>
+        <p class="text-xs text-slate-text/50">
+          Jeśli wywołanie AI nie powiedzie się, algorytm automatycznie spada do dopasowania po kluczu
+          (stary §2 → nowy §2), co jest gorsze, ale bezpieczne jako fallback.
+        </p>
+      </div>
+    </section>
+
+    <!-- Phase 3 -->
+    <section class="bg-white rounded-xl border border-gray-100 p-6">
+      <h2 class="text-base font-bold text-bottle mb-3 flex items-center gap-2">
+        <span class="w-6 h-6 bg-bottle text-white rounded-full text-xs flex items-center justify-center shrink-0">3</span>
+        Merytoryczne porównanie par sekcji
+      </h2>
+      <div class="prose text-sm text-slate-text/80 space-y-3">
+        <p>
+          Każda para dopasowanych sekcji trafia do osobnego wywołania Gemini. AI porównuje treść
+          i — jeśli wykryje różnicę merytoryczną — zwraca strukturyzowany obiekt zmiany:
+        </p>
+        <ul class="list-none space-y-1 text-xs">
+          <li><strong>Sekcja</strong> — której pary dotyczy zmiana</li>
+          <li><strong>Zapis stary / nowy</strong> — cytaty ze zmienionych fragmentów</li>
+          <li><strong>Typ zmiany</strong> — zaostrzenie, złagodzenie, nowe wymaganie, zmiana terminu, kwoty itd.</li>
+          <li><strong>Waga</strong> — krytyczna / wysoka / średnia / niska</li>
+          <li><strong>Komentarz biznesowy</strong> — ekspercka ocena skutków dla wnioskodawcy</li>
+        </ul>
+        <p>
+          Sekcje identyczne (ten sam tekst po obu stronach) są pomijane bez wywołania AI.
+          Wywołania są podzielone na partie (batche), a postęp jest widoczny w czasie rzeczywistym.
+        </p>
+      </div>
+    </section>
+
+    <!-- Summary phase -->
+    <section class="bg-white rounded-xl border border-gray-100 p-6">
+      <h2 class="text-base font-bold text-bottle mb-3 flex items-center gap-2">
+        <span class="w-6 h-6 bg-lime text-bottle rounded-full text-xs flex items-center justify-center shrink-0 font-bold">+</span>
+        Podsumowania
+      </h2>
+      <div class="text-sm text-slate-text/80 space-y-2">
+        <p>
+          Po zakończeniu analizy każdej pary plików generowane jest <strong>podsumowanie pliku</strong>
+          (Executive Summary ze wszystkich zmian w danym dokumencie).
+        </p>
+        <p>
+          Gdy wszystkie pary są gotowe, użytkownik może wygenerować <strong>podsumowanie całej edycji</strong>
+          — syntetyczną ocenę tego, co zmieniło się w konkursie jako całości.
+        </p>
+      </div>
+    </section>
+
+    <!-- Cost note -->
+    <section class="bg-gray-50 rounded-xl border border-gray-100 p-5 text-xs text-slate-text/60 space-y-1">
+      <p class="font-semibold text-slate-text/70">Koszt wywołań AI (per para plików)</p>
+      <p>Ekstrakcja struktury: 1 wywołanie × 2 dokumenty (lub 0 jeśli cache jest aktualny)</p>
+      <p>Dopasowanie sekcji: 1 wywołanie (nowy krok)</p>
+      <p>Porównanie sekcji: 1 wywołanie × liczba unikalnych par sekcji (identyczne pomijane)</p>
+      <p>Podsumowanie pliku: 1 wywołanie</p>
+    </section>
+
+  </div>
+
+  <div class="mt-8 flex items-center gap-4">
+    <a href="{{ url_for('comparison.index') }}"
+       class="px-4 py-2 bg-bottle text-white text-sm font-medium rounded-lg hover:bg-bottle/90 transition-colors">
+      ← Wróć do porównań
+    </a>
+  </div>
+
+</div>
+{% endblock %}

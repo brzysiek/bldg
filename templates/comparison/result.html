@@ -110,10 +110,16 @@
   </div>
 {% endmacro %}
 
-<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2">
+<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2 flex-wrap">
   <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porównania</a>
   <span>›</span>
   <span class="text-slate-text font-medium">{{ job.competition_name or 'Porównanie #' ~ job.id }}</span>
+  <span class="ml-auto">
+    <a href="{{ url_for('comparison.how_it_works') }}"
+       class="text-xs text-slate-text/40 hover:text-bottle transition-colors flex items-center gap-1">
+      <span>⚙️</span><span>Jak działa algorytm?</span>
+    </a>
+  </span>
 </nav>
 
 <!-- Header -->

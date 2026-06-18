@@ -22,6 +22,8 @@ from services.comparator import (
     compare_sections_batch,
     generate_pair_summary,
     make_gemini_caller,
+    match_sections_ai,
+    build_section_pairs,
     BATCH_SIZE,
 )
 
@@ -289,7 +291,7 @@ def run_pair_batch(job_id):
               doc_old.original_name, doc_new.original_name)
 
     try:
-        struct_old, struct_new, all_keys, t_in_struct, t_out_struct = get_pair_structures(
+        struct_old, struct_new, _, t_in_struct, t_out_struct = get_pair_structures(
             doc_old, doc_new, settings
         )
 
@@ -298,15 +300,37 @@ def run_pair_batch(job_id):
         job.tokens_input  = (job.tokens_input  or 0) + t_in_struct
         job.tokens_output = (job.tokens_output or 0) + t_out_struct
 
-        import math as _math
-        sections_total = len(all_keys)
-        batch_end      = min(section_offset + BATCH_SIZE, sections_total)
-        batch_keys     = all_keys[section_offset:batch_end]
-        batch_num      = section_offset // BATCH_SIZE + 1
-        total_batches  = _math.ceil(sections_total / BATCH_SIZE) if sections_total > 0 else 1
-
         sekcje_old = struct_old.get("sekcje", {})
         sekcje_new = struct_new.get("sekcje", {})
+
+        # Section matching — computed once per pair, cached in file_mappings_json
+        if "section_matching" not in mapping:
+            job.status_detail = f"{pair_prefix}: dopasowywanie sekcji…"
+            _safe_commit()
+            call_match, match_tokens = make_gemini_caller(settings, stage="matching")
+            matching = match_sections_ai(
+                sekcje_old, sekcje_new,
+                job.label_old or "Edycja starsza",
+                job.label_new or "Edycja nowsza",
+                call_match, settings,
+            )
+            mapping["section_matching"] = matching
+            job.file_mappings_json = json.dumps(mappings, ensure_ascii=False)
+            job.tokens_input  = (job.tokens_input  or 0) + match_tokens["in"]
+            job.tokens_output = (job.tokens_output or 0) + match_tokens["out"]
+            job.pair_lock_at  = datetime.utcnow()
+            _safe_commit()
+        else:
+            matching = mapping["section_matching"]
+
+        all_pairs = build_section_pairs(matching)
+
+        import math as _math
+        sections_total = len(all_pairs)
+        batch_end      = min(section_offset + BATCH_SIZE, sections_total)
+        batch_pairs    = all_pairs[section_offset:batch_end]
+        batch_num      = section_offset // BATCH_SIZE + 1
+        total_batches  = _math.ceil(sections_total / BATCH_SIZE) if sections_total > 0 else 1
 
         pct_start = round(section_offset / sections_total * 100) if sections_total > 0 else 0
         job.status_detail = f"sekcja {section_offset + 1}/{sections_total} ({pct_start}%)"
@@ -326,12 +350,14 @@ def run_pair_batch(job_id):
                     pass
 
         changes_batch = compare_sections_batch(
-            sekcje_old, sekcje_new, batch_keys,
-            job.label_old, job.label_new,
-            call_fn, settings, _on_progress,
+            sekcje_old, sekcje_new,
+            label_old=job.label_old, label_new=job.label_new,
+            call_gemini=call_fn, settings=settings,
+            on_progress=_on_progress,
             section_offset=section_offset,
             sections_total=sections_total,
             skip_redactional=bool(job.skip_redactional),
+            section_pairs=batch_pairs,
         )
 
         job.tokens_input  = (job.tokens_input  or 0) + batch_tokens["in"]
@@ -1196,3 +1222,8 @@ def delete_job(job_id):
     db.session.commit()
     flash("Porównanie usunięte.", "success")
     return redirect(url_for("comparison.index"))
+
+
+@bp.route("/how-it-works")
+def how_it_works():
+    return render_template("comparison/how_it_works.html")

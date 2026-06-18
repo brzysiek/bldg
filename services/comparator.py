@@ -88,6 +88,37 @@ ZMIANY OPERACYJNE — zmiany w harmonogramie, procedurach, dokumentacji ktorych 
 Formatuj odpowiedz w Markdown. Uzywaj profesjonalnego, doradczego tonu."""
 
 
+DEFAULT_PROMPT_MATCHING = """Jestes ekspertem od analizy dokumentow regulaminowych konkursow grantowych.
+
+Ponizej znajduja sie listy sekcji z dwoch edycji tego samego dokumentu.
+Dopasuj semantycznie odpowiadajace sobie sekcje — takie, ktore opisuja ten sam temat, nawet jesli maja inny numer lub zmieniona nazwe miedzy edycjami.
+
+Edycja starsza ({label_old}):
+{sekcje_stare}
+
+Edycja nowsza ({label_new}):
+{sekcje_nowe}
+
+Zwroc WYLACZNIE obiekt JSON (bez tekstu przed/po, bez blokow ```json```):
+{{
+  "matched": [
+    {{"old": "§1", "new": "§1"}},
+    {{"old": "§2", "new": "§3"}}
+  ],
+  "only_in_old": ["§X"],
+  "only_in_new": ["§2"]
+}}
+
+Zasady:
+- "matched": para sekcji opisujacych ten sam temat w obu edycjach (niezaleznie od numeru)
+- "only_in_old": sekcja istnieje TYLKO w starszej edycji (calkowicie usunieta w nowej)
+- "only_in_new": sekcja istnieje TYLKO w nowszej edycji (zupelnie nowa, bez odpowiednika w starszej)
+- Kazda sekcja ze starszej edycji musi wystapic dokladnie raz — albo w matched.old, albo w only_in_old
+- Kazda sekcja z nowszej edycji musi wystapic dokladnie raz — albo w matched.new, albo w only_in_new
+- Jesli tresc sekcji jest identyczna lub bardzo podobna mimo innego numeru — dopasuj je
+- Jesli kolejnosc sekcji sie zmienila, ale tresc jest podobna — dopasuj je"""
+
+
 DEFAULT_PROMPT_EDITION_SUMMARY = """Jestes glownym analitykiem projektow unijnych.
 
 Przeprowadzono porownanie edycji {label_old} z edycja {label_new} konkursu "{competition_name}".
@@ -399,6 +430,93 @@ def _get_structure_cached(doc, text, call_gemini, settings):
     return structure
 
 
+def match_sections_ai(sekcje_old, sekcje_new, label_old, label_new, call_gemini, settings=None):
+    """Use Gemini to semantically match sections between two document editions.
+
+    Returns {"matched": [{"old": k, "new": k}], "only_in_old": [...], "only_in_new": [...]}.
+    Falls back to key-based matching if the AI call fails.
+    """
+    keys_old = list(sekcje_old.keys())
+    keys_new = list(sekcje_new.keys())
+
+    previews_old = "\n".join(
+        f'  "{k}": "{str(v)[:250].replace(chr(10), " ").strip()}"'
+        for k, v in sekcje_old.items()
+    )
+    previews_new = "\n".join(
+        f'  "{k}": "{str(v)[:250].replace(chr(10), " ").strip()}"'
+        for k, v in sekcje_new.items()
+    )
+
+    prompt = (
+        DEFAULT_PROMPT_MATCHING
+        .replace("{label_old}", label_old)
+        .replace("{label_new}", label_new)
+        .replace("{sekcje_stare}", previews_old[:50_000])
+        .replace("{sekcje_nowe}", previews_new[:50_000])
+    )
+
+    try:
+        resp = call_gemini(prompt)
+        raw = resp.text.strip().replace("```json", "").replace("```", "").strip()
+        result = json.loads(raw)
+
+        matched  = result.get("matched",     [])
+        only_old = result.get("only_in_old", [])
+        only_new = result.get("only_in_new", [])
+
+        # Safety: ensure every key appears exactly once
+        covered_old = {m["old"] for m in matched} | set(only_old)
+        covered_new = {m["new"] for m in matched} | set(only_new)
+        for k in keys_old:
+            if k not in covered_old:
+                only_old.append(k)
+                log.warning("match_sections_ai: sekcja '%s' (stara) pominięta przez AI — dodano do only_in_old", k)
+        for k in keys_new:
+            if k not in covered_new:
+                only_new.append(k)
+                log.warning("match_sections_ai: sekcja '%s' (nowa) pominięta przez AI — dodano do only_in_new", k)
+
+        log.info("match_sections_ai OK  %d par  %d usuniętych  %d nowych",
+                 len(matched), len(only_old), len(only_new))
+        return {"matched": matched, "only_in_old": only_old, "only_in_new": only_new}
+
+    except Exception as exc:
+        log.warning("match_sections_ai błąd (%s): %s — fallback do dopasowania po kluczu",
+                    type(exc).__name__, exc)
+        common = [k for k in keys_old if k in sekcje_new]
+        return {
+            "matched":     [{"old": k, "new": k} for k in common],
+            "only_in_old": [k for k in keys_old if k not in sekcje_new],
+            "only_in_new": [k for k in keys_new if k not in sekcje_old],
+        }
+
+
+def build_section_pairs(matching):
+    """Flatten a matching dict into an ordered list for batch processing.
+
+    Each element: {"old": key_or_none, "new": key_or_none}.
+    Order: matched pairs first, then only_in_old, then only_in_new.
+    """
+    pairs = []
+    for m in matching.get("matched", []):
+        pairs.append({"old": m["old"], "new": m["new"]})
+    for k in matching.get("only_in_old", []):
+        pairs.append({"old": k, "new": None})
+    for k in matching.get("only_in_new", []):
+        pairs.append({"old": None, "new": k})
+    return pairs
+
+
+def _sekcja_label(old_key, new_key):
+    """Human-readable label for a section pair."""
+    if old_key and new_key:
+        return old_key if old_key == new_key else f"{old_key} → {new_key}"
+    if old_key:
+        return f"{old_key} [usunięta]"
+    return f"{new_key} [nowa]"
+
+
 def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_progress, settings,
                   struct_old=None, struct_new=None, call_extraction=None):
     _call_ext = call_extraction or call_gemini
@@ -409,30 +527,38 @@ def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_prog
 
     sekcje_old = struct_old.get("sekcje", {})
     sekcje_new = struct_new.get("sekcje", {})
-    all_keys = sorted(set(list(sekcje_old.keys()) + list(sekcje_new.keys())))
 
-    log.debug("_compare_pair START  %s vs %s  sekcji do sprawdzenia: %d",
-              label_old, label_new, len(all_keys))
+    on_progress("Dopasowywanie sekcji (faza 1/2)…")
+    matching = match_sections_ai(sekcje_old, sekcje_new, label_old, label_new, _call_ext, settings)
+    all_pairs = build_section_pairs(matching)
+
+    log.debug("_compare_pair START  %s vs %s  par: %d (%d dopasowanych, %d usuniętych, %d nowych)",
+              label_old, label_new, len(all_pairs),
+              len(matching["matched"]), len(matching["only_in_old"]), len(matching["only_in_new"]))
 
     changes = []
     found = 0
 
-    for idx, sekcja in enumerate(all_keys, 1):
-        tresc_stara = sekcje_old.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
-        tresc_nowa  = sekcje_new.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
+    for idx, pair in enumerate(all_pairs, 1):
+        old_key = pair["old"]
+        new_key = pair["new"]
+        label   = _sekcja_label(old_key, new_key)
 
-        on_progress(f"Sekcja {idx}/{len(all_keys)}: {sekcja}" + (f" — {found} zmian" if found else ""))
-        log.debug("_compare_pair  sekcja %d/%d: %s", idx, len(all_keys), sekcja[:80])
+        tresc_stara = sekcje_old.get(old_key, "[SEKCJA NIEOBECNA W TEJ EDYCJI]") if old_key else "[SEKCJA NIEOBECNA W TEJ EDYCJI]"
+        tresc_nowa  = sekcje_new.get(new_key, "[SEKCJA NIEOBECNA W TEJ EDYCJI]") if new_key else "[SEKCJA NIEOBECNA W TEJ EDYCJI]"
+
+        on_progress(f"Porównanie sekcji {idx}/{len(all_pairs)}: {label}" + (f" — {found} zmian" if found else ""))
+        log.debug("_compare_pair  para %d/%d: %s", idx, len(all_pairs), label[:80])
 
         if tresc_stara == tresc_nowa:
-            log.debug("_compare_pair  sekcja %s — identyczna, pomijam", sekcja)
+            log.debug("_compare_pair  para %s — identyczna, pomijam", label)
             continue
 
         prompt = (
             (settings.comparison_prompt_comparison or DEFAULT_PROMPT_COMPARISON)
             .replace("{label_old}", label_old)
             .replace("{label_new}", label_new)
-            .replace("{sekcja}", sekcja)
+            .replace("{sekcja}", label)
             .replace("{tresc_stara}", tresc_stara[:4000])
             .replace("{tresc_nowa}", tresc_nowa[:4000])
         )
@@ -440,20 +566,20 @@ def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_prog
             resp = call_gemini(prompt)
             raw = resp.text.strip()
             if raw == "BRAK_ZMIAN":
-                log.debug("_compare_pair  sekcja %s — BRAK_ZMIAN", sekcja)
+                log.debug("_compare_pair  para %s — BRAK_ZMIAN", label)
             else:
                 raw = raw.replace("```json", "").replace("```", "").strip()
                 obj = json.loads(raw)
-                obj["sekcja"] = sekcja
+                obj["sekcja"] = label
                 changes.append(obj)
                 found += 1
-                log.debug("_compare_pair  sekcja %s — zmiana: typ=%s waga=%s",
-                          sekcja, obj.get("typ_zmiany", "?"), obj.get("waga", "?"))
+                log.debug("_compare_pair  para %s — zmiana: typ=%s waga=%s",
+                          label, obj.get("typ_zmiany", "?"), obj.get("waga", "?"))
         except Exception as e:
-            log.warning("_compare_pair  sekcja %s — błąd analizy (%s): %s",
-                        sekcja, type(e).__name__, e)
+            log.warning("_compare_pair  para %s — błąd analizy (%s): %s",
+                        label, type(e).__name__, e)
             changes.append({
-                "sekcja": sekcja,
+                "sekcja": label,
                 "zapis_stary": tresc_stara[:500],
                 "zapis_nowy": tresc_nowa[:500],
                 "typ_zmiany": "INNE",
@@ -462,7 +588,7 @@ def _compare_pair(text_old, text_new, label_old, label_new, call_gemini, on_prog
             })
             found += 1
 
-    log.debug("_compare_pair KONIEC  znaleziono %d zmian z %d sekcji", found, len(all_keys))
+    log.debug("_compare_pair KONIEC  znaleziono %d zmian z %d par", found, len(all_pairs))
     return changes
 
 
@@ -537,28 +663,42 @@ _SKIP_REDACTIONAL_NOTE = (
 )
 
 
-def compare_sections_batch(sekcje_old, sekcje_new, section_keys,
-                            label_old, label_new, call_gemini, settings,
+def compare_sections_batch(sekcje_old, sekcje_new, section_keys=None,
+                            label_old="", label_new="", call_gemini=None, settings=None,
                             on_progress=None, section_offset=0, sections_total=None,
-                            skip_redactional=False):
-    """Process the given section keys and return a list of changes."""
+                            skip_redactional=False, section_pairs=None):
+    """Process a batch of section pairs and return a list of changes.
+
+    `section_pairs` (preferred): list of {"old": key_or_none, "new": key_or_none} dicts
+    produced by build_section_pairs().  When None, falls back to the legacy `section_keys`
+    list of string keys (old behaviour, key-based matching).
+    """
+    # Normalise to a list of (old_key, new_key, display_label) triples
+    if section_pairs is not None:
+        items = [
+            (p["old"], p["new"], _sekcja_label(p["old"], p["new"]))
+            for p in section_pairs
+        ]
+    else:
+        items = [(k, k, k) for k in (section_keys or [])]
+
     changes = []
-    n = len(section_keys)
-    total = sections_total if sections_total is not None else n
-    for i, sekcja in enumerate(section_keys, 1):
+    total = sections_total if sections_total is not None else len(items)
+
+    for i, (old_key, new_key, label) in enumerate(items, 1):
         if on_progress:
             global_i = section_offset + i
             pct = round(global_i / total * 100) if total > 0 else 0
             try:
-                on_progress(f"sekcja {global_i}/{total} ({pct}%) {sekcja}")
+                on_progress(f"sekcja {global_i}/{total} ({pct}%) {label}")
             except Exception:
                 pass
 
-        tresc_stara = sekcje_old.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
-        tresc_nowa  = sekcje_new.get(sekcja, "[SEKCJA NIEOBECNA W TEJ EDYCJI]")
+        tresc_stara = sekcje_old.get(old_key, "[SEKCJA NIEOBECNA W TEJ EDYCJI]") if old_key else "[SEKCJA NIEOBECNA W TEJ EDYCJI]"
+        tresc_nowa  = sekcje_new.get(new_key, "[SEKCJA NIEOBECNA W TEJ EDYCJI]") if new_key else "[SEKCJA NIEOBECNA W TEJ EDYCJI]"
 
         if tresc_stara == tresc_nowa:
-            log.debug("compare_sections_batch  sekcja %s — identyczna", sekcja[:60])
+            log.debug("compare_sections_batch  para %s — identyczna", label[:60])
             continue
 
         base_prompt = settings.comparison_prompt_comparison or DEFAULT_PROMPT_COMPARISON
@@ -569,7 +709,7 @@ def compare_sections_batch(sekcje_old, sekcje_new, section_keys,
             base_prompt
             .replace("{label_old}", label_old)
             .replace("{label_new}", label_new)
-            .replace("{sekcja}", sekcja)
+            .replace("{sekcja}", label)
             .replace("{tresc_stara}", tresc_stara[:4000])
             .replace("{tresc_nowa}", tresc_nowa[:4000])
         )
@@ -577,22 +717,22 @@ def compare_sections_batch(sekcje_old, sekcje_new, section_keys,
             resp = call_gemini(prompt)
             raw  = resp.text.strip()
             if raw == "BRAK_ZMIAN":
-                log.debug("compare_sections_batch  sekcja %s — BRAK_ZMIAN", sekcja[:60])
+                log.debug("compare_sections_batch  para %s — BRAK_ZMIAN", label[:60])
             else:
                 raw = raw.replace("```json", "").replace("```", "").strip()
                 obj = json.loads(raw)
-                obj["sekcja"] = sekcja
+                obj["sekcja"] = label
                 if skip_redactional and obj.get("typ_zmiany") == "ZMIANA_REDAKCYJNA":
-                    log.debug("compare_sections_batch  sekcja %s — pomijam ZMIANA_REDAKCYJNA", sekcja[:60])
+                    log.debug("compare_sections_batch  para %s — pomijam ZMIANA_REDAKCYJNA", label[:60])
                 else:
                     changes.append(obj)
-                    log.debug("compare_sections_batch  sekcja %s — zmiana: %s/%s",
-                              sekcja[:60], obj.get("typ_zmiany"), obj.get("waga"))
+                    log.debug("compare_sections_batch  para %s — zmiana: %s/%s",
+                              label[:60], obj.get("typ_zmiany"), obj.get("waga"))
         except Exception as e:
-            log.warning("compare_sections_batch  sekcja %s — błąd (%s): %s",
-                        sekcja[:60], type(e).__name__, e)
+            log.warning("compare_sections_batch  para %s — błąd (%s): %s",
+                        label[:60], type(e).__name__, e)
             changes.append({
-                "sekcja": sekcja,
+                "sekcja": label,
                 "zapis_stary": tresc_stara[:500],
                 "zapis_nowy": tresc_nowa[:500],
                 "typ_zmiany": "INNE",
