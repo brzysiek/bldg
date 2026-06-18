@@ -4,6 +4,7 @@ import logging
 import os
 import time
 from datetime import datetime
+from types import SimpleNamespace
 from services.text_extractor import extract_text
 
 log = logging.getLogger(__name__)
@@ -13,6 +14,17 @@ _GEMINI_SLEEP = float(os.environ.get("GEMINI_SLEEP_SECONDS", "1.0"))
 
 # Liczba sekcji przetwarzanych w jednym żądaniu HTTP, konfigurowalne przez .env
 BATCH_SIZE = int(os.environ.get("GEMINI_BATCH_SECTIONS", "20"))
+
+
+def _snap(orm_obj):
+    """Convert an ORM instance to a plain SimpleNamespace.
+
+    Reads all column attributes while the session is open. The returned object
+    is not bound to any session — safe to use after commit() or session.close().
+    """
+    from sqlalchemy import inspect as _sa_inspect
+    mapper = _sa_inspect(type(orm_obj))
+    return SimpleNamespace(**{c.key: getattr(orm_obj, c.key) for c in mapper.column_attrs})
 
 DEFAULT_PROMPT_EXTRACTION = """Jestes ekspertem ds. analizy dokumentow prawnych i regulaminow konkursow grantowych.
 
@@ -496,35 +508,39 @@ def extract_document(doc_id: int) -> tuple:
         _write_extract_error(doc_id, "Brak klucza Drive API")
         return False, "Brak klucza Drive API"
 
+    # Snapshot all needed values while the session is still open.
+    # commit() expires ORM attributes; accessing expired attrs after commit
+    # triggers lazy reloads that check out a new DB connection and hold it
+    # through the entire Gemini call (minutes). Snapshots avoid that entirely.
+    doc_s      = _snap(doc)
+    settings_s = _snap(settings)
+
     try:
         doc.extraction_status = "pending"
         doc.extraction_error  = None
         db.session.commit()
+        # Connection returned to pool after commit. doc and settings are expired.
+        # We no longer touch them — use doc_s and settings_s from here on.
     except Exception:
         try:
             db.session.rollback()
         except Exception:
             pass
 
-    # Release the DB connection back to the pool before long Gemini/Drive calls.
-    # doc and settings become detached but their loaded scalar attributes remain readable.
-    db.session.close()
-
-    client = genai.Client(api_key=settings.gemini_api_key)
+    client = genai.Client(api_key=settings_s.gemini_api_key)
     tokens = {"in": 0, "out": 0}
-    call_extraction = _make_stage_caller(client, settings, "extraction", tokens)
+    call_extraction = _make_stage_caller(client, settings_s, "extraction", tokens)
 
     try:
-        local_path, tmp_dir = _resolve_local_path(doc, settings)
+        local_path, tmp_dir = _resolve_local_path(doc_s, settings_s)
         try:
-            text = extract_text(local_path, doc.mime_type or "")
+            text = extract_text(local_path, doc_s.mime_type or "")
         finally:
             if tmp_dir:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
 
-        structure = _extract_structure(text, doc.original_name, call_extraction, settings)
+        structure = _extract_structure(text, doc_s.original_name, call_extraction, settings_s)
 
-        db.session.expire_all()
         fresh = db.session.get(Document, doc_id)
         if not fresh:
             return False, "Dokument zniknął z bazy po ekstrakcji"
@@ -535,11 +551,11 @@ def extract_document(doc_id: int) -> tuple:
         fresh.extraction_error       = None
         db.session.commit()
         n = len(structure.get("sekcje", {}))
-        log.info("extract_document OK: %s (%d sekcji)", doc.original_name, n)
+        log.info("extract_document OK: %s (%d sekcji)", doc_s.original_name, n)
         return True, None
 
     except Exception as exc:
-        log.error("extract_document BŁĄD %s: %s", doc.original_name, exc, exc_info=True)
+        log.error("extract_document BŁĄD %s: %s", doc_s.original_name, exc, exc_info=True)
         _write_extract_error(doc_id, str(exc)[:500])
         return False, str(exc)
 
@@ -570,23 +586,26 @@ def extract_and_summarize(doc_id: int) -> tuple:
         _write_extract_error(doc_id, "Brak klucza Drive API")
         return False, "Brak klucza Drive API"
 
-    prompt = settings.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION
-    ph = _prompt_hash(prompt)
-    gemini_model = settings.gemini_model
-    old_description = doc.ai_description or ""
+    # Snapshot BEFORE any commit — commit() expires ORM attributes, triggering
+    # lazy reloads that hold a DB connection through the long Gemini/Drive work.
+    doc_s      = _snap(doc)
+    settings_s = _snap(settings)
 
-    client = genai.Client(api_key=settings.gemini_api_key)
+    prompt      = settings_s.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION
+    ph          = _prompt_hash(prompt)
+    gemini_model = settings_s.gemini_model
+    old_description = doc_s.ai_description or ""
+
+    client = genai.Client(api_key=settings_s.gemini_api_key)
     tokens = {"in": 0, "out": 0}
-    call_extraction = _make_stage_caller(client, settings, "extraction", tokens)
-
-    # Release the DB connection before long Drive/Gemini calls (may take minutes).
-    # doc and settings are detached but scalar attributes remain readable.
-    db.session.close()
+    call_extraction = _make_stage_caller(client, settings_s, "extraction", tokens)
+    # After creating the client we don't need the session anymore for the long work.
+    # The pending status was already set by the caller (extract_and_summarize_json).
 
     try:
-        local_path, tmp_dir = _resolve_local_path(doc, settings)
+        local_path, tmp_dir = _resolve_local_path(doc_s, settings_s)
         try:
-            text = extract_text(local_path, doc.mime_type or "")
+            text = extract_text(local_path, doc_s.mime_type or "")
         finally:
             if tmp_dir:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -597,10 +616,8 @@ def extract_and_summarize(doc_id: int) -> tuple:
         if len(text) > 400_000:
             text = text[:400_000] + "\n[TEKST OBCIĘTY DO 400 000 ZNAKÓW]"
 
-        structure = _extract_structure(text, doc.original_name, call_extraction, settings)
-        summary_result = _summarize(text, settings)
-
-        db.session.expire_all()
+        structure = _extract_structure(text, doc_s.original_name, call_extraction, settings_s)
+        summary_result = _summarize(text, settings_s)
 
         fresh = db.session.get(Document, doc_id)
         if not fresh:
@@ -622,16 +639,15 @@ def extract_and_summarize(doc_id: int) -> tuple:
 
         db.session.commit()
         n = len(structure.get("sekcje", {}))
-        log.info("extract_and_summarize OK: %s (%d sekcji)", doc.original_name, n)
+        log.info("extract_and_summarize OK: %s (%d sekcji)", doc_s.original_name, n)
         return True, None
 
     except Exception as exc:
-        log.error("extract_and_summarize BŁĄD %s: %s", doc.original_name, exc, exc_info=True)
+        log.error("extract_and_summarize BŁĄD %s: %s", doc_s.original_name, exc, exc_info=True)
         try:
             db.session.rollback()
         except Exception:
             pass
-        db.session.expire_all()
         try:
             fresh = db.session.get(Document, doc_id)
             if fresh:

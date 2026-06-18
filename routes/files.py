@@ -4,6 +4,7 @@ import threading
 import time
 import tempfile
 from datetime import datetime
+from types import SimpleNamespace
 from flask import Blueprint, jsonify, render_template, request, redirect, url_for, flash, send_file, abort, Response, current_app
 from werkzeug.utils import secure_filename
 from extensions import db
@@ -16,6 +17,17 @@ _logger = logging.getLogger(__name__)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 bp = Blueprint("files", __name__)
+
+
+def _snap_orm(obj):
+    """Convert an ORM instance to a plain SimpleNamespace.
+
+    Reads all column attributes NOW (while session is open). The returned object
+    is not bound to any session — safe to use after commit() or close().
+    """
+    from sqlalchemy import inspect as sa_inspect
+    mapper = sa_inspect(type(obj))
+    return SimpleNamespace(**{c.key: getattr(obj, c.key) for c in mapper.column_attrs})
 
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "txt", "csv", "png", "jpg", "jpeg"}
 
@@ -167,11 +179,8 @@ def _run_summarize(doc, settings):
     if len(text) > 400_000:
         text = text[:400_000] + "\n[TEKST OBCIĘTY DO 400 000 ZNAKÓW]"
 
-    # Snapshot model name before releasing the session
+    # Capture model name before Gemini call (settings is expired by caller's commit)
     gemini_model = settings.gemini_model
-
-    # Release the DB connection before the long Gemini call so other requests can use it.
-    db.session.close()
 
     try:
         result = summarize_document(text, settings)
@@ -211,16 +220,23 @@ def summarize(file_id):
         flash("Brak klucza Gemini API. Przejdź do ⚙️ Ustawień.", "warning")
         return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
 
+    # Snapshot before commit — commit() expires ORM attrs, causing lazy reloads
+    # that hold a DB connection through the long Gemini call.
+    doc_snap      = _snap_orm(doc)
+    settings_snap = _snap_orm(settings)
+    c_slug        = competition.slug
+    e_slug        = edition.slug
+
     doc.ai_summary_status = "pending"
     db.session.commit()
 
-    ok, err = _run_summarize(doc, settings)
+    ok, err = _run_summarize(doc_snap, settings_snap)
     if ok:
         flash("Podsumowanie AI zostało wygenerowane.", "success")
     else:
         flash(f"Błąd: {err}", "error")
 
-    return redirect(url_for("editions.detail", c_slug=competition.slug, e_slug=edition.slug))
+    return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
 
 @bp.route("/files/<int:file_id>/summarize-json", methods=["POST"])
@@ -235,17 +251,23 @@ def summarize_json(file_id):
             return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API w ustawieniach"})
 
         _logger.info("summarize_json: start file_id=%s name=%s", file_id, doc.original_name)
+
+        # Snapshot before commit — commit() expires ORM attrs, causing lazy reloads
+        # that hold a DB connection through the long Gemini call.
+        doc_snap      = _snap_orm(doc)
+        settings_snap = _snap_orm(settings)
+
         doc.ai_summary_status = "pending"
         db.session.commit()
 
-        ok, err = _run_summarize(doc, settings)
+        ok, err = _run_summarize(doc_snap, settings_snap)
         if ok:
             _logger.info("summarize_json: done file_id=%s", file_id)
             return jsonify({
                 "ok": True,
                 "file_id": file_id,
-                "description": doc.ai_description or "",
-                "summary": doc.ai_summary or "",
+                "description": doc_snap.ai_description or "",
+                "summary": doc_snap.ai_summary or "",
             })
         else:
             _logger.warning("summarize_json: failed file_id=%s err=%s", file_id, err)
