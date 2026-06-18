@@ -861,6 +861,7 @@ def _write_summary_sheet(ws, job, per_file_results):
              n_tot, n_crit, n_high, n_med, n_low], 1
         ):
             cell = ws.cell(row=row, column=col, value=v)
+            cell.font = Font(size=14)
             cell.alignment = Alignment(wrap_text=True,
                                        horizontal="center" if col > 2 else "left")
         if n_crit > 0:
@@ -889,6 +890,7 @@ def _write_summary_sheet(ws, job, per_file_results):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
         row += 1
         cell = ws.cell(row=row, column=1, value=_xl_val(job.edition_summary))
+        cell.font = Font(size=14)
         cell.alignment = Alignment(wrap_text=True)
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
         ws.row_dimensions[row].height = min(400, max(60, len(job.edition_summary) // 8))
@@ -920,6 +922,7 @@ def _write_pair_sheet(ws, pfr, job):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
         row += 1
         cell = ws.cell(row=row, column=1, value=summary)
+        cell.font = Font(size=14)
         cell.alignment = Alignment(wrap_text=True)
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
         ws.row_dimensions[row].height = min(400, max(60, len(summary) // 8))
@@ -956,6 +959,7 @@ def _write_pair_sheet(ws, pfr, job):
              _xl_val(change.get("komentarz_biznesowy",""))], 1
         ):
             cell = ws.cell(row=row, column=col, value=v)
+            cell.font = Font(size=14)
             cell.fill = fill
             cell.alignment = Alignment(wrap_text=True)
 
