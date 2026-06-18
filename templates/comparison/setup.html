@@ -362,8 +362,10 @@ function _pairScore(fo, fn) {
 }
 function autoPairs() {
   const MIN = 0.15;
+  const oldWithDesc = filesOld.filter(f => f.description);
+  const newWithDesc = filesNew.filter(f => f.description);
   const cands = [];
-  filesOld.forEach(fo => filesNew.forEach(fn => {
+  oldWithDesc.forEach(fo => newWithDesc.forEach(fn => {
     const s = _pairScore(fo, fn);
     if (s >= MIN) cands.push({s, fo, fn});
   }));
