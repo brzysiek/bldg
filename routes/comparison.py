@@ -783,11 +783,10 @@ _BOTTLE     = "0019A6"
 _WAGA_FILL  = {"KRYTYCZNA": "FFCCCC", "WYSOKA": "FFE5CC", "SREDNIA": "FFFFCC", "NISKA": "E5FFE5"}
 
 # XML 1.0 legal: #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD]
-# Strip everything that produces invalid XML inside XLSX (openpyxl writes XML)
+# Strip characters invalid in XML 1.0 (whitelist approach)
+# Valid: #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
 _ILLEGAL_XML = re.compile(
-    u'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f'  # C0 + C1 controls
-    u'﷐-﷯'                            # Unicode non-characters
-    u'￾￿]'                            # BOM / non-characters
+    '[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF]'
 )
 _XL_MAX_LEN  = 32000  # Excel hard limit is 32 767; leave a small buffer
 
@@ -814,13 +813,56 @@ def _excel_filename(job, suffix=""):
 
 def _safe_sheet_name(name):
     import re
-    return re.sub(r"[\\/*?:\[\]]", "_", name or "Arkusz")[:31]
+    cleaned = re.sub(r"[\\/*?:\[\]']", "_", name or "Arkusz").strip()
+    return (cleaned or "Arkusz")[:31]
+
+
+def _unique_sheet_name(base, used):
+    """Return base (max 31 chars) guaranteed unique within the `used` set; updates used in-place."""
+    name = base[:31]
+    if name not in used:
+        used.add(name)
+        return name
+    i = 1
+    while True:
+        suffix = f" ({i})"
+        candidate = base[:31 - len(suffix)] + suffix
+        if candidate not in used:
+            used.add(candidate)
+            return candidate
+        i += 1
 
 
 def _xl_col_widths(ws, widths):
     from openpyxl.utils import get_column_letter
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
+
+
+def _auto_row_heights(ws, col_widths, line_height=15, padding=6, min_h=18, max_h=409):
+    """Estimate row heights from wrapped-text cell content.
+
+    col_widths: list of column widths in Excel units (same order as columns).
+    Excel character unit ≈ 7 px; line_height in pt.
+    """
+    for row in ws.iter_rows():
+        max_lines = 1
+        for cell in row:
+            if cell.value is None:
+                continue
+            text = str(cell.value)
+            col_idx = cell.column - 1
+            if col_idx < len(col_widths):
+                chars_per_line = max(1, int(col_widths[col_idx]))
+            else:
+                chars_per_line = 20
+            # count explicit newlines + estimate wrapped lines
+            lines = 0
+            for segment in text.split('\n'):
+                lines += max(1, -(-len(segment) // chars_per_line))  # ceiling div
+            max_lines = max(max_lines, lines)
+        h = min(max_h, max(min_h, max_lines * line_height + padding))
+        ws.row_dimensions[row[0].row].height = h
 
 
 def _write_summary_sheet(ws, job, per_file_results):
@@ -893,9 +935,9 @@ def _write_summary_sheet(ws, job, per_file_results):
         cell.font = Font(size=14)
         cell.alignment = Alignment(wrap_text=True)
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=NCOLS)
-        ws.row_dimensions[row].height = min(400, max(60, len(job.edition_summary) // 8))
-
-    _xl_col_widths(ws, [40, 40, 10, 12, 10, 10, 10])
+    _col_w = [40, 40, 10, 12, 10, 10, 10]
+    _xl_col_widths(ws, _col_w)
+    _auto_row_heights(ws, _col_w)
 
 
 def _write_pair_sheet(ws, pfr, job):
@@ -963,9 +1005,9 @@ def _write_pair_sheet(ws, pfr, job):
             cell.fill = fill
             cell.alignment = Alignment(wrap_text=True)
 
-    for r in ws.iter_rows(min_row=tbl_row + 1):
-        ws.row_dimensions[r[0].row].height = 80
-    _xl_col_widths(ws, [20, 20, 12, 50, 50, 60])
+    _col_w = [20, 20, 12, 50, 50, 60]
+    _xl_col_widths(ws, _col_w)
+    _auto_row_heights(ws, _col_w)
 
 
 def _send_excel(wb, filename):
@@ -1065,10 +1107,14 @@ def download_excel(job_id):
     ws_sum.title = "Podsumowanie"
     _write_summary_sheet(ws_sum, job, per_file_results)
 
+    used_names = {"Podsumowanie"}
     for pfr in per_file_results:
         if pfr.get("skipped"):
             continue
-        ws = wb.create_sheet(_safe_sheet_name(pfr.get("old_name", "Para")))
+        sheet_name = _unique_sheet_name(
+            _safe_sheet_name(pfr.get("old_name", "Para")), used_names
+        )
+        ws = wb.create_sheet(sheet_name)
         _write_pair_sheet(ws, pfr, job)
 
     return _send_excel(wb, _excel_filename(job))
