@@ -48,12 +48,16 @@
 
   <!-- Top navigation bar -->
   <header class="text-white shadow-md sticky top-0 z-20" style="background:rgb(2,3,129)">
-    <div class="max-w-screen-2xl mx-auto px-6 flex items-center gap-8 h-14">
+    <div class="max-w-screen-2xl mx-auto px-6 flex items-center gap-4 h-14">
+
+      <!-- Logo -->
       <a href="{{ url_for('competitions.index') }}" class="flex items-center gap-2 shrink-0">
         <span class="text-white font-bold text-lg leading-none">BLDG</span>
         <span class="text-white text-xs hidden sm:inline">Manager dokumentacji</span>
       </a>
-      <nav class="flex items-center gap-1 flex-1 min-w-0">
+
+      <!-- Desktop nav -->
+      <nav class="hidden lg:flex items-center gap-1 flex-1 min-w-0">
         <a href="{{ url_for('competitions.index') }}"
            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
                   {% if request.path == '/' or request.path.startswith('/competition') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
@@ -85,20 +89,113 @@
           <span>📋</span><span>Logi</span>
         </a>
       </nav>
+
+      <!-- Spacer (desktop) -->
+      <div class="hidden lg:flex flex-1"></div>
+
+      <!-- User info (desktop) -->
       {% if session.user_email %}
-      <div class="flex items-center gap-2 ml-2 shrink-0">
+      <div class="hidden lg:flex items-center gap-2 shrink-0">
         {% if session.user_picture %}
           <img src="{{ session.user_picture }}" alt="" class="w-7 h-7 rounded-full border border-white/30 shrink-0">
         {% endif %}
-        <span class="text-white/70 text-xs hidden md:inline truncate max-w-[140px]">{{ session.user_name or session.user_email }}</span>
+        <span class="text-white/70 text-xs truncate max-w-[140px]">{{ session.user_name or session.user_email }}</span>
         <a href="{{ url_for('auth.logout') }}"
            class="px-2 py-1 text-white/60 hover:text-white text-xs rounded hover:bg-white/10 transition-colors shrink-0">
           Wyloguj
         </a>
       </div>
       {% endif %}
+
+      <!-- Hamburger button (mobile/tablet) -->
+      <button id="nav-toggle" type="button"
+              class="lg:hidden ml-auto flex flex-col justify-center items-center w-9 h-9 rounded-lg hover:bg-white/10 transition-colors gap-1.5 shrink-0"
+              aria-label="Menu" aria-expanded="false">
+        <span class="block w-5 h-0.5 bg-white transition-all duration-200" id="ham-1"></span>
+        <span class="block w-5 h-0.5 bg-white transition-all duration-200" id="ham-2"></span>
+        <span class="block w-5 h-0.5 bg-white transition-all duration-200" id="ham-3"></span>
+      </button>
+
+    </div>
+
+    <!-- Mobile menu (hidden by default) -->
+    <div id="mobile-nav" class="hidden lg:hidden border-t border-white/10" style="background:rgb(2,3,129)">
+      <div class="max-w-screen-2xl mx-auto px-4 py-3 flex flex-col gap-1">
+        <a href="{{ url_for('competitions.index') }}"
+           class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  {% if request.path == '/' or request.path.startswith('/competition') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
+          <span>📁</span><span>Konkursy</span>
+        </a>
+        <a href="{{ url_for('comparison.index') }}"
+           class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  {% if request.path.startswith('/comparison') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
+          <span>↔️</span><span>Porównania edycji</span>
+        </a>
+        <a href="{{ url_for('placeholders.questions') }}"
+           class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  {% if request.path == '/questions' %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
+          <span>❓</span><span>Pytania do dokumentacji</span>
+        </a>
+        <a href="{{ url_for('placeholders.applications') }}"
+           class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  {% if request.path == '/applications' %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
+          <span>📝</span><span>Generowanie wniosków</span>
+        </a>
+        <a href="{{ url_for('settings.index') }}"
+           class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  {% if request.path.startswith('/settings') or request.path.startswith('/auth') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
+          <span>⚙️</span><span>Ustawienia</span>
+        </a>
+        <a href="{{ url_for('logs_page') }}"
+           class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                  {% if request.path == '/logs' %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
+          <span>📋</span><span>Logi</span>
+        </a>
+        {% if session.user_email %}
+        <div class="flex items-center gap-3 px-3 py-2.5 border-t border-white/10 mt-1 pt-3">
+          {% if session.user_picture %}
+            <img src="{{ session.user_picture }}" alt="" class="w-7 h-7 rounded-full border border-white/30 shrink-0">
+          {% endif %}
+          <span class="text-white/60 text-sm flex-1 truncate">{{ session.user_name or session.user_email }}</span>
+          <a href="{{ url_for('auth.logout') }}"
+             class="px-3 py-1 text-white/60 hover:text-white text-sm rounded-lg hover:bg-white/10 transition-colors shrink-0">
+            Wyloguj
+          </a>
+        </div>
+        {% endif %}
+      </div>
     </div>
   </header>
+
+  <script>
+    (function () {
+      const btn     = document.getElementById('nav-toggle');
+      const menu    = document.getElementById('mobile-nav');
+      const ham1    = document.getElementById('ham-1');
+      const ham2    = document.getElementById('ham-2');
+      const ham3    = document.getElementById('ham-3');
+      let open = false;
+      btn.addEventListener('click', function () {
+        open = !open;
+        menu.classList.toggle('hidden', !open);
+        btn.setAttribute('aria-expanded', open);
+        // Animate to X
+        ham1.style.transform = open ? 'translateY(8px) rotate(45deg)' : '';
+        ham2.style.opacity   = open ? '0' : '1';
+        ham3.style.transform = open ? 'translateY(-8px) rotate(-45deg)' : '';
+      });
+      // Close on outside click
+      document.addEventListener('click', function (e) {
+        if (open && !btn.contains(e.target) && !menu.contains(e.target)) {
+          open = false;
+          menu.classList.add('hidden');
+          btn.setAttribute('aria-expanded', false);
+          ham1.style.transform = ham3.style.transform = '';
+          ham2.style.opacity = '1';
+        }
+      });
+    })();
+  </script>
 
   <!-- Flash messages -->
   <div class="max-w-screen-2xl mx-auto w-full px-6 pt-4">
