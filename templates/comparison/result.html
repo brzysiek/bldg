@@ -48,9 +48,9 @@
               <td class="px-4 py-2.5 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
               <td class="px-3 py-2.5 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
               <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
-              <td class="px-3 py-2.5 text-slate-text/60 align-top"><div class="max-h-24 overflow-y-auto">{{ ch.get('zapis_stary','') }}</div></td>
-              <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div class="max-h-24 overflow-y-auto">{{ ch.get('zapis_nowy','') }}</div></td>
-              <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">{{ ch.get('komentarz_biznesowy','') }}</div></td>
+              <td class="px-3 py-2.5 text-slate-text/60 align-top"><div>{{ ch.get('zapis_stary','') }}</div></td>
+              <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div>{{ ch.get('zapis_nowy','') }}</div></td>
+              <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div>{{ ch.get('komentarz_biznesowy','') }}</div></td>
             </tr>
           {% endfor %}
         </tbody>
@@ -99,9 +99,9 @@
               <td class="px-4 py-3 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
               <td class="px-3 py-3 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
               <td class="px-3 py-3 align-top"><span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
-              <td class="px-3 py-3 text-slate-text/60 align-top"><div class="max-h-28 overflow-y-auto">{{ ch.get('zapis_stary','') }}</div></td>
-              <td class="px-3 py-3 text-slate-text align-top font-medium"><div class="max-h-28 overflow-y-auto">{{ ch.get('zapis_nowy','') }}</div></td>
-              <td class="px-3 py-3 text-slate-text/70 align-top max-w-xs"><div class="max-h-28 overflow-y-auto">{{ ch.get('komentarz_biznesowy','') }}</div></td>
+              <td class="px-3 py-3 text-slate-text/60 align-top"><div>{{ ch.get('zapis_stary','') }}</div></td>
+              <td class="px-3 py-3 text-slate-text align-top font-medium"><div>{{ ch.get('zapis_nowy','') }}</div></td>
+              <td class="px-3 py-3 text-slate-text/70 align-top max-w-xs"><div>{{ ch.get('komentarz_biznesowy','') }}</div></td>
             </tr>
           {% endfor %}
         </tbody>
@@ -723,9 +723,9 @@ function buildChangesTable(changes, tableId) {
       <td class="px-4 py-2.5 font-medium text-bottle align-top">${esc(ch.sekcja || '')}</td>
       <td class="px-3 py-2.5 text-slate-text/70 align-top">${esc(ch.typ_zmiany || '')}</td>
       <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold ${bc}">${waga}</span></td>
-      <td class="px-3 py-2.5 text-slate-text/60 align-top"><div class="max-h-24 overflow-y-auto">${esc(ch.zapis_stary || '')}</div></td>
-      <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div class="max-h-24 overflow-y-auto">${esc(ch.zapis_nowy || '')}</div></td>
-      <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div class="max-h-24 overflow-y-auto">${esc(ch.komentarz_biznesowy || '')}</div></td>
+      <td class="px-3 py-2.5 text-slate-text/60 align-top"><div>${esc(ch.zapis_stary || '')}</div></td>
+      <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div>${esc(ch.zapis_nowy || '')}</div></td>
+      <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div>${esc(ch.komentarz_biznesowy || '')}</div></td>
     </tr>`;
   }).join('');
   return `${buildFilterToolbarHtml(tableId)}
