@@ -51,6 +51,7 @@ ZASADY ODPOWIEDZI:
 2. Jesli sa zmiany — zwroc WYLACZNIE obiekt JSON (bez tekstu przed/po, bez blokow ```json```):
 {
   "sekcja": "numer paragrafu/sekcji ktorej dotyczy zmiana",
+  "lokalizacja": "precyzyjna lokalizacja zmiany w dokumencie, np. 'Rozdzial II, §5, ust. 3 pkt 2' lub 'Art. 12 pkt 4 lit. b' — uzywaj dokladnej numeracji z dokumentu; jezeli zmiana dotyczy calej sekcji wpisz tylko numer sekcji",
   "zapis_stary": "Dokladny cytat zmienionego fragmentu ze starszej edycji",
   "zapis_nowy": "Dokladny cytat zmienionego fragmentu z nowszej edycji",
   "typ_zmiany": "jedna z wartosci: ZAOSTRZENIE | ZLAGO DZENIE | NOWA_WYMAGANIE | USUNIETE_WYMAGANIE | ZMIANA_TERMINU | ZMIANA_KWOTY | ZMIANA_REDAKCYJNA | INNE",

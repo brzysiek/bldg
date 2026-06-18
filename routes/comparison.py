@@ -1006,7 +1006,7 @@ def _write_pair_sheet(ws, pfr, job):
     ws["A2"] = f"→  {new_name}"
     ws["A2"].font = Font(size=14, color="555555")
     for r in [1, 2]:
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=7)
 
     row = 3
 
@@ -1014,12 +1014,12 @@ def _write_pair_sheet(ws, pfr, job):
         row += 1
         lbl = ws.cell(row=row, column=1, value="Podsumowanie zmian w pliku:")
         lbl.font = Font(bold=True, size=14, color=_BOTTLE)
-        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=7)
         row += 1
         cell = ws.cell(row=row, column=1, value=summary)
         cell.font = Font(size=14)
         cell.alignment = Alignment(wrap_text=True)
-        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=7)
         ws.row_dimensions[row].height = min(400, max(60, len(summary) // 8))
         row += 2
 
@@ -1027,12 +1027,12 @@ def _write_pair_sheet(ws, pfr, job):
         ws.cell(row=row, column=1,
                 value="Brak zmian." if not pfr.get("skipped") else "Para pominięta.").font = \
             Font(italic=True, size=14, color="888888")
-        _xl_col_widths(ws, [20, 20, 12, 50, 50, 60])
+        _xl_col_widths(ws, [20, 30, 20, 12, 50, 50, 60])
         return
 
     tbl_row = row
     for col, h in enumerate(
-        ["Sekcja", "Typ zmiany", "Waga",
+        ["Sekcja", "Lokalizacja", "Typ zmiany", "Waga",
          _xl_val(f"Zapis — {job.label_old}"), _xl_val(f"Zapis — {job.label_new}"),
          "Komentarz biznesowy"], 1
     ):
@@ -1047,6 +1047,7 @@ def _write_pair_sheet(ws, pfr, job):
         fill = PatternFill("solid", fgColor=_WAGA_FILL.get(waga, "FFFFFF"))
         for col, v in enumerate(
             [_xl_val(change.get("sekcja","")),
+             _xl_val(change.get("lokalizacja","")),
              _xl_val(change.get("typ_zmiany","")),
              waga,
              _xl_val(change.get("zapis_stary","")),
@@ -1058,7 +1059,7 @@ def _write_pair_sheet(ws, pfr, job):
             cell.fill = fill
             cell.alignment = Alignment(wrap_text=True)
 
-    _col_w = [20, 20, 12, 50, 50, 60]
+    _col_w = [20, 30, 20, 12, 50, 50, 60]
     _xl_col_widths(ws, _col_w)
     _auto_row_heights(ws, _col_w)
 

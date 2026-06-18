@@ -45,7 +45,10 @@
             {% set row_bg   = {'KRYTYCZNA':'bg-red-50','WYSOKA':'bg-orange-50','SREDNIA':'bg-yellow-50','NISKA':'bg-green-50'}.get(waga,'') %}
             {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
             <tr class="{{ row_bg }}">
-              <td class="px-4 py-2.5 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
+              <td class="px-4 py-2.5 align-top">
+                <div class="font-medium text-bottle">{{ ch.get('sekcja','') }}</div>
+                {% if ch.get('lokalizacja') %}<div class="text-slate-text/40 text-xs mt-0.5 leading-tight">{{ ch.get('lokalizacja') }}</div>{% endif %}
+              </td>
               <td class="px-3 py-2.5 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
               <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
               <td class="px-3 py-2.5 text-slate-text/60 align-top"><div>{{ ch.get('zapis_stary','') }}</div></td>
@@ -96,7 +99,10 @@
             {% set row_bg   = {'KRYTYCZNA':'bg-red-50 hover:bg-red-100/70','WYSOKA':'bg-orange-50 hover:bg-orange-100/70','SREDNIA':'bg-yellow-50 hover:bg-yellow-100/70','NISKA':'bg-green-50 hover:bg-green-100/70'}.get(waga,'hover:bg-gray-50') %}
             {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
             <tr class="{{ row_bg }} transition-colors">
-              <td class="px-4 py-3 font-medium text-bottle align-top">{{ ch.get('sekcja','') }}</td>
+              <td class="px-4 py-3 align-top">
+                <div class="font-medium text-bottle">{{ ch.get('sekcja','') }}</div>
+                {% if ch.get('lokalizacja') %}<div class="text-slate-text/40 text-xs mt-0.5 leading-tight">{{ ch.get('lokalizacja') }}</div>{% endif %}
+              </td>
               <td class="px-3 py-3 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
               <td class="px-3 py-3 align-top"><span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
               <td class="px-3 py-3 text-slate-text/60 align-top"><div>{{ ch.get('zapis_stary','') }}</div></td>
