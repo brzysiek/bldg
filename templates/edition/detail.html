@@ -84,6 +84,10 @@
       </span>
     {% endif %}
     {% if has_gemini %}
+      <button id="btn-bulk-both" onclick="bulkSummarizeAndExtract()"
+              class="hidden px-3 py-1.5 bg-bottle text-white rounded-lg text-xs font-semibold hover:bg-bottle/90 transition-colors">
+        ✨🔧 Podsumuj i segmentuj (<span id="both-count">0</span>) <span class="opacity-60 font-normal">— rekomendowane</span>
+      </button>
       <button id="btn-bulk-extract" onclick="bulkExtract()"
               class="hidden px-3 py-1.5 bg-bottle/10 text-bottle border border-bottle/20 rounded-lg text-xs font-semibold hover:bg-bottle/20 transition-colors">
         🔧 Segmentuj zaznaczone (<span id="extract-count">0</span>)
@@ -387,9 +391,11 @@ function updateBulkBtn() {
   const btnS = document.getElementById('btn-bulk-summarize');
   const btnC = document.getElementById('btn-bulk-cancel');
   const btnE = document.getElementById('btn-bulk-extract');
-  if (btnS) { document.getElementById('sel-count').textContent = nSummarize;    btnS.classList.toggle('hidden', nSummarize === 0); }
+  const btnB = document.getElementById('btn-bulk-both');
+  if (btnS) { document.getElementById('sel-count').textContent    = nSummarize; btnS.classList.toggle('hidden', nSummarize === 0); }
   if (btnC) { document.getElementById('cancel-count').textContent = nCancel;    btnC.classList.toggle('hidden', nCancel === 0); }
   if (btnE) { document.getElementById('extract-count').textContent = nExtract;  btnE.classList.toggle('hidden', nExtract === 0); }
+  if (btnB) { document.getElementById('both-count').textContent   = nSummarize; btnB.classList.toggle('hidden', nSummarize === 0); }
 
   const allVisible = document.querySelectorAll('tbody tr[data-ext]:not(.hidden) .doc-cb');
   const allVisChecked = allVisible.length > 0 && [...allVisible].every(cb => cb.checked);
@@ -577,6 +583,79 @@ function setRowError(id, msg) {
   if (el) el.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">❌ Błąd</span>`;
 }
 
+async function bulkSummarizeAndExtract() {
+  const checked = Array.from(document.querySelectorAll('.doc-cb:checked'))
+    .filter(cb => cb.dataset.pending !== 'true');
+  if (!checked.length) return;
+
+  _bulkStopRequested = false;
+  const queue = checked.map(cb => ({ id: +cb.value, name: cb.dataset.name }));
+  const total = queue.length;
+  let done = 0, errors = 0;
+
+  document.getElementById('btn-bulk-both').disabled = true;
+  document.getElementById('btn-bulk-summarize').disabled = true;
+  document.getElementById('btn-bulk-extract').disabled = true;
+  document.getElementById('bulk-progress').classList.remove('hidden');
+  const stopBtn = document.getElementById('btn-stop-bulk');
+  if (stopBtn) { stopBtn.disabled = false; stopBtn.textContent = '⛔ Stop'; }
+  document.querySelectorAll('.doc-cb').forEach(cb => cb.disabled = true);
+
+  for (const file of queue) {
+    if (_bulkStopRequested) {
+      setProgress(done, total, `Zatrzymano po ${done} z ${total} plików`, 'done');
+      break;
+    }
+    setProgress(done, total, file.name, 'active');
+    document.getElementById('progress-label').textContent = '⏳ Podsumowuję i segmentuję…';
+    setRowPending(file.id);
+    setExtractPending(file.id);
+
+    // Fire extraction in background (returns immediately, thread running)
+    try { await fetch(_extractJsonUrl(file.id), { method: 'POST' }); } catch(_) {}
+
+    // Summarize synchronously (blocks; extraction thread runs in parallel)
+    let summaryOk = false;
+    try {
+      const resp = await fetch(_summarizeJsonUrl(file.id), { method: 'POST' });
+      let data, rawText = '';
+      try { rawText = await resp.text(); data = JSON.parse(rawText); } catch(_) { data = null; }
+      if (resp.ok && data?.ok) {
+        setRowDone(file.id, data.description, data.summary);
+        summaryOk = true;
+      } else {
+        const msg = data?.error || (rawText ? rawText.slice(0, 120) : `HTTP ${resp.status}`);
+        setRowError(file.id, msg);
+        showProgressError(file.id, file.name, msg);
+        errors++;
+      }
+    } catch (e) {
+      setRowError(file.id, e.message);
+      showProgressError(file.id, file.name, e.message);
+      errors++;
+    }
+
+    // Poll until extraction done (may already be done by now)
+    await _pollExtractStatus(file.id);
+
+    done++;
+  }
+
+  if (!_bulkStopRequested) {
+    const label = errors
+      ? `Gotowe — ${done - errors} plików, ${errors} błędów`
+      : `Gotowe — podsumowano i posegmentowano ${done} plików`;
+    setProgress(done, total, label, 'done');
+  }
+  if (stopBtn) stopBtn.disabled = true;
+  ['btn-bulk-both', 'btn-bulk-summarize', 'btn-bulk-extract'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) { b.disabled = false; b.classList.add('hidden'); }
+  });
+  document.querySelectorAll('.doc-cb').forEach(cb => { cb.disabled = false; cb.checked = false; });
+  updateBulkBtn();
+}
+
 /* ── Extraction ── */
 function setExtractPending(id) {
   const el = document.getElementById('extract-status-' + id);
@@ -605,8 +684,8 @@ function setExtractError(id, msg) {
   if (cb) cb.dataset.extractPending = 'false';
 }
 
-async function _pollExtractStatus(id) {
-  while (true) {
+async function _pollExtractStatus(id, maxAttempts = 240) {
+  for (let i = 0; i < maxAttempts; i++) {
     await new Promise(r => setTimeout(r, 2500));
     try {
       const r = await fetch(_extractStatusUrl(id));
@@ -614,12 +693,13 @@ async function _pollExtractStatus(id) {
       if (!r.ok || !d?.ok) { setExtractError(id, d?.error || `HTTP ${r.status}`); return false; }
       if (d.status === 'done')  { setExtractDone(id); return true; }
       if (d.status === 'error') { setExtractError(id, d.error || 'Błąd ekstrakcji'); return false; }
-      // status === 'pending' → keep polling
     } catch (e) {
       setExtractError(id, e.message);
       return false;
     }
   }
+  setExtractError(id, 'Timeout pollingu segmentacji');
+  return false;
 }
 
 async function extractFile(id) {
