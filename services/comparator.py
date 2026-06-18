@@ -273,7 +273,6 @@ def _resolve_local_path(doc, settings):
 def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
     """Compare one document pair in the current (main-request) thread.
     Returns result dict: old/new names, changes list, summary text, token counts."""
-    import shutil
     from google import genai
 
     def _status(msg):
@@ -295,26 +294,12 @@ def compare_one_pair(doc_old, doc_new, job, settings, on_status=None):
     call_extraction = _make_stage_caller(client, settings, "extraction", tokens)
     call_comparison = _make_stage_caller(client, settings, "comparison", tokens)
 
-    _status("Ekstrakcja tekstu")
-    log.debug("compare_one_pair  ekstrakcja tekstu z plików")
-    old_path, old_tmp = _resolve_local_path(doc_old, settings)
-    new_path, new_tmp = _resolve_local_path(doc_new, settings)
-    try:
-        text_old = extract_text(old_path, doc_old.mime_type or "")
-        text_new = extract_text(new_path, doc_new.mime_type or "")
-    finally:
-        if old_tmp: shutil.rmtree(old_tmp, ignore_errors=True)
-        if new_tmp: shutil.rmtree(new_tmp, ignore_errors=True)
-
-    log.debug("compare_one_pair  tekst wyekstrahowany  stary=%d znaków  nowy=%d znaków",
-              len(text_old), len(text_new))
-
     _status(f"Analiza struktury: {doc_old.original_name}")
-    struct_old = _get_structure_cached(doc_old, text_old, call_extraction, settings)
+    struct_old, text_old = _structure_for_doc(doc_old, settings, call_extraction)
     log.debug("compare_one_pair  struktura stara: %d sekcji", len(struct_old.get("sekcje", {})))
 
     _status(f"Analiza struktury: {doc_new.original_name}")
-    struct_new = _get_structure_cached(doc_new, text_new, call_extraction, settings)
+    struct_new, text_new = _structure_for_doc(doc_new, settings, call_extraction)
     log.debug("compare_one_pair  struktura nowa: %d sekcji", len(struct_new.get("sekcje", {})))
 
     n_sekcji = len(set(struct_old.get("sekcje", {}).keys()) | set(struct_new.get("sekcje", {}).keys()))
@@ -402,6 +387,10 @@ def _cache_key(text, prompt):
     return hashlib.md5((text[:300_000] + prompt).encode("utf-8", errors="ignore")).hexdigest()
 
 
+def _prompt_hash(prompt: str) -> str:
+    return hashlib.md5(prompt.encode("utf-8", errors="ignore")).hexdigest()
+
+
 def _get_structure_cached(doc, text, call_gemini, settings):
     """Return extracted document structure, using DB cache when prompt+content unchanged."""
     from extensions import db
@@ -422,8 +411,10 @@ def _get_structure_cached(doc, text, call_gemini, settings):
     structure = _extract_structure(text, doc.original_name, call_gemini, settings)
 
     try:
-        doc.extraction_cache_key  = key
-        doc.extraction_cache_json = json.dumps(structure, ensure_ascii=False)
+        doc.extraction_cache_key   = key
+        doc.extraction_cache_json  = json.dumps(structure, ensure_ascii=False)
+        doc.extraction_prompt_hash = _prompt_hash(prompt)
+        doc.extraction_status      = "done"
         db.session.commit()
         log.info("Ekstrakcja zapisana do cache: %s", doc.original_name)
     except Exception as e:
@@ -437,6 +428,142 @@ def _get_structure_cached(doc, text, call_gemini, settings):
             pass
 
     return structure
+
+
+def _structure_for_doc(doc, settings, call_gemini):
+    """Return (structure, text) for a document.
+
+    Uses pre-computed extraction cache when available, avoiding Drive download entirely.
+    Falls back to download → extract → cache (existing behaviour) on cache miss.
+    """
+    import shutil
+
+    prompt = settings.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION
+    ph = _prompt_hash(prompt)
+
+    if (doc.extraction_status == "done"
+            and doc.extraction_prompt_hash == ph
+            and doc.extraction_cache_json):
+        try:
+            structure = json.loads(doc.extraction_cache_json)
+            n = len(structure.get("sekcje", {}))
+            log.info(
+                "Ekstrakcja (pre-computed HIT): %s — %d sekcji, pobieranie z Drive pominięte",
+                doc.original_name, n,
+            )
+            return structure, ""
+        except Exception:
+            log.warning("Uszkodzony pre-computed cache dla %s — przeliczam", doc.original_name)
+
+    local_path, tmp_dir = _resolve_local_path(doc, settings)
+    try:
+        text = extract_text(local_path, doc.mime_type or "")
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    structure = _get_structure_cached(doc, text, call_gemini, settings)
+    return structure, text
+
+
+def extract_document(doc_id: int) -> tuple:
+    """Eagerly extract and cache document structure for a single file.
+
+    Designed to run in a background thread. Returns (ok, error_msg).
+    Requires an active Flask app context.
+    """
+    import shutil
+    from extensions import db
+    from models import Document, AppSettings
+    from google import genai
+
+    doc = db.session.get(Document, doc_id)
+    if not doc:
+        return False, "Dokument nie istnieje"
+
+    settings = db.session.get(AppSettings, 1)
+    if not settings or not settings.gemini_api_key:
+        _write_extract_error(doc_id, "Brak klucza Gemini API")
+        return False, "Brak klucza Gemini API"
+
+    prompt = settings.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION
+    ph = _prompt_hash(prompt)
+
+    if doc.extraction_status == "done" and doc.extraction_prompt_hash == ph:
+        return True, None
+
+    if doc.gdrive_file_id and not settings.google_drive_api_key:
+        _write_extract_error(doc_id, "Brak klucza Drive API")
+        return False, "Brak klucza Drive API"
+
+    try:
+        doc.extraction_status = "pending"
+        doc.extraction_error  = None
+        db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    tokens = {"in": 0, "out": 0}
+    call_extraction = _make_stage_caller(client, settings, "extraction", tokens)
+
+    try:
+        local_path, tmp_dir = _resolve_local_path(doc, settings)
+        try:
+            text = extract_text(local_path, doc.mime_type or "")
+        finally:
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        structure = _extract_structure(text, doc.original_name, call_extraction, settings)
+
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        db.session.expire_all()
+
+        fresh = db.session.get(Document, doc_id)
+        if not fresh:
+            return False, "Dokument zniknął z bazy po ekstrakcji"
+        fresh.extraction_cache_key   = _cache_key(text, prompt)
+        fresh.extraction_cache_json  = json.dumps(structure, ensure_ascii=False)
+        fresh.extraction_prompt_hash = ph
+        fresh.extraction_status      = "done"
+        fresh.extraction_error       = None
+        db.session.commit()
+        n = len(structure.get("sekcje", {}))
+        log.info("extract_document OK: %s (%d sekcji)", doc.original_name, n)
+        return True, None
+
+    except Exception as exc:
+        log.error("extract_document BŁĄD %s: %s", doc.original_name, exc, exc_info=True)
+        _write_extract_error(doc_id, str(exc)[:500])
+        return False, str(exc)
+
+
+def _write_extract_error(doc_id: int, msg: str):
+    from extensions import db
+    from models import Document
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+    db.session.expire_all()
+    try:
+        d = db.session.get(Document, doc_id)
+        if d:
+            d.extraction_status = "error"
+            d.extraction_error  = msg
+            db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
 
 def match_sections_ai(sekcje_old, sekcje_new, label_old, label_new, call_gemini, settings=None):
@@ -637,24 +764,12 @@ def get_pair_structures(doc_old, doc_new, settings):
     """Extract and cache document structures.
 
     Returns (struct_old, struct_new, all_keys, t_in, t_out).
-    Extraction is cached per-document in the DB so repeated calls are fast.
+    Uses pre-computed extraction cache when available (no Drive download needed).
     """
-    import shutil
     call_gemini, tokens = make_gemini_caller(settings, stage="extraction")
 
-    old_path, old_tmp = _resolve_local_path(doc_old, settings)
-    new_path, new_tmp = _resolve_local_path(doc_new, settings)
-    try:
-        text_old = extract_text(old_path, doc_old.mime_type or "")
-        text_new = extract_text(new_path, doc_new.mime_type or "")
-    finally:
-        if old_tmp: shutil.rmtree(old_tmp, ignore_errors=True)
-        if new_tmp: shutil.rmtree(new_tmp, ignore_errors=True)
-
-    log.debug("get_pair_structures  stary=%d znaków  nowy=%d znaków",
-              len(text_old), len(text_new))
-    struct_old = _get_structure_cached(doc_old, text_old, call_gemini, settings)
-    struct_new = _get_structure_cached(doc_new, text_new, call_gemini, settings)
+    struct_old, _ = _structure_for_doc(doc_old, settings, call_gemini)
+    struct_new, _ = _structure_for_doc(doc_new, settings, call_gemini)
 
     all_keys = sorted(set(
         list(struct_old.get("sekcje", {}).keys()) +
@@ -833,20 +948,20 @@ def run_comparison(job_id: int, app):
                 new_name = new_doc.original_name
                 n = len(mappings)
 
-                save(f"Plik {idx + 1}/{n}: {old_name} — Ekstrakcja tekstu...")
-                text_old = extract_text(old_doc.stored_path, old_doc.mime_type or "")
-                text_new = extract_text(new_doc.stored_path, new_doc.mime_type or "")
-
                 save(f"Plik {idx + 1}/{n}: {old_name} — Analiza struktury...")
 
                 def on_progress(msg, _idx=idx, _name=old_name, _n=n):
                     save(f"Plik {_idx + 1}/{_n}: {_name} — {msg}")
+
+                struct_old, text_old = _structure_for_doc(old_doc, settings, call_extraction)
+                struct_new, text_new = _structure_for_doc(new_doc, settings, call_extraction)
 
                 changes = _compare_pair(
                     text_old, text_new,
                     job.label_old or "Edycja starsza",
                     job.label_new or "Edycja nowsza",
                     call_comparison, on_progress, settings,
+                    struct_old=struct_old, struct_new=struct_new,
                     call_extraction=call_extraction,
                 )
 

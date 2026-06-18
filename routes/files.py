@@ -1,9 +1,10 @@
 import logging
 import os
+import threading
 import time
 import tempfile
 from datetime import datetime
-from flask import Blueprint, jsonify, render_template, request, redirect, url_for, flash, send_file, abort, Response
+from flask import Blueprint, jsonify, render_template, request, redirect, url_for, flash, send_file, abort, Response, current_app
 from werkzeug.utils import secure_filename
 from extensions import db
 from models import Competition, Edition, Document, AppSettings
@@ -21,6 +22,13 @@ ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "txt", "csv", "png", 
 
 def _allowed(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _run_extract_bg(doc_id: int, app):
+    """Run extract_document in a background thread with its own app context."""
+    from services.comparator import extract_document
+    with app.app_context():
+        extract_document(doc_id)
 
 
 @bp.route("/competition/<c_slug>/edition/<e_slug>/upload", methods=["GET", "POST"])
@@ -63,6 +71,12 @@ def upload(c_slug, e_slug):
         )
         db.session.add(doc)
         db.session.commit()
+
+        settings = AppSettings.query.first()
+        if settings and settings.gemini_api_key:
+            app = current_app._get_current_object()
+            threading.Thread(target=_run_extract_bg, args=(doc.id, app), daemon=True).start()
+
         flash(f'Plik "{original_name}" zostal wgrany.', "success")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
@@ -246,6 +260,43 @@ def cancel_summary(file_id):
         return jsonify({"ok": False, "error": "Dokument nie istnieje"}), 404
     if doc.ai_summary_status == "pending":
         doc.ai_summary_status = None
+        db.session.commit()
+    return jsonify({"ok": True, "file_id": file_id})
+
+
+@bp.route("/files/<int:file_id>/extract-json", methods=["POST"])
+def extract_json(file_id):
+    """Synchronously extract document structure and cache it. Called by bulk-extract JS."""
+    try:
+        doc = db.session.get(Document, file_id)
+        if doc is None:
+            return jsonify({"ok": False, "file_id": file_id, "error": "Dokument nie istnieje"}), 404
+
+        settings = AppSettings.query.first()
+        if not settings or not settings.gemini_api_key:
+            return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
+
+        from services.comparator import extract_document
+        _logger.info("extract_json: start file_id=%s name=%s", file_id, doc.original_name)
+        ok, err = extract_document(file_id)
+        if ok:
+            _logger.info("extract_json: done file_id=%s", file_id)
+            return jsonify({"ok": True, "file_id": file_id})
+        else:
+            _logger.warning("extract_json: failed file_id=%s err=%s", file_id, err)
+            return jsonify({"ok": False, "file_id": file_id, "error": err})
+    except Exception as exc:
+        _logger.error("extract_json: unhandled file_id=%s: %s", file_id, exc, exc_info=True)
+        return jsonify({"ok": False, "file_id": file_id, "error": str(exc)}), 500
+
+
+@bp.route("/files/<int:file_id>/cancel-extraction", methods=["POST"])
+def cancel_extraction(file_id):
+    doc = db.session.get(Document, file_id)
+    if doc is None:
+        return jsonify({"ok": False, "error": "Dokument nie istnieje"}), 404
+    if doc.extraction_status == "pending":
+        doc.extraction_status = None
         db.session.commit()
     return jsonify({"ok": True, "file_id": file_id})
 

@@ -63,6 +63,10 @@ class Document(db.Model):
     # deferred: never loaded in list queries — can be several MB per document
     extraction_cache_json = _deferred(db.Column(db.Text))
 
+    extraction_status      = db.Column(db.Text)   # null | 'pending' | 'done' | 'error'
+    extraction_error       = db.Column(db.Text)
+    extraction_prompt_hash = db.Column(db.Text)   # md5 of extraction prompt only
+
 
 class AppSettings(db.Model):
     __tablename__ = "app_settings"

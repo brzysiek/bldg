@@ -1,7 +1,8 @@
 import logging
 import os
+import threading
 from datetime import date, datetime
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from sqlalchemy import func
 from extensions import db
 from models import Competition, Edition, Document, AppSettings
@@ -170,6 +171,19 @@ def sync_drive(c_slug, e_slug):
 
     edition.gdrive_synced_at = datetime.utcnow()
     db.session.commit()
+
+    # Spawn eager extraction for newly added Drive files
+    new_docs = Document.query.filter_by(edition_id=edition.id).filter(
+        Document.extraction_status == None,
+        Document.gdrive_file_id != None,
+    ).all()
+    if new_docs and settings and settings.gemini_api_key:
+        from routes.files import _run_extract_bg
+        app = current_app._get_current_object()
+        for d in new_docs:
+            threading.Thread(target=_run_extract_bg, args=(d.id, app), daemon=True).start()
+        _logger.info("sync_drive: spawned extraction threads for %d new files", len(new_docs))
+
     _logger.info("sync_drive: done +%d updated=%d", added, updated)
     flash(f"Zsynchronizowano: +{added} nowych, {updated} zaktualizowanych.", "success")
     return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))

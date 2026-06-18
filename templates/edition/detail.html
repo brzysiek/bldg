@@ -84,6 +84,10 @@
       </span>
     {% endif %}
     {% if has_gemini %}
+      <button id="btn-bulk-extract" onclick="bulkExtract()"
+              class="hidden px-3 py-1.5 bg-bottle/10 text-bottle border border-bottle/20 rounded-lg text-xs font-semibold hover:bg-bottle/20 transition-colors">
+        🔧 Segmentuj zaznaczone (<span id="extract-count">0</span>)
+      </button>
       <button id="btn-bulk-summarize" onclick="bulkSummarize()"
               class="hidden px-3 py-1.5 bg-lime text-bottle rounded-lg text-xs font-semibold hover:bg-lime/80 transition-colors">
         ✨ Podsumuj zaznaczone (<span id="sel-count">0</span>)
@@ -142,6 +146,7 @@
             <th class="text-left px-3 py-3 font-medium">Plik</th>
             <th class="text-left px-3 py-3 font-medium">Format</th>
             <th class="text-left px-3 py-3 font-medium">Opis</th>
+            <th class="text-left px-3 py-3 font-medium">Segmentacja</th>
             <th class="text-left px-3 py-3 font-medium">Status AI</th>
             <th class="text-right px-5 py-3 font-medium">Akcje</th>
           </tr>
@@ -156,6 +161,8 @@
                        value="{{ doc.id }}"
                        data-name="{{ doc.original_name | e }}"
                        data-pending="{{ 'true' if doc.ai_summary_status == 'pending' else 'false' }}"
+                       data-extract-pending="{{ 'true' if doc.extraction_status == 'pending' else 'false' }}"
+                       data-extracted="{{ 'true' if doc.extraction_status == 'done' else 'false' }}"
                        onchange="updateBulkBtn()" />
               </td>
               <td class="px-3 py-3">
@@ -187,6 +194,17 @@
               <td id="desc-{{ doc.id }}" class="px-3 py-3 text-slate-text/70 text-xs max-w-[160px]">
                 {{ doc.ai_description or '—' }}
               </td>
+              <td id="extract-status-{{ doc.id }}" class="px-3 py-3">
+                {% if doc.extraction_status == 'done' %}
+                  <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">✅ Gotowa</span>
+                {% elif doc.extraction_status == 'pending' %}
+                  <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>
+                {% elif doc.extraction_status == 'error' %}
+                  <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="{{ doc.extraction_error or '' }}">❌ Błąd</span>
+                {% else %}
+                  <span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full">— Brak</span>
+                {% endif %}
+              </td>
               <td id="status-{{ doc.id }}" class="px-3 py-3">
                 {% if doc.ai_summary_status == 'done' %}
                   <button onclick='showSummary({{ doc.id }}, {{ doc.original_name | tojson }})'
@@ -215,6 +233,14 @@
                     </a>
                   {% endif %}
                   {% if has_gemini %}
+                    {% if doc.extraction_status == 'pending' %}
+                      <span id="extract-btn-{{ doc.id }}" class="px-2.5 py-1.5 bg-gray-100 text-gray-400 rounded text-xs">⏳ Segmentuję…</span>
+                    {% else %}
+                      <button id="extract-btn-{{ doc.id }}" onclick="extractFile({{ doc.id }})"
+                              class="px-2.5 py-1.5 border border-bottle/20 text-bottle rounded text-xs font-medium hover:bg-bottle/10 transition-colors">
+                        🔧 {{ 'Ponów segm.' if doc.extraction_status == 'done' else 'Segmentuj' }}
+                      </button>
+                    {% endif %}
                     {% if doc.ai_summary_status == 'pending' %}
                       <button id="cancel-btn-{{ doc.id }}" onclick="cancelSummary({{ doc.id }})"
                               class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded text-xs font-medium hover:bg-red-50 transition-colors">
@@ -356,11 +382,14 @@ function updateBulkBtn() {
   const allChecked = Array.from(document.querySelectorAll('tbody tr[data-ext]:not(.hidden) .doc-cb:checked'));
   const nSummarize = allChecked.filter(cb => cb.dataset.pending !== 'true').length;
   const nCancel    = allChecked.filter(cb => cb.dataset.pending === 'true').length;
+  const nExtract   = allChecked.filter(cb => cb.dataset.extractPending !== 'true').length;
 
   const btnS = document.getElementById('btn-bulk-summarize');
   const btnC = document.getElementById('btn-bulk-cancel');
-  if (btnS) { document.getElementById('sel-count').textContent = nSummarize; btnS.classList.toggle('hidden', nSummarize === 0); }
-  if (btnC) { document.getElementById('cancel-count').textContent = nCancel;  btnC.classList.toggle('hidden', nCancel === 0); }
+  const btnE = document.getElementById('btn-bulk-extract');
+  if (btnS) { document.getElementById('sel-count').textContent = nSummarize;    btnS.classList.toggle('hidden', nSummarize === 0); }
+  if (btnC) { document.getElementById('cancel-count').textContent = nCancel;    btnC.classList.toggle('hidden', nCancel === 0); }
+  if (btnE) { document.getElementById('extract-count').textContent = nExtract;  btnE.classList.toggle('hidden', nExtract === 0); }
 
   const allVisible = document.querySelectorAll('tbody tr[data-ext]:not(.hidden) .doc-cb');
   const allVisChecked = allVisible.length > 0 && [...allVisible].every(cb => cb.checked);
@@ -372,6 +401,8 @@ const _SUMMARIZE_JSON_TPL = {{ url_for('files.summarize_json', file_id=0)|tojson
 const _summarizeJsonUrl   = id => _SUMMARIZE_JSON_TPL.replace('/0/', '/' + id + '/');
 const _CANCEL_TPL         = {{ url_for('files.cancel_summary', file_id=0)|tojson }};
 const _cancelSummaryUrl   = id => _CANCEL_TPL.replace('/0/', '/' + id + '/');
+const _EXTRACT_JSON_TPL   = {{ url_for('files.extract_json', file_id=0)|tojson }};
+const _extractJsonUrl     = id => _EXTRACT_JSON_TPL.replace('/0/', '/' + id + '/');
 
 let _bulkStopRequested = false;
 
@@ -542,6 +573,107 @@ function setRowDone(id, description, summary) {
 function setRowError(id, msg) {
   const el = document.getElementById('status-' + id);
   if (el) el.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">❌ Błąd</span>`;
+}
+
+/* ── Extraction ── */
+function setExtractPending(id) {
+  const el = document.getElementById('extract-status-' + id);
+  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>';
+  const btn = document.getElementById('extract-btn-' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Segmentuję…'; }
+  const cb = document.querySelector(`.doc-cb[value="${id}"]`);
+  if (cb) cb.dataset.extractPending = 'true';
+}
+
+function setExtractDone(id) {
+  const el = document.getElementById('extract-status-' + id);
+  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">✅ Gotowa</span>';
+  const btn = document.getElementById('extract-btn-' + id);
+  if (btn) { btn.disabled = false; btn.textContent = '🔧 Ponów segm.'; }
+  const cb = document.querySelector(`.doc-cb[value="${id}"]`);
+  if (cb) { cb.dataset.extractPending = 'false'; cb.dataset.extracted = 'true'; }
+}
+
+function setExtractError(id, msg) {
+  const el = document.getElementById('extract-status-' + id);
+  if (el) el.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">❌ Błąd</span>`;
+  const btn = document.getElementById('extract-btn-' + id);
+  if (btn) { btn.disabled = false; btn.textContent = '🔧 Ponów segm.'; }
+  const cb = document.querySelector(`.doc-cb[value="${id}"]`);
+  if (cb) cb.dataset.extractPending = 'false';
+}
+
+async function extractFile(id) {
+  setExtractPending(id);
+  try {
+    const resp = await fetch(_extractJsonUrl(id), { method: 'POST' });
+    const data = await resp.json().catch(() => null);
+    if (resp.ok && data?.ok) {
+      setExtractDone(id);
+    } else {
+      setExtractError(id, data?.error || `HTTP ${resp.status}`);
+    }
+  } catch (e) {
+    setExtractError(id, e.message);
+  }
+  updateBulkBtn();
+}
+
+let _bulkExtractStopRequested = false;
+
+async function bulkExtract() {
+  const checked = Array.from(document.querySelectorAll('.doc-cb:checked'))
+    .filter(cb => cb.dataset.extractPending !== 'true');
+  if (!checked.length) return;
+
+  _bulkExtractStopRequested = false;
+  const queue = checked.map(cb => ({ id: +cb.value, name: cb.dataset.name }));
+  const total = queue.length;
+  let done = 0, errors = 0;
+
+  document.getElementById('btn-bulk-extract').disabled = true;
+  document.getElementById('bulk-progress').classList.remove('hidden');
+  const stopBtn = document.getElementById('btn-stop-bulk');
+  if (stopBtn) { stopBtn.disabled = false; stopBtn.textContent = '⛔ Stop'; stopBtn.onclick = () => { _bulkExtractStopRequested = true; if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = '⏳ Zatrzymuję…'; } }; }
+  document.querySelectorAll('.doc-cb').forEach(cb => cb.disabled = true);
+
+  for (const file of queue) {
+    if (_bulkExtractStopRequested) {
+      setProgress(done, total, `Zatrzymano po ${done} z ${total} plików`, 'done');
+      break;
+    }
+    setProgress(done, total, file.name, 'active');
+    document.getElementById('progress-label').textContent = '⏳ Segmentuję…';
+    setExtractPending(file.id);
+    try {
+      const resp = await fetch(_extractJsonUrl(file.id), { method: 'POST' });
+      const data = await resp.json().catch(() => null);
+      if (resp.ok && data?.ok) {
+        setExtractDone(file.id);
+      } else {
+        const msg = data?.error || `HTTP ${resp.status}`;
+        setExtractError(file.id, msg);
+        showProgressError(file.id, file.name, msg);
+        errors++;
+      }
+    } catch (e) {
+      setExtractError(file.id, e.message);
+      showProgressError(file.id, file.name, e.message);
+      errors++;
+    }
+    done++;
+  }
+
+  if (!_bulkExtractStopRequested) {
+    const label = errors
+      ? `Gotowe — ${done - errors} segmentacji, ${errors} błędów`
+      : `Gotowe — posegmentowano ${done} plików`;
+    setProgress(done, total, label, 'done');
+  }
+  if (stopBtn) { stopBtn.disabled = true; stopBtn.onclick = stopBulkSummarize; }
+  document.getElementById('btn-bulk-extract').classList.add('hidden');
+  document.querySelectorAll('.doc-cb').forEach(cb => { cb.disabled = false; cb.checked = false; });
+  updateBulkBtn();
 }
 </script>
 {% endblock %}
