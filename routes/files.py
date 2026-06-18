@@ -167,8 +167,11 @@ def _run_summarize(doc, settings):
     if len(text) > 400_000:
         text = text[:400_000] + "\n[TEKST OBCIĘTY DO 400 000 ZNAKÓW]"
 
-    # Capture model name before the long Gemini call (settings object will be expired after)
+    # Snapshot model name before releasing the session
     gemini_model = settings.gemini_model
+
+    # Release the DB connection before the long Gemini call so other requests can use it.
+    db.session.close()
 
     try:
         result = summarize_document(text, settings)
@@ -176,14 +179,6 @@ def _run_summarize(doc, settings):
         _db_write_error(doc_id, str(e))
         return False, str(e)
 
-    # The Gemini call above can take minutes. The MySQL connection checked out at
-    # request start is likely dead by now ("MySQL server has gone away").
-    # rollback() + expire_all() tells SQLAlchemy to discard that dead connection
-    # and check out a fresh one (pool_pre_ping will validate it) for the write.
-    try:
-        db.session.rollback()
-    except Exception:
-        pass
     db.session.expire_all()
 
     try:

@@ -506,6 +506,10 @@ def extract_document(doc_id: int) -> tuple:
         except Exception:
             pass
 
+    # Release the DB connection back to the pool before long Gemini/Drive calls.
+    # doc and settings become detached but their loaded scalar attributes remain readable.
+    db.session.close()
+
     client = genai.Client(api_key=settings.gemini_api_key)
     tokens = {"in": 0, "out": 0}
     call_extraction = _make_stage_caller(client, settings, "extraction", tokens)
@@ -520,12 +524,7 @@ def extract_document(doc_id: int) -> tuple:
 
         structure = _extract_structure(text, doc.original_name, call_extraction, settings)
 
-        try:
-            db.session.rollback()
-        except Exception:
-            pass
         db.session.expire_all()
-
         fresh = db.session.get(Document, doc_id)
         if not fresh:
             return False, "Dokument zniknął z bazy po ekstrakcji"
@@ -580,6 +579,10 @@ def extract_and_summarize(doc_id: int) -> tuple:
     tokens = {"in": 0, "out": 0}
     call_extraction = _make_stage_caller(client, settings, "extraction", tokens)
 
+    # Release the DB connection before long Drive/Gemini calls (may take minutes).
+    # doc and settings are detached but scalar attributes remain readable.
+    db.session.close()
+
     try:
         local_path, tmp_dir = _resolve_local_path(doc, settings)
         try:
@@ -597,10 +600,6 @@ def extract_and_summarize(doc_id: int) -> tuple:
         structure = _extract_structure(text, doc.original_name, call_extraction, settings)
         summary_result = _summarize(text, settings)
 
-        try:
-            db.session.rollback()
-        except Exception:
-            pass
         db.session.expire_all()
 
         fresh = db.session.get(Document, doc_id)
