@@ -249,6 +249,9 @@
         {% if not pfr.get('skipped') %}
           {% set n_ch   = pfr.get('changes', []) | length %}
           {% set n_crit = pfr.get('changes', []) | selectattr('waga', 'equalto', 'KRYTYCZNA') | list | length %}
+          {% set n_wys  = pfr.get('changes', []) | selectattr('waga', 'equalto', 'WYSOKA')    | list | length %}
+          {% set n_sr   = pfr.get('changes', []) | selectattr('waga', 'equalto', 'SREDNIA')   | list | length %}
+          {% set n_nis  = pfr.get('changes', []) | selectattr('waga', 'equalto', 'NISKA')     | list | length %}
           {% set spfr_idx = pfr.get('pair_idx', loop.index0) %}
           <div id="static-pair-{{ spfr_idx }}" class="bg-green-50 rounded-xl border border-green-200 border-l-4 border-l-green-500 overflow-hidden">
             <div class="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-green-100/50 transition-colors"
@@ -263,7 +266,10 @@
               </div>
               <div class="flex items-center gap-2 ml-4 shrink-0" onclick="event.stopPropagation()">
                 {% if n_crit %}<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">{{ n_crit }} kryt.</span>{% endif %}
-                <span class="px-2 py-0.5 {% if n_ch > 0 %}bg-bottle/10 text-bottle{% else %}bg-gray-100 text-gray-400{% endif %} text-xs rounded-full font-medium">{{ n_ch }} zmian</span>
+                {% if n_wys  %}<span class="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full font-medium">{{ n_wys }} wys.</span>{% endif %}
+                {% if n_sr   %}<span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">{{ n_sr }} śr.</span>{% endif %}
+                {% if n_nis  %}<span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">{{ n_nis }} nis.</span>{% endif %}
+                {% if not n_ch %}<span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full font-medium">brak zmian</span>{% endif %}
                 <a href="{{ url_for('comparison.download_pair_excel', job_id=job.id, pair_idx=loop.index0) }}"
                    class="no-btn px-2 py-0.5 text-white text-xs rounded-full font-medium transition-colors" style="background:#1D6F42" onmouseover="this.style.background='#155230'" onmouseout="this.style.background='#1D6F42'"
                    title="Pobierz XLSX">⬇️ XLSX</a>
@@ -611,8 +617,12 @@ function setPairDone(idx, data) {
   const body  = document.getElementById(`pair-body-${idx}`);
   const card  = document.getElementById(`pair-${idx}`);
   if (!icon || !badge) return;
-  const n     = data.changes ? data.changes.length : 0;
-  const nCrit = data.changes ? data.changes.filter(c => c.waga === 'KRYTYCZNA').length : 0;
+  const chg   = data.changes || [];
+  const n     = chg.length;
+  const nCrit = chg.filter(c => c.waga === 'KRYTYCZNA').length;
+  const nWys  = chg.filter(c => c.waga === 'WYSOKA').length;
+  const nSr   = chg.filter(c => c.waga === 'SREDNIA').length;
+  const nNis  = chg.filter(c => c.waga === 'NISKA').length;
 
   icon.textContent = '✅';
   icon.className = 'text-lg shrink-0';
@@ -622,12 +632,17 @@ function setPairDone(idx, data) {
     _setPairStripe(card, 'border-l-green-500');
   }
 
-  const critBadge = nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold mr-1">${nCrit} kryt.</span>` : '';
-  const cntColor  = n > 0 ? 'bg-bottle/10 text-bottle' : 'bg-gray-100 text-gray-400';
-  const timeBadge = elapsed > 0 ? `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-mono ml-1">${fmtSecs(elapsed)}</span>` : '';
+  const wagaBadges = [
+    nCrit ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-semibold">${nCrit} kryt.</span>` : '',
+    nWys  ? `<span class="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full font-medium">${nWys} wys.</span>` : '',
+    nSr   ? `<span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">${nSr} śr.</span>` : '',
+    nNis  ? `<span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">${nNis} nis.</span>` : '',
+    n === 0 ? `<span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full font-medium">brak zmian</span>` : '',
+  ].join('');
+  const timeBadge = elapsed > 0 ? `<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full font-mono">${fmtSecs(elapsed)}</span>` : '';
   const dlUrl  = pairDownloadUrl(idx);
   const csvUrl = pairCsvUrl(idx);
-  badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}` +
+  badge.innerHTML = `${wagaBadges}${timeBadge}` +
     `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 text-white text-xs rounded-full font-medium transition-colors" style="background:#1D6F42" onmouseover="this.style.background='#155230'" onmouseout="this.style.background='#1D6F42'" title="XLSX">⬇️ XLSX</a>` +
     `<a href="${csvUrl}" class="ml-1 px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded-full font-medium hover:bg-lime/20 transition-colors" title="CSV">⬇️ CSV</a>` +
     `<button onclick="rerunPair(${idx}, null)" class="ml-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Porównaj jeszcze raz</button>` +
