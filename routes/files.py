@@ -239,6 +239,17 @@ def summarize_json(file_id):
         return jsonify({"ok": False, "file_id": file_id, "error": str(exc)}), 500
 
 
+@bp.route("/files/<int:file_id>/cancel-summary", methods=["POST"])
+def cancel_summary(file_id):
+    doc = db.session.get(Document, file_id)
+    if doc is None:
+        return jsonify({"ok": False, "error": "Dokument nie istnieje"}), 404
+    if doc.ai_summary_status == "pending":
+        doc.ai_summary_status = None
+        db.session.commit()
+    return jsonify({"ok": True, "file_id": file_id})
+
+
 @bp.route("/files/<int:file_id>/summary")
 def summary(file_id):
     doc = Document.query.get_or_404(file_id)
