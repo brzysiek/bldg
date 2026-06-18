@@ -1254,3 +1254,8 @@ def delete_job(job_id):
 @bp.route("/how-it-works")
 def how_it_works():
     return render_template("comparison/how_it_works.html")
+
+
+@bp.route("/setup-help")
+def setup_help():
+    return render_template("comparison/setup_help.html")

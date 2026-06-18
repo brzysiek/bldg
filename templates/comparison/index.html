@@ -1,11 +1,37 @@
 {% extends "base.html" %}
 {% block title %}Porównania – BLDG{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between mb-6">
-  <div>
-    <h1 class="text-xl font-bold text-bottle">Porównania edycji</h1>
-    <p class="text-slate-text/60 text-sm mt-0.5">{{ jobs | length }} rekord{% if jobs | length == 1 %}{% elif jobs | length in [2,3,4] %}y{% else %}ów{% endif %}</p>
+<!-- Description banner -->
+<div class="bg-white rounded-xl border border-gray-100 p-5 mb-6">
+  <div class="flex items-start gap-4">
+    <div class="text-3xl shrink-0 mt-0.5">↔️</div>
+    <div class="flex-1 min-w-0">
+      <h1 class="text-base font-bold text-bottle mb-1">Porównania edycji</h1>
+      <p class="text-sm text-slate-text/70 leading-relaxed mb-2">
+        Narzędzie do automatycznego porównania dwóch edycji tego samego konkursu grantowego.
+        Wskazujesz pary dokumentów (np. regulamin 2024 vs regulamin 2025), a AI analizuje każdą parę sekcja po sekcji —
+        identyfikuje zmiany merytoryczne, ich wagę biznesową i co wnioskodawca powinien zrobić inaczej.
+      </p>
+      <p class="text-sm text-slate-text/50 leading-relaxed mb-3">
+        Używaj gdy: pojawiła się nowa edycja konkursu i chcesz szybko wiedzieć, co się zmieniło względem poprzedniej,
+        zanim zaczniesz pisać wniosek lub aktualizować istniejący.
+      </p>
+      <div class="flex items-center gap-4 flex-wrap text-xs">
+        <span class="text-slate-text/40">Algorytm:</span>
+        <span class="text-slate-text/60">1. Ekstrakcja sekcji z dokumentów PDF/DOCX</span>
+        <span class="text-slate-text/30">→</span>
+        <span class="text-slate-text/60">2. Semantyczne dopasowanie sekcji między edycjami</span>
+        <span class="text-slate-text/30">→</span>
+        <span class="text-slate-text/60">3. Analiza każdej pary przez AI</span>
+        <a href="{{ url_for('comparison.how_it_works') }}"
+           class="ml-1 text-bottle hover:underline font-medium">Szczegóły algorytmu →</a>
+      </div>
+    </div>
   </div>
+</div>
+
+<div class="flex items-center justify-between mb-4">
+  <p class="text-slate-text/50 text-sm">{{ jobs | length }} rekord{% if jobs | length == 1 %}{% elif jobs | length in [2,3,4] %}y{% else %}ów{% endif %}</p>
   <a href="{{ url_for('comparison.setup') }}"
      class="flex items-center gap-2 px-4 py-2 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
     + Nowe porównanie

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Jak zdefiniować porównanie — BLDG{% endblock %}
+{% block content %}
+
+<nav class="text-sm text-slate-text/60 mb-6 flex items-center gap-2">
+  <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porównania</a>
+  <span>›</span>
+  <a href="{{ url_for('comparison.setup') }}" class="hover:text-bottle">Nowe porównanie</a>
+  <span>›</span>
+  <span>Pomoc</span>
+</nav>
+
+<div class="max-w-3xl mx-auto">
+
+  <h1 class="text-2xl font-bold text-bottle mb-2">Jak zdefiniować porównanie edycji</h1>
+  <p class="text-slate-text/50 text-sm mb-8">Krok po kroku — od wyboru konkursu do pobrania wyników.</p>
+
+  <div class="space-y-6">
+
+    <!-- Step 1 -->
+    <section class="bg-white rounded-xl border border-gray-100 p-6">
+      <div class="flex items-start gap-4">
+        <div class="w-8 h-8 bg-bottle text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">1</div>
+        <div class="flex-1">
+          <h2 class="font-bold text-slate-text mb-2">Wybierz konkurs i dwie edycje do porównania</h2>
+          <p class="text-sm text-slate-text/70 leading-relaxed mb-3">
+            Najpierw wskaż konkurs z listy, a następnie dwie jego edycje — starszą i nowszą.
+            Aplikacja pobierze listę dokumentów przypisanych do każdej z edycji.
+          </p>
+          <div class="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800">
+            <strong>Wskazówka:</strong> Edycje muszą być wcześniej dodane w widoku konkursu
+            (zakładka „Edycje"). Dokumenty wgrywasz do każdej edycji osobno — PDF, DOCX lub XLSX.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 2 -->
+    <section class="bg-white rounded-xl border border-gray-100 p-6">
+      <div class="flex items-start gap-4">
+        <div class="w-8 h-8 bg-bottle text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">2</div>
+        <div class="flex-1">
+          <h2 class="font-bold text-slate-text mb-2">Zdefiniuj pary plików</h2>
+          <p class="text-sm text-slate-text/70 leading-relaxed mb-3">
+            Porównanie działa para po parze — musisz wskazać, który plik ze starszej edycji
+            odpowiada któremu plikowi z nowszej edycji.
+          </p>
+          <div class="space-y-3 text-sm text-slate-text/70">
+            <div class="flex items-start gap-3">
+              <span class="text-bottle font-bold text-base mt-0.5">✦</span>
+              <div>
+                <strong class="text-slate-text">Autopropozycja par</strong> — po wczytaniu plików
+                aplikacja automatycznie sugeruje pary na podstawie podobieństwa nazw i opisów AI.
+                Sugerowane pary są oznaczone etykietą „auto". Sprawdź je przed uruchomieniem.
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <span class="text-bottle font-bold text-base mt-0.5">✦</span>
+              <div>
+                <strong class="text-slate-text">Ręczne dodawanie par</strong> — kliknij
+                „+ Dodaj parę ręcznie" i wybierz z listy rozwijanych plik ze starszej
+                i nowszej edycji.
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <span class="text-bottle font-bold text-base mt-0.5">✦</span>
+              <div>
+                <strong class="text-slate-text">Autopropozycja działa tylko dla plików z opisem AI</strong>
+                — jeśli plik nie ma jeszcze opisu (wygenerowanego przez AI w widoku edycji),
+                nie będzie brany pod uwagę przy automatycznym dopasowaniu. Pliki bez opisu
+                możesz dodać ręcznie.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 3 -->
+    <section class="bg-white rounded-xl border border-gray-100 p-6">
+      <div class="flex items-start gap-4">
+        <div class="w-8 h-8 bg-bottle text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">3</div>
+        <div class="flex-1">
+          <h2 class="font-bold text-slate-text mb-2">Uruchom porównanie</h2>
+          <p class="text-sm text-slate-text/70 leading-relaxed mb-3">
+            Po zdefiniowaniu par kliknij „Uruchom porównanie". Aplikacja zacznie przetwarzać
+            pary jedna po drugiej — widoczny jest pasek postępu i aktualny status każdej pary.
+          </p>
+          <div class="bg-amber-50 border border-amber-100 rounded-lg p-3 text-xs text-amber-800">
+            <strong>Czas trwania:</strong> Każda para to kilka–kilkanaście minut zależnie od
+            rozmiaru dokumentów i liczby sekcji. Przeglądarka musi pozostać otwarta podczas
+            przetwarzania — ale możesz otwierać inne zakładki.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 4 -->
+    <section class="bg-white rounded-xl border border-gray-100 p-6">
+      <div class="flex items-start gap-4">
+        <div class="w-8 h-8 bg-bottle text-white rounded-full flex items-center justify-center text-sm font-bold shrink-0">4</div>
+        <div class="flex-1">
+          <h2 class="font-bold text-slate-text mb-2">Przeglądaj wyniki i pobierz raport</h2>
+          <p class="text-sm text-slate-text/70 leading-relaxed mb-3">
+            Po zakończeniu każdej pary możesz przeglądać wyniki na bieżąco. Po ukończeniu
+            wszystkich par opcjonalnie wygenerujesz zbiorcze podsumowanie AI całej edycji.
+          </p>
+          <div class="space-y-2 text-sm text-slate-text/70">
+            <div class="flex items-start gap-3">
+              <span class="font-bold text-green-700">XLSX</span>
+              <span>Eksport do Excela — pełny rejestr zmian z podziałem na arkusze (jeden arkusz = jedna para plików) plus arkusz podsumowania.</span>
+            </div>
+            <div class="flex items-start gap-3">
+              <span class="font-bold text-slate-text">CSV</span>
+              <span>Eksport do CSV — wszystkie zmiany w jednej tabeli, przydatny do dalszej analizy w arkuszach kalkulacyjnych.</span>
+            </div>
+            <div class="flex items-start gap-3">
+              <span class="font-bold text-slate-text/60">Para</span>
+              <span>Każdą parę możesz też pobrać osobno (XLSX lub CSV) przez przycisk przy wynikach danej pary.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Algorithm note -->
+    <section class="bg-gray-50 rounded-xl border border-gray-100 p-5 text-sm text-slate-text/60">
+      <p>
+        Ciekawi Cię jak dokładnie działa algorytm porównania sekcji?
+        <a href="{{ url_for('comparison.how_it_works') }}" class="text-bottle hover:underline font-medium">
+          Przeczytaj szczegółowy opis algorytmu →
+        </a>
+      </p>
+    </section>
+
+  </div>
+
+  <div class="mt-8 flex items-center gap-4">
+    <a href="{{ url_for('comparison.setup') }}"
+       class="px-4 py-2 bg-bottle text-white text-sm font-medium rounded-lg hover:bg-bottle/90 transition-colors">
+      ← Wróć do definiowania porównania
+    </a>
+  </div>
+
+</div>
+{% endblock %}

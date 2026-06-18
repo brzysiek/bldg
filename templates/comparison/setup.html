@@ -1,10 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Nowe porownanie – BLDG{% endblock %}
 {% block content %}
-<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2">
+<nav class="text-sm text-slate-text/60 mb-5 flex items-center gap-2 flex-wrap">
   <a href="{{ url_for('comparison.index') }}" class="hover:text-bottle">Porownania</a>
   <span>›</span>
   <span class="text-slate-text font-medium">Nowe porownanie</span>
+  <span class="ml-auto">
+    <a href="{{ url_for('comparison.setup_help') }}"
+       class="text-xs text-slate-text/40 hover:text-bottle transition-colors flex items-center gap-1">
+      <span>❓</span><span>Jak to działa?</span>
+    </a>
+  </span>
 </nav>
 
 <h1 class="text-xl font-bold text-bottle mb-6">Nowe porownanie edycji</h1>
