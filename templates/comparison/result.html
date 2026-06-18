@@ -259,7 +259,7 @@
                    title="Pobierz CSV">⬇️ CSV</a>
                 <button onclick="rerunPair({{ spfr_idx }}, 'static-pair-{{ spfr_idx }}')"
                         class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">
-                  ↺ Regeneruj
+                  ↺ Porównaj jeszcze raz
                 </button>
                 <span class="text-slate-text/30 text-sm transition-transform duration-200"
                       id="arrow-pfr-{{ loop.index0 }}"
@@ -617,7 +617,7 @@ function setPairDone(idx, data) {
   badge.innerHTML = `${critBadge}<span class="px-2 py-0.5 ${cntColor} text-xs rounded-full font-medium">${n} zmian</span>${timeBadge}` +
     `<a href="${dlUrl}" class="ml-2 px-2 py-0.5 text-white text-xs rounded-full font-medium transition-colors" style="background:#1D6F42" onmouseover="this.style.background='#155230'" onmouseout="this.style.background='#1D6F42'" title="XLSX">⬇️ XLSX</a>` +
     `<a href="${csvUrl}" class="ml-1 px-2 py-0.5 border border-lime/60 text-bottle text-xs rounded-full font-medium hover:bg-lime/20 transition-colors" title="CSV">⬇️ CSV</a>` +
-    `<button onclick="rerunPair(${idx}, null)" class="ml-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Regeneruj</button>` +
+    `<button onclick="rerunPair(${idx}, null)" class="ml-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium hover:bg-amber-200 transition-colors">↺ Porównaj jeszcze raz</button>` +
     `<button onclick="togglePairBody(${idx})" class="ml-2 text-slate-text/30 text-sm hover:text-bottle">▼</button>`;
 
   if (body) {
