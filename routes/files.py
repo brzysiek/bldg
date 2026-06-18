@@ -266,28 +266,40 @@ def cancel_summary(file_id):
 
 @bp.route("/files/<int:file_id>/extract-json", methods=["POST"])
 def extract_json(file_id):
-    """Synchronously extract document structure and cache it. Called by bulk-extract JS."""
-    try:
-        doc = db.session.get(Document, file_id)
-        if doc is None:
-            return jsonify({"ok": False, "file_id": file_id, "error": "Dokument nie istnieje"}), 404
+    """Start background extraction for one document. Returns immediately; poll extract-status."""
+    doc = db.session.get(Document, file_id)
+    if doc is None:
+        return jsonify({"ok": False, "file_id": file_id, "error": "Dokument nie istnieje"}), 404
 
-        settings = AppSettings.query.first()
-        if not settings or not settings.gemini_api_key:
-            return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
+    settings = AppSettings.query.first()
+    if not settings or not settings.gemini_api_key:
+        return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
 
-        from services.comparator import extract_document
-        _logger.info("extract_json: start file_id=%s name=%s", file_id, doc.original_name)
-        ok, err = extract_document(file_id)
-        if ok:
-            _logger.info("extract_json: done file_id=%s", file_id)
-            return jsonify({"ok": True, "file_id": file_id})
-        else:
-            _logger.warning("extract_json: failed file_id=%s err=%s", file_id, err)
-            return jsonify({"ok": False, "file_id": file_id, "error": err})
-    except Exception as exc:
-        _logger.error("extract_json: unhandled file_id=%s: %s", file_id, exc, exc_info=True)
-        return jsonify({"ok": False, "file_id": file_id, "error": str(exc)}), 500
+    if doc.extraction_status == "pending":
+        return jsonify({"ok": True, "file_id": file_id, "started": True, "already_running": True})
+
+    doc.extraction_status = "pending"
+    doc.extraction_error  = None
+    db.session.commit()
+
+    app = current_app._get_current_object()
+    threading.Thread(target=_run_extract_bg, args=(file_id, app), daemon=True).start()
+    _logger.info("extract_json: spawned thread file_id=%s name=%s", file_id, doc.original_name)
+    return jsonify({"ok": True, "file_id": file_id, "started": True})
+
+
+@bp.route("/files/<int:file_id>/extract-status")
+def extract_status(file_id):
+    """Return current extraction status for polling."""
+    doc = db.session.get(Document, file_id)
+    if doc is None:
+        return jsonify({"ok": False, "error": "Dokument nie istnieje"}), 404
+    return jsonify({
+        "ok":     True,
+        "file_id": file_id,
+        "status": doc.extraction_status,
+        "error":  doc.extraction_error,
+    })
 
 
 @bp.route("/files/<int:file_id>/cancel-extraction", methods=["POST"])

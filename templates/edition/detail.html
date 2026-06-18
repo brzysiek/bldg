@@ -401,8 +401,10 @@ const _SUMMARIZE_JSON_TPL = {{ url_for('files.summarize_json', file_id=0)|tojson
 const _summarizeJsonUrl   = id => _SUMMARIZE_JSON_TPL.replace('/0/', '/' + id + '/');
 const _CANCEL_TPL         = {{ url_for('files.cancel_summary', file_id=0)|tojson }};
 const _cancelSummaryUrl   = id => _CANCEL_TPL.replace('/0/', '/' + id + '/');
-const _EXTRACT_JSON_TPL   = {{ url_for('files.extract_json', file_id=0)|tojson }};
+const _EXTRACT_JSON_TPL   = {{ url_for('files.extract_json',   file_id=0)|tojson }};
 const _extractJsonUrl     = id => _EXTRACT_JSON_TPL.replace('/0/', '/' + id + '/');
+const _EXTRACT_STATUS_TPL = {{ url_for('files.extract_status', file_id=0)|tojson }};
+const _extractStatusUrl   = id => _EXTRACT_STATUS_TPL.replace('/0/', '/' + id + '/');
 
 let _bulkStopRequested = false;
 
@@ -603,20 +605,41 @@ function setExtractError(id, msg) {
   if (cb) cb.dataset.extractPending = 'false';
 }
 
+async function _pollExtractStatus(id) {
+  while (true) {
+    await new Promise(r => setTimeout(r, 2500));
+    try {
+      const r = await fetch(_extractStatusUrl(id));
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d?.ok) { setExtractError(id, d?.error || `HTTP ${r.status}`); return false; }
+      if (d.status === 'done')  { setExtractDone(id); return true; }
+      if (d.status === 'error') { setExtractError(id, d.error || 'Błąd ekstrakcji'); return false; }
+      // status === 'pending' → keep polling
+    } catch (e) {
+      setExtractError(id, e.message);
+      return false;
+    }
+  }
+}
+
 async function extractFile(id) {
   setExtractPending(id);
   try {
     const resp = await fetch(_extractJsonUrl(id), { method: 'POST' });
     const data = await resp.json().catch(() => null);
-    if (resp.ok && data?.ok) {
-      setExtractDone(id);
-    } else {
+    if (!resp.ok || !data?.ok) {
       setExtractError(id, data?.error || `HTTP ${resp.status}`);
+      updateBulkBtn();
+      return false;
     }
   } catch (e) {
     setExtractError(id, e.message);
+    updateBulkBtn();
+    return false;
   }
+  const ok = await _pollExtractStatus(id);
   updateBulkBtn();
+  return ok;
 }
 
 let _bulkExtractStopRequested = false;
@@ -634,7 +657,11 @@ async function bulkExtract() {
   document.getElementById('btn-bulk-extract').disabled = true;
   document.getElementById('bulk-progress').classList.remove('hidden');
   const stopBtn = document.getElementById('btn-stop-bulk');
-  if (stopBtn) { stopBtn.disabled = false; stopBtn.textContent = '⛔ Stop'; stopBtn.onclick = () => { _bulkExtractStopRequested = true; if (stopBtn) { stopBtn.disabled = true; stopBtn.textContent = '⏳ Zatrzymuję…'; } }; }
+  if (stopBtn) {
+    stopBtn.disabled = false;
+    stopBtn.textContent = '⛔ Stop';
+    stopBtn.onclick = () => { _bulkExtractStopRequested = true; stopBtn.disabled = true; stopBtn.textContent = '⏳ Zatrzymuję…'; };
+  }
   document.querySelectorAll('.doc-cb').forEach(cb => cb.disabled = true);
 
   for (const file of queue) {
@@ -644,21 +671,10 @@ async function bulkExtract() {
     }
     setProgress(done, total, file.name, 'active');
     document.getElementById('progress-label').textContent = '⏳ Segmentuję…';
-    setExtractPending(file.id);
-    try {
-      const resp = await fetch(_extractJsonUrl(file.id), { method: 'POST' });
-      const data = await resp.json().catch(() => null);
-      if (resp.ok && data?.ok) {
-        setExtractDone(file.id);
-      } else {
-        const msg = data?.error || `HTTP ${resp.status}`;
-        setExtractError(file.id, msg);
-        showProgressError(file.id, file.name, msg);
-        errors++;
-      }
-    } catch (e) {
-      setExtractError(file.id, e.message);
-      showProgressError(file.id, file.name, e.message);
+
+    const ok = await extractFile(file.id);
+    if (!ok) {
+      showProgressError(file.id, file.name, document.getElementById(`extract-status-${file.id}`)?.querySelector('[title]')?.title || 'Błąd');
       errors++;
     }
     done++;
