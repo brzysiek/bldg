@@ -317,6 +317,9 @@ def run_pair_batch(job_id):
         job = _reconnect_session(job_id)
         if not job:
             return jsonify({"ok": False, "error": "Nie znaleziono zadania po ekstrakcji"}), 500
+        settings = db.session.get(AppSettings, 1)
+        if not settings:
+            return jsonify({"ok": False, "error": "Brak ustawień aplikacji po ponownym połączeniu z DB"}), 500
         mappings = json.loads(job.file_mappings_json or "[]")
         if pair_idx >= len(mappings):
             return jsonify({"ok": False, "error": "Nieprawidłowy indeks pary po ekstrakcji"}), 400
