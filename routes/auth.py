@@ -63,6 +63,13 @@ def login():
         prompt="select_account",
     )
     session["oauth_state"] = state
+    # google_auth_oauthlib >= 1.2 auto-generates a PKCE code_verifier and
+    # embeds code_challenge in the auth URL. We must persist the verifier so
+    # the callback (which creates a fresh Flow) can include it in the token
+    # exchange — otherwise Google returns "Missing code verifier".
+    cv = getattr(flow, "code_verifier", None)
+    if cv:
+        session["oauth_cv"] = cv
     return redirect(auth_url)
 
 
@@ -75,6 +82,11 @@ def callback():
 
     try:
         flow = _make_flow(state=state)
+        # Restore PKCE code_verifier stored during login() so fetch_token
+        # includes it in the token request (required by google_auth_oauthlib >= 1.2).
+        cv = session.pop("oauth_cv", None)
+        if cv:
+            flow.code_verifier = cv
         # On cPanel behind HTTPS proxy the redirect URL may arrive as http://
         auth_response = request.url
         if request.headers.get("X-Forwarded-Proto") == "https" or os.environ.get("FORCE_HTTPS"):
