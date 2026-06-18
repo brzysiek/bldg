@@ -243,19 +243,27 @@ PRICING = {
 def _resolve_local_path(doc, settings):
     """Return (local_path, tmp_dir_or_None). Caller must shutil.rmtree(tmp_dir) if set."""
     if not doc.gdrive_file_id:
+        log.debug("_resolve_local_path  plik lokalny: %s", doc.original_name)
         return doc.stored_path, None
     import tempfile, shutil
     tmp_dir = tempfile.mkdtemp()
     try:
         if settings and settings.google_drive_api_key:
             from services.google_drive import download_file
+            log.info(
+                "_resolve_local_path  pobieranie z Drive: '%s'  id=%s",
+                doc.original_name, doc.gdrive_file_id,
+            )
             path = download_file(
                 doc.gdrive_file_id, doc.original_name,
                 doc.mime_type or "application/pdf", tmp_dir, settings.google_drive_api_key,
             )
+            log.info("_resolve_local_path  pobrano OK: '%s'", doc.original_name)
         else:
             shutil.rmtree(tmp_dir, ignore_errors=True)
-            raise ValueError("Brak klucza Drive API — nie można pobrać pliku")
+            raise ValueError(
+                f"Brak klucza Drive API — nie mozna pobrac pliku '{doc.original_name}'"
+            )
         return path, tmp_dir
     except Exception:
         shutil.rmtree(tmp_dir, ignore_errors=True)

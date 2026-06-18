@@ -304,25 +304,29 @@ def run_pair_batch(job_id):
     job.status_detail = f"{pair_prefix}: ekstrakcja struktury"
     db.session.commit()
 
-    log.debug("run_pair_batch START  job=%d  para=%d  offset=%d  stary=%s  nowy=%s",
-              job_id, pair_idx + 1, section_offset,
-              doc_old.original_name, doc_new.original_name)
+    name_old = doc_old.original_name
+    name_new = doc_new.original_name
+    log.info("run_pair_batch START  job=%d  para=%d/%d  offset=%d  stary='%s'  nowy='%s'",
+             job_id, pair_idx + 1, len(mappings), section_offset, name_old, name_new)
 
+    _stage = "inicjalizacja"
     try:
+        _stage = "pobieranie plikow i ekstrakcja struktury"
         struct_old, struct_new, _, t_in_struct, t_out_struct = get_pair_structures(
             doc_old, doc_new, settings
         )
 
         # Reconnect after Gemini extraction (connection may have died during the call)
+        _stage = "reconnect sesji DB po ekstrakcji"
         job = _reconnect_session(job_id)
         if not job:
             return jsonify({"ok": False, "error": "Nie znaleziono zadania po ekstrakcji"}), 500
         settings = db.session.get(AppSettings, 1)
         if not settings:
-            return jsonify({"ok": False, "error": "Brak ustawień aplikacji po ponownym połączeniu z DB"}), 500
+            return jsonify({"ok": False, "error": "Brak ustawien aplikacji po reconnect DB"}), 500
         mappings = json.loads(job.file_mappings_json or "[]")
         if pair_idx >= len(mappings):
-            return jsonify({"ok": False, "error": "Nieprawidłowy indeks pary po ekstrakcji"}), 400
+            return jsonify({"ok": False, "error": "Nieprawidlowy indeks pary po ekstrakcji"}), 400
         mapping = mappings[pair_idx]
 
         # Renew lock after structure extraction (can take several minutes for large docs)
@@ -335,6 +339,7 @@ def run_pair_batch(job_id):
 
         # Section matching — computed once per pair, cached in file_mappings_json
         if "section_matching" not in mapping:
+            _stage = "dopasowanie semantyczne sekcji (Gemini)"
             job.status_detail = f"{pair_prefix}: dopasowywanie sekcji…"
             _safe_commit()
             call_match, match_tokens = make_gemini_caller(settings, stage="matching")
@@ -366,6 +371,7 @@ def run_pair_batch(job_id):
         job.status_detail = f"sekcja {section_offset + 1}/{sections_total} ({pct_start}%)"
         _safe_commit()
 
+        _stage = f"porownanie sekcji (batch {batch_num}/{total_batches})"
         call_fn, batch_tokens = make_gemini_caller(settings)
 
         def _on_progress(stage):
@@ -397,9 +403,12 @@ def run_pair_batch(job_id):
         next_offset = batch_end
         done = next_offset >= sections_total
 
-        log.debug("run_pair_batch OK  job=%d  para=%d  offset=%d→%d/%d  batch=%d/%d  zmian=%d  done=%s",
-                  job_id, pair_idx + 1, section_offset, next_offset, sections_total,
-                  batch_num, total_batches, len(changes_batch), done)
+        log.info("run_pair_batch OK  job=%d  para=%d/%d  offset=%d->%d/%d  "
+                 "batch=%d/%d  zmian=%d  done=%s  stary='%s'  nowy='%s'",
+                 job_id, pair_idx + 1, len(mappings),
+                 section_offset, next_offset, sections_total,
+                 batch_num, total_batches, len(changes_batch), done,
+                 name_old, name_new)
 
         _safe_commit()
 
@@ -415,18 +424,23 @@ def run_pair_batch(job_id):
         })
 
     except Exception as exc:
-        log.error("run_pair_batch BŁĄD  job=%d  para=%d  offset=%d  %s: %s",
-                  job_id, pair_idx + 1, section_offset,
-                  type(exc).__name__, exc, exc_info=True)
+        error_msg = f"[etap: {_stage}] {type(exc).__name__}: {exc}"
+        log.error(
+            "run_pair_batch BLAD  job=%d  para=%d/%d  etap='%s'  "
+            "stary='%s'  nowy='%s'  offset=%d  %s: %s",
+            job_id, pair_idx + 1, len(mappings), _stage,
+            name_old, name_new, section_offset,
+            type(exc).__name__, exc, exc_info=True,
+        )
         try:
             job.status        = "error"
-            job.error_message = str(exc)[:1000]
+            job.error_message = error_msg[:1000]
             db.session.commit()
         except Exception as db_err:
-            log.error("run_pair_batch DB commit nieudany: %s", db_err)
+            log.error("run_pair_batch DB commit nieudany po bledzie: %s", db_err)
             try: db.session.rollback()
             except Exception: pass
-        return jsonify({"ok": False, "pair_idx": pair_idx, "error": str(exc)}), 500
+        return jsonify({"ok": False, "pair_idx": pair_idx, "error": error_msg}), 500
 
 
 @bp.route("/job/<int:job_id>/finalize-pair", methods=["POST"])

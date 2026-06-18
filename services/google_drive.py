@@ -127,51 +127,77 @@ def list_folder_files(folder_id: str, api_key: str) -> list[dict]:
     return results
 
 
-def _raise_drive_error(resp, file_name: str = "") -> None:
-    """Parse Drive API error JSON and raise RuntimeError with a Polish message."""
-    status = resp.status_code
-    api_msg = ""
-    api_reason = ""
+import time as _time
+import logging as _logging
+_log = _logging.getLogger(__name__)
+
+# Reasons that warrant a retry with acknowledgeAbuse=true before giving up
+_ABUSE_REASONS = {"cannotDownloadFile", "abuse", "forbidden"}
+
+
+def _parse_drive_error(resp):
+    """Return (api_msg, api_reason) from a Drive API error response body."""
     try:
         body = resp.json()
         err = body.get("error", {})
-        api_msg = err.get("message", "")
-        errors = err.get("errors", [])
-        if errors:
-            api_reason = errors[0].get("reason", "")
+        msg = err.get("message", "")
+        reason = (err.get("errors") or [{}])[0].get("reason", "")
+        return msg, reason
     except Exception:
-        pass
+        return "", ""
 
-    name_info = f' „{file_name}“' if file_name else ""
+
+def _raise_drive_error(resp, file_name: str = "") -> None:
+    """Parse Drive API error JSON and raise RuntimeError with a Polish message."""
+    status = resp.status_code
+    api_msg, api_reason = _parse_drive_error(resp)
+
+    name_info = f' "{file_name}"' if file_name else ""
     drive_detail = f" (Drive: {api_msg})" if api_msg else ""
+    reason_detail = f" [reason={api_reason}]" if api_reason else ""
 
     if status == 403:
-        hint = (
-            "Plik nie jest udostepniony publicznie. "
-            "Otworz plik w Google Drive -> Udostepnij -> ustaw 'Kazdy, kto ma link' -> Przegladajacy."
-        )
+        if api_reason in ("insufficientFilePermissions", "domainPolicy"):
+            hint = (
+                "Plik nie jest udostepniony publicznie lub dostep jest ograniczony domenowo. "
+                "Otworz plik w Google Drive -> Udostepnij -> ustaw 'Kazdy, kto ma link' -> Przegladajacy."
+            )
+        else:
+            hint = (
+                "Brak uprawnien do pobrania pliku. Sprawdz, czy plik jest udostepniony publicznie "
+                "(Google Drive -> Udostepnij -> 'Kazdy, kto ma link' -> Przegladajacy)."
+            )
         raise RuntimeError(
-            f"Brak dostępu do pliku{name_info} — Google Drive odmówił pobrania (403){drive_detail}. "
-            f"{hint}"
+            f"Google Drive 403 Forbidden{name_info}{drive_detail}{reason_detail}. {hint}"
         )
     elif status == 404:
         raise RuntimeError(
-            f"Plik{name_info} nie został znaleziony w Google Drive (404){drive_detail}. "
-            "Sprawdź, czy plik nadal istnieje i czy ID jest poprawne."
+            f"Google Drive 404 Not Found{name_info}{drive_detail}. "
+            "Sprawdz, czy plik nadal istnieje i czy ID jest poprawne."
         )
     elif status == 429:
         raise RuntimeError(
-            f"Przekroczono limit zapytań Google Drive API (429){name_info}. "
-            "Poczekaj kilka minut i spróbuj ponownie."
+            f"Google Drive 429 Too Many Requests{name_info}. "
+            "Przekroczono limit zapytan API — poczekaj kilka minut i sprobuj ponownie."
+        )
+    elif status >= 500:
+        raise RuntimeError(
+            f"Google Drive blad serwera (HTTP {status}){name_info}{drive_detail}."
         )
     else:
         raise RuntimeError(
-            f"Błąd pobierania pliku{name_info} z Google Drive (HTTP {status}){drive_detail}."
+            f"Google Drive HTTP {status}{name_info}{drive_detail}{reason_detail}."
         )
 
 
 def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, api_key: str) -> str:
-    """Download a publicly shared Drive file using an API key."""
+    """Download a publicly shared Drive file using an API key.
+
+    Retry strategy:
+    - attempt 0: normal download
+    - attempt 1: add acknowledgeAbuse=true (handles large-file virus-scan 403)
+    - attempt 2: same, after 2s backoff (handles transient 5xx / rate-limit)
+    """
     os.makedirs(dest_dir, exist_ok=True)
     safe_name = _safe_filename(file_name)
     if mime_type in EXPORT_MIME:
@@ -179,16 +205,53 @@ def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, a
         base = os.path.splitext(safe_name)[0]
         dest_path = os.path.join(dest_dir, f"{base}{ext}")
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export"
-        params = {"mimeType": export_mime, "key": api_key}
+        base_params: dict = {"mimeType": export_mime, "key": api_key}
     else:
         dest_path = os.path.join(dest_dir, safe_name)
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
-        params = {"alt": "media", "key": api_key}
+        base_params = {"alt": "media", "key": api_key}
+
     session = _make_session()
-    resp = session.get(url, params=params, timeout=120, stream=True)
-    if not resp.ok:
-        _raise_drive_error(resp, file_name)
-    with open(dest_path, "wb") as fh:
-        for chunk in resp.iter_content(chunk_size=65536):
-            fh.write(chunk)
-    return dest_path
+    last_resp = None
+
+    for attempt in range(3):
+        params = dict(base_params)
+        if attempt >= 1:
+            params["acknowledgeAbuse"] = "true"
+        if attempt >= 2:
+            _time.sleep(2)
+
+        _log.debug(
+            "Drive download attempt=%d  file=%s  id=%s  acknowledgeAbuse=%s",
+            attempt, file_name, file_id, params.get("acknowledgeAbuse", "false"),
+        )
+        resp = session.get(url, params=params, timeout=120, stream=True)
+        last_resp = resp
+
+        if resp.ok:
+            with open(dest_path, "wb") as fh:
+                for chunk in resp.iter_content(chunk_size=65536):
+                    fh.write(chunk)
+            _log.debug("Drive download OK  file=%s  attempt=%d", file_name, attempt)
+            return dest_path
+
+        api_msg, api_reason = _parse_drive_error(resp)
+        _log.warning(
+            "Drive download FAIL  attempt=%d  file=%s  id=%s  status=%d  reason=%s  msg=%s",
+            attempt, file_name, file_id, resp.status_code, api_reason or "-", api_msg or "-",
+        )
+        resp.close()
+
+        # 403 on attempt 0 with an abuse/download-check reason → retry with acknowledgeAbuse
+        if resp.status_code == 403 and attempt == 0 and api_reason in _ABUSE_REASONS:
+            continue
+        # 403 with no specific reason on attempt 0 → also worth one retry
+        if resp.status_code == 403 and attempt == 0 and not api_reason:
+            continue
+        # 5xx transient server error → one more retry
+        if resp.status_code >= 500 and attempt < 2:
+            continue
+        # anything else (404, real permissions, exhausted retries) → raise now
+        break
+
+    _raise_drive_error(last_resp, file_name)
