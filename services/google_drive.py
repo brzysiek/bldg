@@ -105,6 +105,8 @@ def list_folder_files(folder_id: str, api_key: str) -> list[dict]:
         "fields": "nextPageToken,files(id,name,mimeType,size)",
         "pageSize": 100,
         "key": api_key,
+        "supportsAllDrives": "true",
+        "includeItemsFromAllDrives": "true",
     }
     results = []
     session = _make_session()
@@ -205,11 +207,11 @@ def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, a
         base = os.path.splitext(safe_name)[0]
         dest_path = os.path.join(dest_dir, f"{base}{ext}")
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export"
-        base_params: dict = {"mimeType": export_mime, "key": api_key}
+        base_params: dict = {"mimeType": export_mime, "key": api_key, "supportsAllDrives": "true"}
     else:
         dest_path = os.path.join(dest_dir, safe_name)
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
-        base_params = {"alt": "media", "key": api_key}
+        base_params = {"alt": "media", "key": api_key, "supportsAllDrives": "true"}
 
     session = _make_session()
     last_resp = None
@@ -236,22 +238,24 @@ def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, a
             return dest_path
 
         api_msg, api_reason = _parse_drive_error(resp)
+        try:
+            raw_body = resp.text[:600]
+        except Exception:
+            raw_body = "(unreadable)"
         _log.warning(
-            "Drive download FAIL  attempt=%d  file=%s  id=%s  status=%d  reason=%s  msg=%s",
-            attempt, file_name, file_id, resp.status_code, api_reason or "-", api_msg or "-",
+            "Drive download FAIL  attempt=%d/%d  file=%s  id=%s  "
+            "status=%d  reason=%s  msg=%s  body=%s",
+            attempt + 1, 3, file_name, file_id,
+            resp.status_code, api_reason or "-", api_msg or "-", raw_body,
         )
         resp.close()
 
-        # 403 on attempt 0 with an abuse/download-check reason → retry with acknowledgeAbuse
-        if resp.status_code == 403 and attempt == 0 and api_reason in _ABUSE_REASONS:
+        # Retry all 403s twice: attempt 1 adds acknowledgeAbuse, attempt 2 adds backoff
+        if resp.status_code == 403 and attempt < 2:
             continue
-        # 403 with no specific reason on attempt 0 → also worth one retry
-        if resp.status_code == 403 and attempt == 0 and not api_reason:
-            continue
-        # 5xx transient server error → one more retry
+        # Retry transient 5xx
         if resp.status_code >= 500 and attempt < 2:
             continue
-        # anything else (404, real permissions, exhausted retries) → raise now
         break
 
     _raise_drive_error(last_resp, file_name)
