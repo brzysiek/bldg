@@ -142,13 +142,13 @@ def _raise_drive_error(resp, file_name: str = "") -> None:
     except Exception:
         pass
 
-    name_info = f" „{file_name}"" if file_name else ""
+    name_info = f' „{file_name}“' if file_name else ""
     drive_detail = f" (Drive: {api_msg})" if api_msg else ""
 
     if status == 403:
         hint = (
-            "Plik nie jest udostępniony publicznie. "
-            "Otwórz plik w Google Drive → Udostępnij → ustaw „Każdy, kto ma link" → Przeglądający."
+            "Plik nie jest udostepniony publicznie. "
+            "Otworz plik w Google Drive -> Udostepnij -> ustaw 'Kazdy, kto ma link' -> Przegladajacy."
         )
         raise RuntimeError(
             f"Brak dostępu do pliku{name_info} — Google Drive odmówił pobrania (403){drive_detail}. "
