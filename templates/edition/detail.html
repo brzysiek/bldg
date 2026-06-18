@@ -411,6 +411,8 @@ const _EXTRACT_JSON_TPL   = {{ url_for('files.extract_json',   file_id=0)|tojson
 const _extractJsonUrl     = id => _EXTRACT_JSON_TPL.replace('/0/', '/' + id + '/');
 const _EXTRACT_STATUS_TPL = {{ url_for('files.extract_status', file_id=0)|tojson }};
 const _extractStatusUrl   = id => _EXTRACT_STATUS_TPL.replace('/0/', '/' + id + '/');
+const _EXTRACT_AND_SUMMARIZE_TPL = {{ url_for('files.extract_and_summarize_json', file_id=0)|tojson }};
+const _extractAndSummarizeUrl    = id => _EXTRACT_AND_SUMMARIZE_TPL.replace('/0/', '/' + id + '/');
 
 let _bulkStopRequested = false;
 
@@ -583,6 +585,50 @@ function setRowError(id, msg) {
   if (el) el.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">❌ Błąd</span>`;
 }
 
+function _setRowSummaryDone(id, description) {
+  const descEl = document.getElementById('desc-' + id);
+  if (descEl) descEl.textContent = description || '—';
+  const statusEl = document.getElementById('status-' + id);
+  if (statusEl) {
+    const row = document.getElementById('doc-row-' + id);
+    const name = row ? (row.querySelector('.doc-cb')?.dataset.name || '') : '';
+    statusEl.innerHTML = `<button onclick='showSummary(${id}, ${JSON.stringify(name)})'
+      class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">
+      🔍 Podsumowanie</button>`;
+  }
+}
+
+async function _pollCombinedStatus(id, maxAttempts = 240) {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, 2500));
+    try {
+      const r = await fetch(_extractStatusUrl(id));
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d?.ok) {
+        setExtractError(id, d?.error || `HTTP ${r.status}`);
+        setRowError(id, d?.error || `HTTP ${r.status}`);
+        return false;
+      }
+      const extDone = d.status !== 'pending' && d.status != null;
+      const sumDone = d.summary_status !== 'pending' && d.summary_status != null;
+      if (extDone) {
+        if (d.status === 'done') setExtractDone(id);
+        else setExtractError(id, d.error || 'Błąd segmentacji');
+      }
+      if (sumDone) {
+        if (d.summary_status === 'done') _setRowSummaryDone(id, d.description);
+        else setRowError(id, d.summary_error || 'Błąd podsumowania');
+      }
+      if (extDone && sumDone) return d.status === 'done' && d.summary_status === 'done';
+    } catch (e) {
+      setExtractError(id, e.message);
+      return false;
+    }
+  }
+  setExtractError(id, 'Timeout pollingu');
+  return false;
+}
+
 async function bulkSummarizeAndExtract() {
   const checked = Array.from(document.querySelectorAll('.doc-cb:checked'))
     .filter(cb => cb.dataset.pending !== 'true');
@@ -611,33 +657,33 @@ async function bulkSummarizeAndExtract() {
     setRowPending(file.id);
     setExtractPending(file.id);
 
-    // Fire extraction in background (returns immediately, thread running)
-    try { await fetch(_extractJsonUrl(file.id), { method: 'POST' }); } catch(_) {}
-
-    // Summarize synchronously (blocks; extraction thread runs in parallel)
-    let summaryOk = false;
+    // Fire combined endpoint — downloads file once, runs both Gemini calls in one thread
+    let startOk = false;
     try {
-      const resp = await fetch(_summarizeJsonUrl(file.id), { method: 'POST' });
-      let data, rawText = '';
-      try { rawText = await resp.text(); data = JSON.parse(rawText); } catch(_) { data = null; }
-      if (resp.ok && data?.ok) {
-        setRowDone(file.id, data.description, data.summary);
-        summaryOk = true;
-      } else {
-        const msg = data?.error || (rawText ? rawText.slice(0, 120) : `HTTP ${resp.status}`);
+      const resp = await fetch(_extractAndSummarizeUrl(file.id), { method: 'POST' });
+      const data = await resp.json().catch(() => null);
+      startOk = resp.ok && data?.ok;
+      if (!startOk) {
+        const msg = data?.error || `HTTP ${resp.status}`;
+        setExtractError(file.id, msg);
         setRowError(file.id, msg);
         showProgressError(file.id, file.name, msg);
         errors++;
+        done++;
+        continue;
       }
     } catch (e) {
+      setExtractError(file.id, e.message);
       setRowError(file.id, e.message);
       showProgressError(file.id, file.name, e.message);
       errors++;
+      done++;
+      continue;
     }
 
-    // Poll until extraction done (may already be done by now)
-    await _pollExtractStatus(file.id);
-
+    // Poll until both extraction and summarization are done
+    const ok = await _pollCombinedStatus(file.id);
+    if (!ok) errors++;
     done++;
   }
 

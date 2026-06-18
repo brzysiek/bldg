@@ -31,6 +31,13 @@ def _run_extract_bg(doc_id: int, app):
         extract_document(doc_id)
 
 
+def _run_extract_and_summarize_bg(doc_id: int, app):
+    """Run extract_and_summarize in a background thread with its own app context."""
+    from services.comparator import extract_and_summarize
+    with app.app_context():
+        extract_and_summarize(doc_id)
+
+
 @bp.route("/competition/<c_slug>/edition/<e_slug>/upload", methods=["GET", "POST"])
 def upload(c_slug, e_slug):
     competition = Competition.query.filter_by(slug=c_slug).first_or_404()
@@ -288,17 +295,46 @@ def extract_json(file_id):
     return jsonify({"ok": True, "file_id": file_id, "started": True})
 
 
+@bp.route("/files/<int:file_id>/extract-and-summarize-json", methods=["POST"])
+def extract_and_summarize_json(file_id):
+    """Start combined background extraction+summarization. Downloads file once. Returns immediately."""
+    doc = db.session.get(Document, file_id)
+    if doc is None:
+        return jsonify({"ok": False, "file_id": file_id, "error": "Dokument nie istnieje"}), 404
+
+    settings = AppSettings.query.first()
+    if not settings or not settings.gemini_api_key:
+        return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
+
+    if doc.extraction_status == "pending" or doc.ai_summary_status == "pending":
+        return jsonify({"ok": True, "file_id": file_id, "started": True, "already_running": True})
+
+    doc.extraction_status = "pending"
+    doc.extraction_error  = None
+    doc.ai_summary_status = "pending"
+    doc.ai_summary_error  = None
+    db.session.commit()
+
+    app_obj = current_app._get_current_object()
+    threading.Thread(target=_run_extract_and_summarize_bg, args=(file_id, app_obj), daemon=True).start()
+    _logger.info("extract_and_summarize_json: spawned thread file_id=%s name=%s", file_id, doc.original_name)
+    return jsonify({"ok": True, "file_id": file_id, "started": True})
+
+
 @bp.route("/files/<int:file_id>/extract-status")
 def extract_status(file_id):
-    """Return current extraction status for polling."""
+    """Return current extraction (and summary) status for polling."""
     doc = db.session.get(Document, file_id)
     if doc is None:
         return jsonify({"ok": False, "error": "Dokument nie istnieje"}), 404
     return jsonify({
-        "ok":     True,
-        "file_id": file_id,
-        "status": doc.extraction_status,
-        "error":  doc.extraction_error,
+        "ok":             True,
+        "file_id":        file_id,
+        "status":         doc.extraction_status,
+        "error":          doc.extraction_error,
+        "summary_status": doc.ai_summary_status,
+        "summary_error":  doc.ai_summary_error,
+        "description":    doc.ai_description,
     })
 
 

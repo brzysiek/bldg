@@ -545,6 +545,110 @@ def extract_document(doc_id: int) -> tuple:
         return False, str(exc)
 
 
+def extract_and_summarize(doc_id: int) -> tuple:
+    """Download file once, extract text once, run both segmentation and AI summary.
+
+    Avoids downloading the file twice compared to calling extract_document + summarize separately.
+    Designed to run in a background thread. Returns (ok, error_msg).
+    Requires an active Flask app context.
+    """
+    import shutil
+    from extensions import db
+    from models import Document, AppSettings
+    from services.gemini import summarize_document as _summarize
+    from google import genai
+
+    doc = db.session.get(Document, doc_id)
+    if not doc:
+        return False, "Dokument nie istnieje"
+
+    settings = db.session.get(AppSettings, 1)
+    if not settings or not settings.gemini_api_key:
+        _write_extract_error(doc_id, "Brak klucza Gemini API")
+        return False, "Brak klucza Gemini API"
+
+    if doc.gdrive_file_id and not settings.google_drive_api_key:
+        _write_extract_error(doc_id, "Brak klucza Drive API")
+        return False, "Brak klucza Drive API"
+
+    prompt = settings.comparison_prompt_extraction or DEFAULT_PROMPT_EXTRACTION
+    ph = _prompt_hash(prompt)
+    gemini_model = settings.gemini_model
+    old_description = doc.ai_description or ""
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    tokens = {"in": 0, "out": 0}
+    call_extraction = _make_stage_caller(client, settings, "extraction", tokens)
+
+    try:
+        local_path, tmp_dir = _resolve_local_path(doc, settings)
+        try:
+            text = extract_text(local_path, doc.mime_type or "")
+        finally:
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        if not text or len(text.strip()) < 50:
+            raise ValueError("Nie udało się wyodrębnić tekstu — plik może być zeskanowany lub zabezpieczony")
+
+        if len(text) > 400_000:
+            text = text[:400_000] + "\n[TEKST OBCIĘTY DO 400 000 ZNAKÓW]"
+
+        structure = _extract_structure(text, doc.original_name, call_extraction, settings)
+        summary_result = _summarize(text, settings)
+
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        db.session.expire_all()
+
+        fresh = db.session.get(Document, doc_id)
+        if not fresh:
+            return False, "Dokument zniknął z bazy po ekstrakcji"
+
+        fresh.extraction_cache_key   = _cache_key(text, prompt)
+        fresh.extraction_cache_json  = json.dumps(structure, ensure_ascii=False)
+        fresh.extraction_prompt_hash = ph
+        fresh.extraction_status      = "done"
+        fresh.extraction_error       = None
+
+        new_desc = summary_result.get("description", "") or ""
+        fresh.ai_summary        = summary_result["summary"]
+        fresh.ai_description    = new_desc if new_desc else old_description
+        fresh.ai_summary_model  = gemini_model
+        fresh.ai_summarized_at  = datetime.utcnow()
+        fresh.ai_summary_status = "done"
+        fresh.ai_summary_error  = None
+
+        db.session.commit()
+        n = len(structure.get("sekcje", {}))
+        log.info("extract_and_summarize OK: %s (%d sekcji)", doc.original_name, n)
+        return True, None
+
+    except Exception as exc:
+        log.error("extract_and_summarize BŁĄD %s: %s", doc.original_name, exc, exc_info=True)
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        db.session.expire_all()
+        try:
+            fresh = db.session.get(Document, doc_id)
+            if fresh:
+                fresh.extraction_status = "error"
+                fresh.extraction_error  = str(exc)[:500]
+                fresh.ai_summary_status = "error"
+                fresh.ai_summary_error  = str(exc)[:500]
+                db.session.commit()
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+        return False, str(exc)
+
+
 def _write_extract_error(doc_id: int, msg: str):
     from extensions import db
     from models import Document
