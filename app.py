@@ -342,7 +342,7 @@ def create_app():
     app.register_blueprint(comparison_bp)
     app.register_blueprint(placeholders_bp)
 
-    _AUTH_SKIP = {"auth.login", "auth.callback", "auth.logout", "static"}
+    _AUTH_SKIP = {"auth.login", "auth.google", "auth.callback", "auth.logout", "static"}
 
     @app.before_request
     def require_login():

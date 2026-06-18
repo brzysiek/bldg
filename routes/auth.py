@@ -53,9 +53,16 @@ def _make_flow(state=None):
 def login():
     if session.get("user_email"):
         return redirect(url_for("competitions.index"))
+    return render_template("auth/login.html", unconfigured=not os.environ.get("GOOGLE_CLIENT_ID"))
 
+
+@bp.route("/google")
+def google():
+    """Starts the Google OAuth flow — called when user clicks the login button."""
+    if session.get("user_email"):
+        return redirect(url_for("competitions.index"))
     if not os.environ.get("GOOGLE_CLIENT_ID"):
-        return render_template("auth/login.html", unconfigured=True)
+        return redirect(url_for("auth.login"))
 
     flow = _make_flow()
     auth_url, state = flow.authorization_url(
