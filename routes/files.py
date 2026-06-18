@@ -299,9 +299,6 @@ def extract_json(file_id):
     if not settings or not settings.gemini_api_key:
         return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
 
-    if doc.extraction_status == "pending":
-        return jsonify({"ok": True, "file_id": file_id, "started": True, "already_running": True})
-
     doc.extraction_status = "pending"
     doc.extraction_error  = None
     db.session.commit()
@@ -322,9 +319,6 @@ def extract_and_summarize_json(file_id):
     settings = AppSettings.query.first()
     if not settings or not settings.gemini_api_key:
         return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
-
-    if doc.extraction_status == "pending" or doc.ai_summary_status == "pending":
-        return jsonify({"ok": True, "file_id": file_id, "started": True, "already_running": True})
 
     doc.extraction_status = "pending"
     doc.extraction_error  = None
