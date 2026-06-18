@@ -110,7 +110,8 @@ def list_folder_files(folder_id: str, api_key: str) -> list[dict]:
     session = _make_session()
     while True:
         resp = session.get(url, params=params, timeout=20)
-        resp.raise_for_status()
+        if not resp.ok:
+            _raise_drive_error(resp)
         data = resp.json()
         for f in data.get("files", []):
             mime = f.get("mimeType", "")
@@ -124,6 +125,49 @@ def list_folder_files(folder_id: str, api_key: str) -> list[dict]:
             break
         params["pageToken"] = page_token
     return results
+
+
+def _raise_drive_error(resp, file_name: str = "") -> None:
+    """Parse Drive API error JSON and raise RuntimeError with a Polish message."""
+    status = resp.status_code
+    api_msg = ""
+    api_reason = ""
+    try:
+        body = resp.json()
+        err = body.get("error", {})
+        api_msg = err.get("message", "")
+        errors = err.get("errors", [])
+        if errors:
+            api_reason = errors[0].get("reason", "")
+    except Exception:
+        pass
+
+    name_info = f" „{file_name}"" if file_name else ""
+    drive_detail = f" (Drive: {api_msg})" if api_msg else ""
+
+    if status == 403:
+        hint = (
+            "Plik nie jest udostępniony publicznie. "
+            "Otwórz plik w Google Drive → Udostępnij → ustaw „Każdy, kto ma link" → Przeglądający."
+        )
+        raise RuntimeError(
+            f"Brak dostępu do pliku{name_info} — Google Drive odmówił pobrania (403){drive_detail}. "
+            f"{hint}"
+        )
+    elif status == 404:
+        raise RuntimeError(
+            f"Plik{name_info} nie został znaleziony w Google Drive (404){drive_detail}. "
+            "Sprawdź, czy plik nadal istnieje i czy ID jest poprawne."
+        )
+    elif status == 429:
+        raise RuntimeError(
+            f"Przekroczono limit zapytań Google Drive API (429){name_info}. "
+            "Poczekaj kilka minut i spróbuj ponownie."
+        )
+    else:
+        raise RuntimeError(
+            f"Błąd pobierania pliku{name_info} z Google Drive (HTTP {status}){drive_detail}."
+        )
 
 
 def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, api_key: str) -> str:
@@ -142,7 +186,8 @@ def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, a
         params = {"alt": "media", "key": api_key}
     session = _make_session()
     resp = session.get(url, params=params, timeout=120, stream=True)
-    resp.raise_for_status()
+    if not resp.ok:
+        _raise_drive_error(resp, file_name)
     with open(dest_path, "wb") as fh:
         for chunk in resp.iter_content(chunk_size=65536):
             fh.write(chunk)
