@@ -410,6 +410,7 @@ const PAIR_LOCK_AGE_SECS  = {{ pair_lock_age_secs | tojson }};
 const LOCK_TTL            = 300;
 const JOB_STARTED_AT_MS   = {{ (job.started_at.timestamp() * 1000) | int if job.started_at else 'null' }};
 
+const RUN_PAIR_PREPARE_URL = {{ url_for('comparison.run_pair_prepare',        job_id=job.id) | tojson }};
 const RUN_PAIR_BATCH_URL   = {{ url_for('comparison.run_pair_batch',           job_id=job.id) | tojson }};
 const FINALIZE_PAIR_URL    = {{ url_for('comparison.finalize_pair',            job_id=job.id) | tojson }};
 const SKIP_PAIR_URL        = {{ url_for('comparison.skip_pair',                job_id=job.id) | tojson }};
@@ -933,6 +934,39 @@ async function runOnePair(idx) {
   failedPairs.delete(idx);
 
   let allChanges = [], offset = 0;
+
+  /* Phase 0: extract structures + match sections (separate request to avoid Apache timeout) */
+  {
+    const stageEl = document.getElementById(`pair-stage-${idx}`);
+    if (stageEl) stageEl.textContent = 'ekstrakcja struktury…';
+    let resp0, data0 = null;
+    try {
+      resp0 = await fetch(RUN_PAIR_PREPARE_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({pair_idx: idx}),
+      });
+      try { data0 = JSON.parse(await resp0.text()); } catch(_) {}
+    } catch(e) {
+      setPairError(idx, e.message);
+      failedPairs.add(idx);
+      return {error: true};
+    }
+    if (data0?.cancelled) {
+      stopPairTimer(); stopTotalTimer();
+      const lbl = document.getElementById('progress-label');
+      if (lbl) lbl.textContent = '⛔ Porównanie anulowane';
+      setTimeout(() => window.location.reload(), 1500);
+      return {cancelled: true};
+    }
+    if (!resp0.ok || !data0?.ok) {
+      setPairError(idx, data0?.error || `HTTP ${resp0.status}`);
+      failedPairs.add(idx);
+      return {error: true};
+    }
+    if (stageEl && data0.sections_total > 0)
+      stageEl.textContent = `sekcja 0/${data0.sections_total} (batch 0/?)`;
+  }
 
   /* Phase 1: section batches */
   while (true) {

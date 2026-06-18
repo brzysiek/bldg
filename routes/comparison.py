@@ -269,6 +269,120 @@ def finish_pairs(job_id):
     return jsonify({"ok": True})
 
 
+@bp.route("/job/<int:job_id>/run-pair-prepare", methods=["POST"])
+def run_pair_prepare(job_id):
+    """Phase 0: extract document structures and compute section matching for one pair.
+
+    Runs the expensive get_pair_structures + match_sections_ai steps as a
+    dedicated HTTP request, so the subsequent batch loop only does section
+    comparisons (fast, well under Apache timeout).  Results are cached in the
+    DB so run_pair_batch is near-instant on the extraction/matching steps.
+    """
+    job = ComparisonJob.query.get_or_404(job_id)
+    db.session.refresh(job)
+    if job.status == "cancelled":
+        return jsonify({"ok": False, "cancelled": True, "error": "Porównanie zostało anulowane"})
+
+    settings = db.session.get(AppSettings, 1)
+    if not settings or not settings.gemini_api_key:
+        return jsonify({"ok": False, "error": "Brak klucza Gemini API w ustawieniach"}), 400
+
+    data = request.get_json() or {}
+    pair_idx = data.get("pair_idx", 0)
+
+    mappings = json.loads(job.file_mappings_json or "[]")
+    if pair_idx >= len(mappings):
+        return jsonify({"ok": False, "error": f"Nieprawidłowy indeks pary: {pair_idx}"}), 400
+
+    mapping  = mappings[pair_idx]
+    doc_old  = db.session.get(Document, mapping["old_doc_id"])
+    doc_new  = db.session.get(Document, mapping["new_doc_id"])
+    if not doc_old or not doc_new:
+        return jsonify({"ok": False, "error": "Dokument nie istnieje"}), 404
+
+    name_old = doc_old.original_name
+    name_new = doc_new.original_name
+    pair_prefix = f"Para {pair_idx + 1}/{len(mappings)}"
+
+    if not job.started_at:
+        job.started_at = datetime.utcnow()
+    job.status = "comparing"
+    job.pair_lock_at  = datetime.utcnow()
+    job.status_detail = f"{pair_prefix}: ekstrakcja struktury"
+    db.session.commit()
+
+    log.info("run_pair_prepare START  job=%d  para=%d/%d  stary='%s'  nowy='%s'",
+             job_id, pair_idx + 1, len(mappings), name_old, name_new)
+
+    _stage = "inicjalizacja"
+    try:
+        _stage = "pobieranie plikow i ekstrakcja struktury"
+        struct_old, struct_new, _, t_in_struct, t_out_struct = get_pair_structures(
+            doc_old, doc_new, settings
+        )
+
+        _stage = "reconnect sesji DB po ekstrakcji"
+        job = _reconnect_session(job_id)
+        if not job:
+            return jsonify({"ok": False, "error": "Nie znaleziono zadania po ekstrakcji"}), 500
+        settings = db.session.get(AppSettings, 1)
+        if not settings:
+            return jsonify({"ok": False, "error": "Brak ustawien aplikacji po reconnect DB"}), 500
+        mappings = json.loads(job.file_mappings_json or "[]")
+        if pair_idx >= len(mappings):
+            return jsonify({"ok": False, "error": "Nieprawidlowy indeks pary po ekstrakcji"}), 400
+        mapping = mappings[pair_idx]
+
+        job.pair_lock_at  = datetime.utcnow()
+        job.tokens_input  = (job.tokens_input  or 0) + t_in_struct
+        job.tokens_output = (job.tokens_output or 0) + t_out_struct
+
+        sekcje_old = struct_old.get("sekcje", {})
+        sekcje_new = struct_new.get("sekcje", {})
+
+        if "section_matching" not in mapping:
+            _stage = "dopasowanie semantyczne sekcji (Gemini)"
+            job.status_detail = f"{pair_prefix}: dopasowywanie sekcji…"
+            _safe_commit()
+            call_match, match_tokens = make_gemini_caller(settings, stage="matching")
+            matching = match_sections_ai(
+                sekcje_old, sekcje_new,
+                job.label_old or "Edycja starsza",
+                job.label_new or "Edycja nowsza",
+                call_match, settings,
+            )
+            mapping["section_matching"] = matching
+            job.file_mappings_json = json.dumps(mappings, ensure_ascii=False)
+            job.tokens_input  = (job.tokens_input  or 0) + match_tokens["in"]
+            job.tokens_output = (job.tokens_output or 0) + match_tokens["out"]
+            job.pair_lock_at  = datetime.utcnow()
+            _safe_commit()
+        else:
+            matching = mapping["section_matching"]
+
+        all_pairs = build_section_pairs(matching)
+        sections_total = len(all_pairs)
+        job.status_detail = f"{pair_prefix}: struktury gotowe, {sections_total} sekcji"
+        _safe_commit()
+
+        log.info("run_pair_prepare OK  job=%d  para=%d  sekcji=%d  stary='%s'  nowy='%s'",
+                 job_id, pair_idx + 1, sections_total, name_old, name_new)
+        return jsonify({"ok": True, "pair_idx": pair_idx, "sections_total": sections_total})
+
+    except Exception as exc:
+        error_msg = f"[etap: {_stage}] {type(exc).__name__}: {exc}"
+        log.error("run_pair_prepare BLAD  job=%d  para=%d  etap='%s'  %s: %s",
+                  job_id, pair_idx + 1, _stage, type(exc).__name__, exc, exc_info=True)
+        try:
+            job.status        = "error"
+            job.error_message = error_msg[:1000]
+            db.session.commit()
+        except Exception:
+            try: db.session.rollback()
+            except Exception: pass
+        return jsonify({"ok": False, "pair_idx": pair_idx, "error": error_msg}), 500
+
+
 @bp.route("/job/<int:job_id>/run-pair-batch", methods=["POST"])
 def run_pair_batch(job_id):
     """Process one batch of N sections for a file pair (browser-driven, avoids Apache timeout)."""
@@ -316,7 +430,7 @@ def run_pair_batch(job_id):
             doc_old, doc_new, settings
         )
 
-        # Reconnect after Gemini extraction (connection may have died during the call)
+        # Reconnect after extraction (may be instant from cache or slow on cache miss)
         _stage = "reconnect sesji DB po ekstrakcji"
         job = _reconnect_session(job_id)
         if not job:
@@ -329,10 +443,10 @@ def run_pair_batch(job_id):
             return jsonify({"ok": False, "error": "Nieprawidlowy indeks pary po ekstrakcji"}), 400
         mapping = mappings[pair_idx]
 
-        # Renew lock after structure extraction (can take several minutes for large docs)
         job.pair_lock_at  = datetime.utcnow()
-        job.tokens_input  = (job.tokens_input  or 0) + t_in_struct
-        job.tokens_output = (job.tokens_output or 0) + t_out_struct
+        if t_in_struct:  # only add if extraction actually ran (non-zero = cache miss)
+            job.tokens_input  = (job.tokens_input  or 0) + t_in_struct
+            job.tokens_output = (job.tokens_output or 0) + t_out_struct
 
         sekcje_old = struct_old.get("sekcje", {})
         sekcje_new = struct_new.get("sekcje", {})

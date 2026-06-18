@@ -1,0 +1,5 @@
+TimeOut 600
+
+<IfModule mod_reqtimeout.c>
+    RequestReadTimeout header=20,minrate=500 body=600,minrate=500
+</IfModule>
