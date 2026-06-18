@@ -53,49 +53,46 @@
       <!-- Logo -->
       <a href="{{ url_for('competitions.index') }}" class="flex items-center gap-2 shrink-0">
         <span class="text-white font-bold text-lg leading-none">BLDG</span>
-        <span class="text-white text-xs hidden sm:inline">Manager dokumentacji</span>
+        <span class="text-white text-xs hidden xl:inline">Manager dokumentacji</span>
       </a>
 
       <!-- Desktop nav -->
-      <nav class="hidden lg:flex items-center gap-1 flex-1 min-w-0">
+      <nav class="hidden lg:flex items-center gap-0.5 flex-1 min-w-0">
         <a href="{{ url_for('competitions.index') }}"
-           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+           class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0
                   {% if request.path == '/' or request.path.startswith('/competition') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>📁</span><span>Konkursy</span>
         </a>
         <a href="{{ url_for('comparison.index') }}"
-           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+           class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0
                   {% if request.path.startswith('/comparison') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>↔️</span><span>Porównania edycji</span>
         </a>
         <a href="{{ url_for('placeholders.questions') }}"
-           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+           class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0
                   {% if request.path == '/questions' %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>❓</span><span>Pytania do dokumentacji</span>
         </a>
         <a href="{{ url_for('placeholders.applications') }}"
-           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+           class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0
                   {% if request.path == '/applications' %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>📝</span><span>Generowanie wniosków</span>
         </a>
         <a href="{{ url_for('settings.index') }}"
-           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+           class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0
                   {% if request.path.startswith('/settings') or request.path.startswith('/auth') %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>⚙️</span><span>Ustawienia</span>
         </a>
         <a href="{{ url_for('logs_page') }}"
-           class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
+           class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0
                   {% if request.path == '/logs' %}bg-white/20 text-white{% else %}text-white hover:bg-white/10{% endif %}">
           <span>📋</span><span>Logi</span>
         </a>
       </nav>
 
-      <!-- Spacer (desktop) -->
-      <div class="hidden lg:flex flex-1"></div>
-
       <!-- User info (desktop) -->
       {% if session.user_email %}
-      <div class="hidden lg:flex items-center gap-2 shrink-0">
+      <div class="hidden lg:flex items-center gap-2 shrink-0 ml-auto">
         {% if session.user_picture %}
           <img src="{{ session.user_picture }}" alt="" class="w-7 h-7 rounded-full border border-white/30 shrink-0">
         {% endif %}
