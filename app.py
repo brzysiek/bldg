@@ -319,6 +319,28 @@ def create_app():
 
     db.init_app(app)
 
+    # Flask-SQLAlchemy's _teardown_session (registered inside db.init_app) runs in LIFO order,
+    # so our handler below runs FIRST.  If session.remove() raises OperationalError 2013
+    # (MySQL dropped the connection during a long Gemini call), we catch it and clear the
+    # session registry so Flask-SQLAlchemy's own teardown finds an empty session (no-op).
+    @app.teardown_appcontext
+    def _db_teardown_safe(exc):
+        from sqlalchemy.exc import OperationalError as _SAOperationalError
+        try:
+            db.session.remove()
+        except _SAOperationalError as e:
+            _app_log = __import__("logging").getLogger(__name__)
+            _app_log.warning("DB teardown: martwe połączenie MySQL podczas teardown (OK po Gemini): %s", e)
+            try:
+                db.session.registry.clear()
+            except Exception:
+                pass
+        except Exception:
+            try:
+                db.session.registry.clear()
+            except Exception:
+                pass
+
     from datetime import timedelta as _td
     app.permanent_session_lifetime = _td(days=30)
 

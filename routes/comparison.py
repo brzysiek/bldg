@@ -31,14 +31,13 @@ bp = Blueprint("comparison", __name__, url_prefix="/comparison")
 
 
 def _safe_commit():
-    """Commit, recovering automatically if the session is in PendingRollbackError state.
+    """Commit, recovering automatically after MySQL connection drops during Gemini calls.
 
-    MySQL closes idle connections during long Gemini API calls (wait_timeout).
-    The resulting OperationalError (2006) leaves the SQLAlchemy session in
-    PendingRollbackError state. This helper rolls back first if needed so the
-    route handler can write the final job state even after a broken-pipe event.
+    Handles both OperationalError 2006 (server gone away) and 2013 (lost connection
+    during query), as well as PendingRollbackError left behind by previous failures.
     """
     from sqlalchemy.exc import PendingRollbackError, OperationalError
+    _DISCONNECT = ("2006", "2013", "gone away", "lost connection")
     try:
         db.session.commit()
     except PendingRollbackError:
@@ -46,12 +45,31 @@ def _safe_commit():
         db.session.rollback()
         db.session.commit()
     except OperationalError as exc:
-        if "2006" in str(exc) or "gone away" in str(exc).lower():
-            log.warning("_safe_commit: MySQL gone away — rollback i próba ponowna")
-            db.session.rollback()
-            db.session.commit()
+        err = str(exc).lower()
+        if any(x in err for x in _DISCONNECT):
+            log.warning("_safe_commit: MySQL disconnect (%s) — rollback, close, próba ponowna", exc.args)
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            db.session.close()   # zwróć martwe połączenie do puli; pool_pre_ping da świeże
+            db.session.commit()  # nowa sesja, nowe połączenie
         else:
             raise
+
+
+def _reconnect_session(job_id: int):
+    """Close the current (possibly stale) DB session and return a freshly loaded ComparisonJob.
+
+    Should be called after any long Gemini API operation to ensure the DB
+    connection is alive before the next write.  Returns None if the job
+    no longer exists (should not happen in practice).
+    """
+    try:
+        db.session.close()
+    except Exception as e:
+        log.debug("_reconnect_session: session.close() error (ignorowane): %s", e)
+    return db.session.get(ComparisonJob, job_id)
 
 
 PRICING = {
@@ -294,6 +312,15 @@ def run_pair_batch(job_id):
         struct_old, struct_new, _, t_in_struct, t_out_struct = get_pair_structures(
             doc_old, doc_new, settings
         )
+
+        # Reconnect after Gemini extraction (connection may have died during the call)
+        job = _reconnect_session(job_id)
+        if not job:
+            return jsonify({"ok": False, "error": "Nie znaleziono zadania po ekstrakcji"}), 500
+        mappings = json.loads(job.file_mappings_json or "[]")
+        if pair_idx >= len(mappings):
+            return jsonify({"ok": False, "error": "Nieprawidłowy indeks pary po ekstrakcji"}), 400
+        mapping = mappings[pair_idx]
 
         # Renew lock after structure extraction (can take several minutes for large docs)
         job.pair_lock_at  = datetime.utcnow()
