@@ -386,6 +386,12 @@ def create_app():
         since = float(_req.args.get("since", 0))
         return jsonify(_log_buffer.records(since=since))
 
+    @app.route("/ping")
+    def ping():
+        """Lightweight liveness probe — used by cron watchdog."""
+        from flask import jsonify as _j
+        return _j({"ok": True}), 200
+
     @app.route("/api/health")
     def api_health():
         summarize_routes = [

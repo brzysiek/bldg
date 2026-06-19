@@ -3,3 +3,10 @@ TimeOut 600
 <IfModule mod_reqtimeout.c>
     RequestReadTimeout header=20,minrate=500 body=600,minrate=500
 </IfModule>
+
+# Keep at least 1 warm worker — after a kill Passenger spawns a replacement
+# immediately instead of waiting for the next request.
+PassengerMinInstances 1
+
+# Recycle workers after N requests to prevent memory bloat causing OOM kills.
+PassengerMaxRequests 500
