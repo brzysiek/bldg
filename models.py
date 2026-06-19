@@ -61,7 +61,7 @@ class Document(db.Model):
 
     extraction_cache_key  = db.Column(db.Text)
     # deferred: never loaded in list queries — can be several MB per document
-    extraction_cache_json = _deferred(db.Column(db.Text))
+    extraction_cache_json = _deferred(db.Column(db.Text(16_777_215)))  # MEDIUMTEXT — large docs exceed TEXT 64 KB limit
 
     extraction_status      = db.Column(db.Text)   # null | 'pending' | 'done' | 'error'
     extraction_error       = db.Column(db.Text)

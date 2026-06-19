@@ -42,7 +42,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 # the cached version matches, avoiding 5+ slow Inspector queries on cold start.
 # Bump _SCHEMA_VERSION whenever _migrate_db() grows new columns/tables.
 # Workers skip the 5+ Inspector SQL queries on warm restarts.
-_SCHEMA_VERSION = "12"
+_SCHEMA_VERSION = "13"
 _SCHEMA_CACHE_FILE = os.path.join(BASE_DIR, "_schema_version.txt")
 # Separate flag: skip run_seed() + _seed_comparison_prompts() after first run.
 _SEED_DONE_FILE = os.path.join(BASE_DIR, "_seed_done.txt")
@@ -207,6 +207,30 @@ def _migrate_db():
             "skip_redactional":       "TINYINT(1)",
             "job_label":              "TEXT",
         })
+
+        # Upgrade extraction_cache_json from TEXT (64 KB) to MEDIUMTEXT (16 MB).
+        # Large regulatory documents produce extraction JSON > 64 KB; MySQL in
+        # non-strict mode silently truncates TEXT columns, breaking json.loads.
+        if "documents" in tables:
+            col_type_map = {
+                c["name"]: str(c["type"]).upper()
+                for c in inspector.get_columns("documents")
+            }
+            if col_type_map.get("extraction_cache_json") == "TEXT":
+                conn.execute(text(
+                    "ALTER TABLE `documents` MODIFY COLUMN `extraction_cache_json` MEDIUMTEXT"
+                ))
+                # Invalidate any entries that may have been silently truncated
+                # (truncated JSON is >= ~65 000 bytes — mark for re-extraction).
+                conn.execute(text(
+                    "UPDATE `documents` "
+                    "SET extraction_cache_json = NULL, extraction_cache_key = NULL, extraction_status = NULL "
+                    "WHERE LENGTH(extraction_cache_json) >= 65000"
+                ))
+                _logging.getLogger(__name__).info(
+                    "_migrate_db: extraction_cache_json rozszerzony do MEDIUMTEXT, uszkodzone wpisy wyczyszczone"
+                )
+
         conn.commit()
 
 

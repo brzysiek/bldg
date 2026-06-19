@@ -464,8 +464,25 @@ def _structure_for_doc(doc, settings, call_gemini):
                 doc.original_name, n,
             )
             return structure, ""
-        except Exception:
-            log.warning("Uszkodzony pre-computed cache dla %s — przeliczam", doc.original_name)
+        except Exception as exc:
+            log.warning(
+                "Uszkodzony pre-computed cache dla %s (%s: %s, długość JSON: %s B) — czyści wpis i przelicza",
+                doc.original_name, type(exc).__name__, exc,
+                len(doc.extraction_cache_json) if doc.extraction_cache_json else 0,
+            )
+            # Clear the broken entry so subsequent comparisons don't keep re-downloading.
+            try:
+                from extensions import db as _db
+                doc.extraction_cache_json = None
+                doc.extraction_cache_key  = None
+                doc.extraction_status     = None
+                _db.session.commit()
+            except Exception:
+                try:
+                    from extensions import db as _db
+                    _db.session.rollback()
+                except Exception:
+                    pass
 
     local_path, tmp_dir = _resolve_local_path(doc, settings)
     try:
