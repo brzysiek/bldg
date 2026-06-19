@@ -346,6 +346,7 @@ def extract_status(file_id):
         "summary_status": doc.ai_summary_status,
         "summary_error":  doc.ai_summary_error,
         "description":    doc.ai_description,
+        "summary":        doc.ai_summary or "",
     })
 
 

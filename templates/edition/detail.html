@@ -585,9 +585,10 @@ function setRowError(id, msg) {
   if (el) el.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">❌ Błąd</span>`;
 }
 
-function _setRowSummaryDone(id, description) {
+function _setRowSummaryDone(id, description, summary) {
   const descEl = document.getElementById('desc-' + id);
   if (descEl) descEl.textContent = description || '—';
+  SUMMARIES[id] = summary || '';
   const statusEl = document.getElementById('status-' + id);
   if (statusEl) {
     const row = document.getElementById('doc-row-' + id);
@@ -616,7 +617,7 @@ async function _pollCombinedStatus(id, maxAttempts = 240) {
         else setExtractError(id, d.error || 'Błąd segmentacji');
       }
       if (sumDone) {
-        if (d.summary_status === 'done') _setRowSummaryDone(id, d.description);
+        if (d.summary_status === 'done') _setRowSummaryDone(id, d.description, d.summary);
         else setRowError(id, d.summary_error || 'Błąd podsumowania');
       }
       if (extDone && sumDone) return d.status === 'done' && d.summary_status === 'done';
