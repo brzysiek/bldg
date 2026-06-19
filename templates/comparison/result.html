@@ -27,6 +27,7 @@
 {% macro _render_changes_table(changes, job, table_id) %}
   {% if changes %}
     {{ _filter_toolbar(table_id) }}
+    <p class="text-xs text-slate-text/40 mb-2 px-1">✏️ Kliknij <span class="font-medium">badge wagi</span> lub tekst <span class="font-medium">Komentarza</span> aby edytować. Przycisk <span class="font-medium">✕</span> usuwa wiersz.</p>
     <div class="overflow-x-auto">
       <table id="{{ table_id }}" class="w-full text-xs">
         <thead>
@@ -82,6 +83,7 @@
     </div>
     <div class="px-5 pt-3">
       {{ _filter_toolbar('changes-table') }}
+      <p class="text-xs text-slate-text/40 mb-2 px-1">✏️ Kliknij <span class="font-medium">badge wagi</span> lub tekst <span class="font-medium">Komentarza</span> aby edytować. Przycisk <span class="font-medium">✕</span> usuwa wiersz.</p>
     </div>
     <div class="overflow-x-auto">
       <table id="changes-table" class="w-full text-xs">
