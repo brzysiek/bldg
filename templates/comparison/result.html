@@ -37,6 +37,7 @@
             <th class="text-left px-3 py-2 font-medium">{{ job.label_old }}</th>
             <th class="text-left px-3 py-2 font-medium">{{ job.label_new }}</th>
             <th class="text-left px-3 py-2 font-medium">Komentarz</th>
+            <th class="px-2 py-2 font-medium w-6"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-50">
@@ -44,16 +45,17 @@
             {% set waga = ch.get('waga', 'NISKA') %}
             {% set row_bg   = {'KRYTYCZNA':'bg-red-50','WYSOKA':'bg-orange-50','SREDNIA':'bg-yellow-50','NISKA':'bg-green-50'}.get(waga,'') %}
             {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
-            <tr class="{{ row_bg }}">
+            <tr class="{{ row_bg }}" data-pair-idx="{{ ch.get('_pair_idx', 0) }}" data-change-idx="{{ ch.get('_change_idx', loop.index0) }}" data-ch-id="{{ ch.get('_id', '') }}">
               <td class="px-4 py-2.5 align-top">
                 <div class="font-medium text-bottle">{{ ch.get('sekcja','') }}</div>
                 {% if ch.get('lokalizacja') %}<div class="text-slate-text/40 text-xs mt-0.5 leading-tight">{{ ch.get('lokalizacja') }}</div>{% endif %}
               </td>
               <td class="px-3 py-2.5 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
-              <td class="px-3 py-2.5 align-top"><span class="px-1.5 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
+              <td class="px-3 py-2.5 align-top" data-field="waga"><span class="px-2 py-0.5 rounded-full text-xs font-semibold cursor-pointer hover:opacity-80 {{ waga_cls }}" data-waga="{{ waga }}" onclick="editWaga(this)" title="Kliknij aby zmienić wagę">{{ waga }}</span></td>
               <td class="px-3 py-2.5 text-slate-text/60 align-top"><div>{{ ch.get('zapis_stary','') }}</div></td>
               <td class="px-3 py-2.5 text-slate-text align-top font-medium"><div>{{ ch.get('zapis_nowy','') }}</div></td>
-              <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs"><div>{{ ch.get('komentarz_biznesowy','') }}</div></td>
+              <td class="px-3 py-2.5 text-slate-text/70 align-top max-w-xs" data-field="komentarz"><div class="cursor-pointer hover:text-bottle transition-colors" onclick="editComment(this)" title="Kliknij aby edytować">{{ ch.get('komentarz_biznesowy','') }}</div></td>
+              <td class="px-2 py-2.5 align-top w-6 text-center"><button onclick="deleteChange(this)" class="text-gray-300 hover:text-red-500 transition-colors text-sm" title="Usuń zmianę">✕</button></td>
             </tr>
           {% endfor %}
         </tbody>
@@ -91,6 +93,7 @@
             <th class="text-left px-3 py-2.5 font-medium">{{ job.label_old }}</th>
             <th class="text-left px-3 py-2.5 font-medium">{{ job.label_new }}</th>
             <th class="text-left px-3 py-2.5 font-medium">Komentarz biznesowy</th>
+            <th class="px-2 py-2.5 font-medium w-6"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-50">
@@ -98,16 +101,17 @@
             {% set waga = ch.get('waga', 'NISKA') %}
             {% set row_bg   = {'KRYTYCZNA':'bg-red-50 hover:bg-red-100/70','WYSOKA':'bg-orange-50 hover:bg-orange-100/70','SREDNIA':'bg-yellow-50 hover:bg-yellow-100/70','NISKA':'bg-green-50 hover:bg-green-100/70'}.get(waga,'hover:bg-gray-50') %}
             {% set waga_cls = {'KRYTYCZNA':'bg-red-100 text-red-700','WYSOKA':'bg-orange-100 text-orange-700','SREDNIA':'bg-yellow-100 text-yellow-700','NISKA':'bg-green-100 text-green-700'}.get(waga,'bg-gray-100 text-gray-600') %}
-            <tr class="{{ row_bg }} transition-colors">
+            <tr class="{{ row_bg }} transition-colors" data-pair-idx="{{ ch.get('_pair_idx', 0) }}" data-change-idx="{{ ch.get('_change_idx', loop.index0) }}" data-ch-id="{{ ch.get('_id', '') }}">
               <td class="px-4 py-3 align-top">
                 <div class="font-medium text-bottle">{{ ch.get('sekcja','') }}</div>
                 {% if ch.get('lokalizacja') %}<div class="text-slate-text/40 text-xs mt-0.5 leading-tight">{{ ch.get('lokalizacja') }}</div>{% endif %}
               </td>
               <td class="px-3 py-3 text-slate-text/70 align-top">{{ ch.get('typ_zmiany','') }}</td>
-              <td class="px-3 py-3 align-top"><span class="px-2 py-0.5 rounded-full text-xs font-semibold {{ waga_cls }}">{{ waga }}</span></td>
+              <td class="px-3 py-3 align-top" data-field="waga"><span class="px-2 py-0.5 rounded-full text-xs font-semibold cursor-pointer hover:opacity-80 {{ waga_cls }}" data-waga="{{ waga }}" onclick="editWaga(this)" title="Kliknij aby zmienić wagę">{{ waga }}</span></td>
               <td class="px-3 py-3 text-slate-text/60 align-top"><div>{{ ch.get('zapis_stary','') }}</div></td>
               <td class="px-3 py-3 text-slate-text align-top font-medium"><div>{{ ch.get('zapis_nowy','') }}</div></td>
-              <td class="px-3 py-3 text-slate-text/70 align-top max-w-xs"><div>{{ ch.get('komentarz_biznesowy','') }}</div></td>
+              <td class="px-3 py-3 text-slate-text/70 align-top max-w-xs" data-field="komentarz"><div class="cursor-pointer hover:text-bottle transition-colors" onclick="editComment(this)" title="Kliknij aby edytować">{{ ch.get('komentarz_biznesowy','') }}</div></td>
+              <td class="px-2 py-3 align-top w-6 text-center"><button onclick="deleteChange(this)" class="text-gray-300 hover:text-red-500 transition-colors text-sm" title="Usuń zmianę">✕</button></td>
             </tr>
           {% endfor %}
         </tbody>
@@ -1396,6 +1400,151 @@ async function rerunPair(pairIdx, staticCardId) {
   if (result?.ok) {
     setProgress(1, 1, '✅ Para wygenerowana ponownie');
     try { await fetch(FINISH_PAIRS_URL, {method: 'POST'}); } catch(_) {}
+  }
+}
+
+/* ── Change edits ────────────────────────────────────────────────────────── */
+const PATCH_CHANGE_URL  = {{ url_for('comparison.patch_change',  job_id=job.id) | tojson }};
+const DELETE_CHANGE_URL = {{ url_for('comparison.delete_change', job_id=job.id) | tojson }};
+
+function _chData(el) {
+  const tr = el.closest('tr[data-pair-idx]');
+  return { pair_idx: +tr.dataset.pairIdx, change_idx: +tr.dataset.changeIdx, ch_id: tr.dataset.chId };
+}
+
+function _wagaBadgeEl(waga) {
+  const s = document.createElement('span');
+  s.className = `px-2 py-0.5 rounded-full text-xs font-semibold cursor-pointer hover:opacity-80 ${WAGA_BADGE[waga] || 'bg-gray-100 text-gray-600'}`;
+  s.textContent = waga;
+  s.dataset.waga = waga;
+  s.title = 'Kliknij aby zmienić wagę';
+  s.onclick = () => editWaga(s);
+  return s;
+}
+
+function _updateRowWaga(tr, newWaga) {
+  tr.className = tr.className
+    .replace(/\bbg-(?:red|orange|yellow|green)-50\b/g, '')
+    .replace(/\bhover:bg-(?:red|orange|yellow|green)-(?:50|100\/70)\b/g, '')
+    .trim();
+  const newBg = {KRYTYCZNA:'bg-red-50 hover:bg-red-100/70',WYSOKA:'bg-orange-50 hover:bg-orange-100/70',SREDNIA:'bg-yellow-50 hover:bg-yellow-100/70',NISKA:'bg-green-50 hover:bg-green-100/70'}[newWaga] || '';
+  if (newBg) tr.className = (tr.className + ' ' + newBg).trim();
+}
+
+async function editWaga(span) {
+  const { pair_idx, change_idx, ch_id } = _chData(span);
+  const curWaga = span.dataset.waga;
+  const sel = document.createElement('select');
+  sel.className = 'text-xs border border-bottle/30 rounded px-1 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-bottle/20';
+  WAGA_OPTIONS.forEach(w => {
+    const o = document.createElement('option');
+    o.value = w; o.textContent = w;
+    if (w === curWaga) o.selected = true;
+    sel.appendChild(o);
+  });
+  span.replaceWith(sel);
+  sel.focus();
+
+  let saved = false;
+  const save = async () => {
+    if (saved) return;
+    saved = true;
+    const newWaga = sel.value;
+    try {
+      const r = await fetch(PATCH_CHANGE_URL, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ pair_idx, change_idx, field: 'waga', value: newWaga })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!d.ok) { alert('Błąd zapisu wagi: ' + (d.error || '?')); }
+    } catch(e) { alert('Błąd połączenia'); }
+    document.querySelectorAll(`tr[data-ch-id="${ch_id}"]`).forEach(tr => {
+      const td = tr.querySelector('[data-field="waga"]');
+      if (!td) return;
+      const el = td.querySelector('[data-waga], select');
+      if (el) el.replaceWith(_wagaBadgeEl(newWaga));
+      _updateRowWaga(tr, newWaga);
+    });
+  };
+  sel.onchange = save;
+  sel.onblur   = () => setTimeout(save, 200);
+}
+
+function _commentDiv(text) {
+  const div = document.createElement('div');
+  div.className = 'cursor-pointer hover:text-bottle transition-colors';
+  div.textContent = text;
+  div.title = 'Kliknij aby edytować';
+  div.onclick = () => editComment(div);
+  return div;
+}
+
+async function editComment(div) {
+  const { pair_idx, change_idx, ch_id } = _chData(div);
+  const td = div.closest('[data-field="komentarz"]');
+  const curText = div.textContent;
+
+  const ta = document.createElement('textarea');
+  ta.value = curText; ta.rows = 3;
+  ta.className = 'w-full text-xs border border-bottle/30 rounded p-1.5 focus:outline-none focus:ring-1 focus:ring-bottle/20 resize-y';
+  const btns = document.createElement('div');
+  btns.className = 'flex gap-1 mt-1';
+  const saveBtn = Object.assign(document.createElement('button'), {
+    textContent: 'Zapisz',
+    className: 'px-2 py-0.5 bg-bottle text-white text-xs rounded hover:bg-bottle/90 transition-colors'
+  });
+  const cancelBtn = Object.assign(document.createElement('button'), {
+    textContent: 'Anuluj',
+    className: 'px-2 py-0.5 text-xs text-slate-text/50 hover:text-bottle transition-colors'
+  });
+  btns.append(saveBtn, cancelBtn);
+  td.replaceChildren(ta, btns);
+  ta.focus();
+
+  cancelBtn.onclick = () => td.replaceChildren(_commentDiv(curText));
+  saveBtn.onclick = async () => {
+    const newText = ta.value;
+    try {
+      const r = await fetch(PATCH_CHANGE_URL, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ pair_idx, change_idx, field: 'komentarz_biznesowy', value: newText })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (d.ok) {
+        document.querySelectorAll(`tr[data-ch-id="${ch_id}"]`).forEach(tr => {
+          const td2 = tr.querySelector('[data-field="komentarz"]');
+          if (td2) td2.replaceChildren(_commentDiv(newText));
+        });
+      } else {
+        alert('Błąd zapisu komentarza: ' + (d.error || '?'));
+        td.replaceChildren(_commentDiv(curText));
+      }
+    } catch(e) {
+      alert('Błąd połączenia');
+      td.replaceChildren(_commentDiv(curText));
+    }
+  };
+}
+
+async function deleteChange(btn) {
+  if (!confirm('Usunąć tę zmianę z rejestru?')) return;
+  const { pair_idx, change_idx } = _chData(btn);
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const r = await fetch(DELETE_CHANGE_URL, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ pair_idx, change_idx })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) {
+      location.reload();
+    } else {
+      alert('Błąd usuwania: ' + (d.error || '?'));
+      btn.disabled = false; btn.textContent = '✕';
+    }
+  } catch(e) {
+    alert('Błąd połączenia');
+    btn.disabled = false; btn.textContent = '✕';
   }
 }
 

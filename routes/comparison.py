@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import re
+import uuid
 from datetime import datetime
 
 from flask import (
@@ -742,7 +743,11 @@ def job_status(job_id):
 
     if job.per_file_results_json:
         per_file_results = json.loads(job.per_file_results_json)
-        for r in per_file_results:
+        for pidx, r in enumerate(per_file_results):
+            for cidx, ch in enumerate(r.get("changes", [])):
+                ch["_pair_idx"]   = pidx
+                ch["_change_idx"] = cidx
+                ch["_id"]         = str(uuid.uuid4())
             all_changes.extend(r.get("changes", []))
             if r.get("summary"):
                 r["summary_html"] = md_lib.markdown(r["summary"], extensions=["extra"])
@@ -1381,6 +1386,60 @@ def delete_job(job_id):
     db.session.commit()
     flash("Porównanie usunięte.", "success")
     return redirect(url_for("comparison.index"))
+
+
+@bp.route("/job/<int:job_id>/patch-change", methods=["POST"])
+def patch_change(job_id):
+    job  = ComparisonJob.query.get_or_404(job_id)
+    data = request.get_json(force=True) or {}
+    pair_idx   = data.get("pair_idx")
+    change_idx = data.get("change_idx")
+    field      = data.get("field")
+    value      = data.get("value", "")
+
+    ALLOWED = {"waga", "komentarz_biznesowy"}
+    if field not in ALLOWED:
+        return jsonify({"ok": False, "error": "Niedozwolone pole"}), 400
+    if field == "waga" and value not in {"KRYTYCZNA", "WYSOKA", "SREDNIA", "NISKA"}:
+        return jsonify({"ok": False, "error": "Nieprawidłowa waga"}), 400
+
+    pfr = json.loads(job.per_file_results_json or "[]")
+    if not isinstance(pair_idx, int) or pair_idx < 0 or pair_idx >= len(pfr):
+        return jsonify({"ok": False, "error": "Indeks pary poza zakresem"}), 400
+    changes = pfr[pair_idx].get("changes", [])
+    if not isinstance(change_idx, int) or change_idx < 0 or change_idx >= len(changes):
+        return jsonify({"ok": False, "error": "Indeks zmiany poza zakresem"}), 400
+
+    changes[change_idx][field] = value
+    job.per_file_results_json = json.dumps(pfr, ensure_ascii=False)
+    job.changes_json = json.dumps(
+        [c for r in pfr for c in r.get("changes", [])], ensure_ascii=False
+    )
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/job/<int:job_id>/delete-change", methods=["POST"])
+def delete_change(job_id):
+    job  = ComparisonJob.query.get_or_404(job_id)
+    data = request.get_json(force=True) or {}
+    pair_idx   = data.get("pair_idx")
+    change_idx = data.get("change_idx")
+
+    pfr = json.loads(job.per_file_results_json or "[]")
+    if not isinstance(pair_idx, int) or pair_idx < 0 or pair_idx >= len(pfr):
+        return jsonify({"ok": False, "error": "Indeks pary poza zakresem"}), 400
+    changes = pfr[pair_idx].get("changes", [])
+    if not isinstance(change_idx, int) or change_idx < 0 or change_idx >= len(changes):
+        return jsonify({"ok": False, "error": "Indeks zmiany poza zakresem"}), 400
+
+    changes.pop(change_idx)
+    job.per_file_results_json = json.dumps(pfr, ensure_ascii=False)
+    job.changes_json = json.dumps(
+        [c for r in pfr for c in r.get("changes", [])], ensure_ascii=False
+    )
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 @bp.route("/how-it-works")
