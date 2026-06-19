@@ -125,6 +125,14 @@
                   </button>
                 </form>
               {% endif %}
+              {% if job.status in ['cancelled', 'error'] %}
+                <form method="POST" action="{{ url_for('comparison.resume_job', job_id=job.id) }}">
+                  <button type="submit"
+                          class="no-btn px-2 py-0.5 bg-bottle text-white rounded-full text-xs font-medium hover:bg-bottle/90 transition-colors">
+                    ↺ Wznów
+                  </button>
+                </form>
+              {% endif %}
               <form method="POST" action="{{ url_for('comparison.delete_job', job_id=job.id) }}"
                     onsubmit="return confirm('Usunąć porównanie?')">
                 <button type="submit" class="no-btn px-2 py-0.5 border border-red-100 text-red-500 rounded-full text-xs hover:bg-red-50 transition-colors">🗑</button>

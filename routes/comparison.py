@@ -1357,6 +1357,28 @@ def download_pair_csv(job_id, pair_idx):
     )
 
 
+@bp.route("/job/<int:job_id>/resume", methods=["POST"])
+def resume_job(job_id):
+    job = ComparisonJob.query.get_or_404(job_id)
+    if job.status not in ("cancelled", "error"):
+        flash(f"Nie można wznowić porównania o statusie '{job.status}'.", "warning")
+        return redirect(url_for("comparison.job_status", job_id=job_id))
+
+    active_statuses = ["pending", "comparing", "extracting", "chunking", "summarizing"]
+    is_busy = ComparisonJob.query.filter(
+        ComparisonJob.status.in_(active_statuses),
+        ComparisonJob.id != job_id,
+    ).first() is not None
+
+    job.status        = "queued" if is_busy else "pending"
+    job.finished_at   = None
+    job.error_message = None
+    job.pair_lock_at  = None
+    job.status_detail = "Wznowiono"
+    db.session.commit()
+    return redirect(url_for("comparison.job_status", job_id=job_id))
+
+
 @bp.route("/job/<int:job_id>/cancel", methods=["POST"])
 def cancel_job(job_id):
     job = ComparisonJob.query.get_or_404(job_id)
