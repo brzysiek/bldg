@@ -305,7 +305,15 @@ def _start_job_monitor(app):
         while True:
             try:
                 with app.app_context():
-                    _cleanup_stale_jobs(timeout_minutes)
+                    # Tylko jeden worker wygrywa lock — pozostałe odpuszczają i próbują za 5 min
+                    got_lock = db.session.execute(
+                        text("SELECT GET_LOCK('bldg_job_monitor', 0)")
+                    ).scalar()
+                    if got_lock == 1:
+                        try:
+                            _cleanup_stale_jobs(timeout_minutes)
+                        finally:
+                            db.session.execute(text("SELECT RELEASE_LOCK('bldg_job_monitor')"))
             except Exception:
                 pass
             _time.sleep(300)
