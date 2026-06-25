@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import threading
@@ -385,6 +386,24 @@ def summary(file_id):
 def summary_json(file_id):
     doc = Document.query.get_or_404(file_id)
     return jsonify({"id": file_id, "summary": doc.ai_summary or ""})
+
+
+@bp.route("/files/<int:file_id>/segments-json")
+def segments_json(file_id):
+    doc = Document.query.get_or_404(file_id)
+    if not doc.extraction_cache_json:
+        return jsonify({"id": file_id, "tytul": "", "sekcje": {}, "count": 0})
+    try:
+        data = json.loads(doc.extraction_cache_json)
+    except Exception:
+        return jsonify({"id": file_id, "tytul": "", "sekcje": {}, "count": 0})
+    sekcje = data.get("sekcje", {})
+    return jsonify({
+        "id": file_id,
+        "tytul": data.get("tytul", ""),
+        "sekcje": sekcje,
+        "count": len(sekcje),
+    })
 
 
 @bp.route("/files/<int:file_id>/summary/download")

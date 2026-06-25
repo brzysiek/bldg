@@ -200,7 +200,7 @@
               </td>
               <td id="extract-status-{{ doc.id }}" class="px-3 py-3">
                 {% if doc.extraction_status == 'done' %}
-                  <span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">✅ Gotowa</span>
+                  <button onclick='showSegments({{ doc.id }}, {{ doc.original_name | tojson }})' class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">✅ Gotowa</button>
                 {% elif doc.extraction_status == 'pending' %}
                   <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>
                 {% elif doc.extraction_status == 'error' %}
@@ -288,6 +288,21 @@
     <div id="modal-body" class="prose prose-sm p-6 overflow-y-auto flex-1 text-slate-text"></div>
   </div>
 </div>
+<!-- Segments popup modal -->
+<div id="segments-modal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+     onclick="if(event.target===this) closeSegments()">
+  <div class="bg-white rounded-xl max-w-2xl w-full max-h-[80vh] flex flex-col shadow-2xl">
+    <div class="flex justify-between items-center px-6 py-4 border-b border-gray-100">
+      <div>
+        <div class="text-xs text-slate-text/40 mb-0.5">Segmentacja AI</div>
+        <h3 id="seg-modal-title" class="font-semibold text-bottle text-sm truncate max-w-md"></h3>
+      </div>
+      <button onclick="closeSegments()" class="text-gray-300 hover:text-gray-500 text-xl leading-none ml-4">✕</button>
+    </div>
+    <div id="seg-modal-body" class="p-6 overflow-y-auto flex-1 text-slate-text text-sm"></div>
+  </div>
+</div>
+
 {% else %}
   <div class="bg-white rounded-xl border border-dashed border-gray-200 p-10 text-center">
     <div class="text-4xl mb-3">📂</div>
@@ -336,7 +351,64 @@ function closeSummary() {
   document.getElementById('summary-modal').classList.add('hidden');
   document.body.style.overflow = '';
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSummary(); });
+
+/* ── Segments popup ── */
+const SEGMENTS = {};
+
+async function showSegments(id, name) {
+  document.getElementById('seg-modal-title').textContent = name;
+  const body = document.getElementById('seg-modal-body');
+  document.getElementById('segments-modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  if (SEGMENTS[id] !== undefined) { _renderSegments(body, SEGMENTS[id]); return; }
+  body.innerHTML = '<p class="text-slate-text/40 text-sm">Ładowanie…</p>';
+  try {
+    const r = await fetch(`/files/${id}/segments-json`);
+    const data = await r.json();
+    SEGMENTS[id] = data;
+    _renderSegments(body, data);
+  } catch (e) {
+    body.innerHTML = '<p class="text-red-500 text-sm">Błąd ładowania segmentów.</p>';
+  }
+}
+
+function _renderSegments(body, data) {
+  const sekcje = data.sekcje || {};
+  const keys = Object.keys(sekcje);
+  const tytul = data.tytul || '';
+  let html = '';
+  if (tytul) html += `<p class="text-xs text-slate-text/50 mb-2 font-medium">${_escHtml(tytul)}</p>`;
+  html += `<p class="text-xs text-slate-text/40 mb-4">Segmentów: <strong class="text-bottle">${keys.length}</strong></p>`;
+  if (!keys.length) {
+    html += '<p class="text-slate-text/40 text-sm">Brak segmentów w cache.</p>';
+  } else {
+    html += '<div class="space-y-1">';
+    keys.forEach((k, i) => {
+      const content = sekcje[k] || '';
+      const sid = `_seg_${i}`;
+      html += `<div class="border border-gray-100 rounded-lg overflow-hidden">
+        <button onclick="document.getElementById('${sid}').classList.toggle('hidden')"
+                class="w-full text-left px-4 py-2 bg-gray-50 hover:bg-gray-100 transition-colors flex justify-between items-center gap-2">
+          <span class="font-mono text-xs font-semibold text-bottle">${_escHtml(k)}</span>
+          <span class="text-gray-400 text-xs shrink-0">${content.length} zn. ▾</span>
+        </button>
+        <div id="${sid}" class="hidden px-4 py-3 text-xs text-slate-text/80 whitespace-pre-wrap font-mono leading-relaxed bg-white max-h-48 overflow-y-auto">${_escHtml(content)}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  body.innerHTML = html;
+}
+
+function _escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function closeSegments() {
+  document.getElementById('segments-modal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeSummary(); closeSegments(); } });
 
 /* ── Type filter ── */
 let _activeExt = '';
@@ -715,7 +787,11 @@ function setExtractPending(id) {
 
 function setExtractDone(id) {
   const el = document.getElementById('extract-status-' + id);
-  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium">✅ Gotowa</span>';
+  if (el) {
+    const row = document.getElementById('doc-row-' + id);
+    const name = row ? (row.querySelector('.doc-cb')?.dataset.name || '') : '';
+    el.innerHTML = `<button onclick='showSegments(${id}, ${JSON.stringify(name)})' class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">✅ Gotowa</button>`;
+  }
   const btn = document.getElementById('extract-btn-' + id);
   if (btn) { btn.disabled = false; btn.textContent = '🔧 Ponów segm.'; }
   const cb = document.querySelector(`.doc-cb[value="${id}"]`);
