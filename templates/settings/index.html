@@ -40,7 +40,7 @@
 {% endmacro %}
 
 {# ── per-stage config card macro ──────────────────────────────────────── #}
-{% macro _stage_card(stage, icon, title, purpose, prompt_key, prompt_vars, prompt_rows, cfg, default_model, hist) %}
+{% macro _stage_card(stage, icon, title, purpose, prompt_key, prompt_vars, prompt_rows, cfg, default_model, hist, default_prompt='') %}
 <div class="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
   <h2 class="text-base font-semibold text-bottle pb-3 border-b border-gray-100">{{ icon }} {{ title }}</h2>
   <p class="text-xs text-slate-text/60"><strong>Do czego służy:</strong> {{ purpose }}</p>
@@ -103,10 +103,22 @@
     </div>
 
     <div>
-      <label class="block text-sm font-medium text-slate-text mb-1">Prompt</label>
+      <div class="flex items-center justify-between mb-1">
+        <label class="block text-sm font-medium text-slate-text">Prompt</label>
+        {% if default_prompt %}
+        <button type="button" onclick="loadDefaultPrompt('{{ stage }}')"
+                class="text-xs text-bottle hover:underline font-medium">← Wczytaj domyślny</button>
+        {% endif %}
+      </div>
       <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: {{ prompt_vars }}</p>
-      <textarea name="prompt" rows="{{ prompt_rows }}"
+      <textarea id="prompt-{{ stage }}" name="prompt" rows="{{ prompt_rows }}"
                 class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ cfg.prompt }}</textarea>
+      {% if default_prompt %}
+      <details class="mt-1.5">
+        <summary class="text-xs text-slate-text/40 cursor-pointer hover:text-bottle select-none">📋 Pokaż domyślny prompt</summary>
+        <pre id="default-{{ stage }}" class="mt-2 text-xs font-mono bg-gray-50 border border-gray-100 p-3 rounded-lg whitespace-pre-wrap text-slate-text/60 max-h-52 overflow-y-auto">{{ default_prompt }}</pre>
+      </details>
+      {% endif %}
       {{ _prompt_history(prompt_key, hist) }}
     </div>
 
@@ -238,7 +250,8 @@
     14,
     stage_data['doc_summary'],
     settings.gemini_model or 'gemini-2.5-flash',
-    history.get('gemini_summary_prompt', [])
+    history.get('gemini_summary_prompt', []),
+    default_prompts.get('doc_summary', '')
   ) }}
 
   <div class="bg-gray-50 rounded-xl border border-gray-100 p-4 text-xs text-slate-text/50">
@@ -263,7 +276,8 @@
     8,
     stage_data['extraction'],
     settings.gemini_model or 'gemini-2.5-flash',
-    history.get('comparison_prompt_extraction', [])
+    history.get('comparison_prompt_extraction', []),
+    default_prompts.get('extraction', '')
   ) }}
 
   {{ _stage_card(
@@ -276,7 +290,8 @@
     12,
     stage_data['comparison'],
     settings.gemini_model or 'gemini-2.5-flash',
-    history.get('comparison_prompt_comparison', [])
+    history.get('comparison_prompt_comparison', []),
+    default_prompts.get('comparison', '')
   ) }}
 
   {{ _stage_card(
@@ -289,7 +304,8 @@
     10,
     stage_data['summary'],
     settings.gemini_model or 'gemini-2.5-flash',
-    history.get('comparison_prompt_summary', [])
+    history.get('comparison_prompt_summary', []),
+    default_prompts.get('summary', '')
   ) }}
 
   {{ _stage_card(
@@ -302,7 +318,8 @@
     10,
     stage_data['edition'],
     settings.gemini_model or 'gemini-2.5-flash',
-    history.get('comparison_prompt_edition', [])
+    history.get('comparison_prompt_edition', []),
+    default_prompts.get('edition', '')
   ) }}
 
 {% endif %}
@@ -310,6 +327,12 @@
 </div>
 
 <script>
+function loadDefaultPrompt(stage) {
+  const pre = document.getElementById('default-' + stage);
+  const ta  = document.getElementById('prompt-' + stage);
+  if (pre && ta) { ta.value = pre.textContent.trim(); ta.focus(); }
+}
+
 const currentModel = "{{ settings.gemini_model or 'gemini-2.5-flash' }}";
 
 async function loadGeminiModels() {

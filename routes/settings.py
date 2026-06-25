@@ -70,6 +70,20 @@ def _stage_default_prompt(stage: str) -> str:
     }[stage]
 
 
+def _all_default_prompts() -> dict:
+    from services.comparator import (
+        DEFAULT_PROMPT_EXTRACTION, DEFAULT_PROMPT_COMPARISON,
+        DEFAULT_PROMPT_SUMMARY, DEFAULT_PROMPT_EDITION_SUMMARY,
+    )
+    return {
+        "doc_summary": DEFAULT_PROMPT,
+        "extraction":  DEFAULT_PROMPT_EXTRACTION,
+        "comparison":  DEFAULT_PROMPT_COMPARISON,
+        "summary":     DEFAULT_PROMPT_SUMMARY,
+        "edition":     DEFAULT_PROMPT_EDITION_SUMMARY,
+    }
+
+
 def _get_or_create_settings():
     s = AppSettings.query.first()
     if not s:
@@ -105,6 +119,7 @@ def index():
         test_result=None,
         history=history,
         stage_data=stage_data,
+        default_prompts=_all_default_prompts(),
     )
 
 
@@ -314,4 +329,5 @@ def test():
         test_result=result,
         history=history,
         stage_data=stage_data,
+        default_prompts=_all_default_prompts(),
     )
