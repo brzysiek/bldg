@@ -323,6 +323,14 @@
   </div>
 {% endif %}
 
+{# ── Segmentation tip ── #}
+{% if job.status == 'done' %}
+<div class="bg-sky-50 border border-sky-100 rounded-xl px-5 py-3 mb-5 text-xs text-sky-700 flex gap-2.5 items-start">
+  <span class="shrink-0 mt-0.5">💡</span>
+  <span>Jeśli po ponownym porównaniu nadal widzisz nieoczekiwane lub znaczące różnice — warto ponowić <strong>segmentację plików</strong> na stronie edycji konkursu (przycisk <em>Ponów segm.</em>), a następnie uruchomić porównanie jeszcze raz.</span>
+</div>
+{% endif %}
+
 {# ── Add pair form (shown when job has editions and is not cancelled/queued) #}
 {% if job.edition_old_id and job.edition_new_id and job.status not in ('cancelled', 'queued') %}
   <div id="add-pair-panel" class="bg-white rounded-xl border border-gray-100 p-5 mb-5">
