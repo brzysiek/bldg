@@ -339,7 +339,7 @@ async function showSummary(id, name) {
   }
   body.innerHTML = '<p class="text-slate-text/40 text-sm">Ładowanie…</p>';
   try {
-    const r = await fetch(`/files/${id}/summary-json`);
+    const r = await fetch(_summaryJsonUrl(id));
     const data = await r.json();
     SUMMARIES[id] = data.summary || '';
     body.innerHTML = marked.parse(SUMMARIES[id]);
@@ -363,7 +363,7 @@ async function showSegments(id, name) {
   if (SEGMENTS[id] !== undefined) { _renderSegments(body, SEGMENTS[id]); return; }
   body.innerHTML = '<p class="text-slate-text/40 text-sm">Ładowanie…</p>';
   try {
-    const r = await fetch(`/files/${id}/segments-json`);
+    const r = await fetch(_segmentsJsonUrl(id));
     const data = await r.json();
     SEGMENTS[id] = data;
     _renderSegments(body, data);
@@ -475,14 +475,18 @@ function updateBulkBtn() {
 }
 
 // URL templates generated server-side
-const _SUMMARIZE_JSON_TPL = {{ url_for('files.summarize_json', file_id=0)|tojson }};
-const _summarizeJsonUrl   = id => _SUMMARIZE_JSON_TPL.replace('/0/', '/' + id + '/');
-const _CANCEL_TPL         = {{ url_for('files.cancel_summary', file_id=0)|tojson }};
-const _cancelSummaryUrl   = id => _CANCEL_TPL.replace('/0/', '/' + id + '/');
-const _EXTRACT_JSON_TPL   = {{ url_for('files.extract_json',   file_id=0)|tojson }};
-const _extractJsonUrl     = id => _EXTRACT_JSON_TPL.replace('/0/', '/' + id + '/');
-const _EXTRACT_STATUS_TPL = {{ url_for('files.extract_status', file_id=0)|tojson }};
-const _extractStatusUrl   = id => _EXTRACT_STATUS_TPL.replace('/0/', '/' + id + '/');
+const _SUMMARIZE_JSON_TPL    = {{ url_for('files.summarize_json',          file_id=0)|tojson }};
+const _summarizeJsonUrl      = id => _SUMMARIZE_JSON_TPL.replace('/0/', '/' + id + '/');
+const _SUMMARY_JSON_TPL      = {{ url_for('files.summary_json',            file_id=0)|tojson }};
+const _summaryJsonUrl        = id => _SUMMARY_JSON_TPL.replace('/0/', '/' + id + '/');
+const _SEGMENTS_JSON_TPL     = {{ url_for('files.segments_json',           file_id=0)|tojson }};
+const _segmentsJsonUrl       = id => _SEGMENTS_JSON_TPL.replace('/0/', '/' + id + '/');
+const _CANCEL_TPL            = {{ url_for('files.cancel_summary',          file_id=0)|tojson }};
+const _cancelSummaryUrl      = id => _CANCEL_TPL.replace('/0/', '/' + id + '/');
+const _EXTRACT_JSON_TPL      = {{ url_for('files.extract_json',            file_id=0)|tojson }};
+const _extractJsonUrl        = id => _EXTRACT_JSON_TPL.replace('/0/', '/' + id + '/');
+const _EXTRACT_STATUS_TPL    = {{ url_for('files.extract_status',          file_id=0)|tojson }};
+const _extractStatusUrl      = id => _EXTRACT_STATUS_TPL.replace('/0/', '/' + id + '/');
 const _EXTRACT_AND_SUMMARIZE_TPL = {{ url_for('files.extract_and_summarize_json', file_id=0)|tojson }};
 const _extractAndSummarizeUrl    = id => _EXTRACT_AND_SUMMARIZE_TPL.replace('/0/', '/' + id + '/');
 
