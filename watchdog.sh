@@ -3,7 +3,7 @@
 # Run every 5 minutes via cPanel cron:
 #   */5 * * * * /home/brzychu/bldg/grant-docs/watchdog.sh >> /home/brzychu/bldg/grant-docs/logs/watchdog.log 2>&1
 
-APP_URL="https://bldg.lukaszbrzyski.com/ping"
+APP_URL="https://brzychu.cfolks.pl/bldg3/ping"
 RESTART_FILE="/home/brzychu/bldg/grant-docs/tmp/restart.txt"
 LOG_DIR="/home/brzychu/bldg/grant-docs/logs"
 
