@@ -677,7 +677,7 @@ function _setRowSummaryDone(id, description, summary) {
 
 async function _pollSummaryStatus(id, maxAttempts = 240) {
   for (let i = 0; i < maxAttempts; i++) {
-    await new Promise(r => setTimeout(r, 2500));
+    await new Promise(r => setTimeout(r, 4000));
     try {
       const r = await fetch(_extractStatusUrl(id));
       const d = await r.json().catch(() => null);
@@ -695,7 +695,7 @@ async function _pollSummaryStatus(id, maxAttempts = 240) {
 
 async function _pollCombinedStatus(id, maxAttempts = 240) {
   for (let i = 0; i < maxAttempts; i++) {
-    await new Promise(r => setTimeout(r, 2500));
+    await new Promise(r => setTimeout(r, 4000));
     try {
       const r = await fetch(_extractStatusUrl(id));
       const d = await r.json().catch(() => null);
@@ -831,7 +831,7 @@ function setExtractError(id, msg) {
 
 async function _pollExtractStatus(id, maxAttempts = 240) {
   for (let i = 0; i < maxAttempts; i++) {
-    await new Promise(r => setTimeout(r, 2500));
+    await new Promise(r => setTimeout(r, 4000));
     try {
       const r = await fetch(_extractStatusUrl(id));
       const d = await r.json().catch(() => null);
