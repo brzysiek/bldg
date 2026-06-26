@@ -522,29 +522,29 @@ async function bulkSummarize() {
     setProgress(done, total, file.name, 'active');
     setRowPending(file.id);
 
+    let startOk = false;
     try {
       const resp = await fetch(_summarizeJsonUrl(file.id), { method: 'POST' });
-      let data, rawText = '';
-      try { rawText = await resp.text(); data = JSON.parse(rawText); } catch (_) { data = null; }
-      if (!resp.ok) {
-        const body = data?.error ? ': ' + data.error : (rawText ? ': ' + rawText.slice(0, 120) : '');
-        const msg = `HTTP ${resp.status}${body}`;
+      const data = await resp.json().catch(() => null);
+      startOk = resp.ok && data?.ok;
+      if (!startOk) {
+        const msg = data?.error || `HTTP ${resp.status}`;
         setRowError(file.id, msg);
         showProgressError(file.id, file.name, msg);
         errors++;
-      } else if (!data?.ok) {
-        const msg = data?.error || 'Nieznany błąd';
-        setRowError(file.id, msg);
-        showProgressError(file.id, file.name, msg);
-        errors++;
-      } else {
-        setRowDone(file.id, data.description, data.summary);
+        done++;
+        continue;
       }
     } catch (e) {
       setRowError(file.id, e.message);
       showProgressError(file.id, file.name, e.message);
       errors++;
+      done++;
+      continue;
     }
+
+    const ok = await _pollSummaryStatus(file.id);
+    if (!ok) errors++;
     done++;
   }
 
@@ -673,6 +673,24 @@ function _setRowSummaryDone(id, description, summary) {
       class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">
       🔍 Podsumowanie</button>`;
   }
+}
+
+async function _pollSummaryStatus(id, maxAttempts = 240) {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, 2500));
+    try {
+      const r = await fetch(_extractStatusUrl(id));
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d?.ok) { setRowError(id, d?.error || `HTTP ${r.status}`); return false; }
+      if (d.summary_status !== 'pending' && d.summary_status != null) {
+        if (d.summary_status === 'done') _setRowSummaryDone(id, d.description, d.summary);
+        else setRowError(id, d.summary_error || 'Błąd podsumowania');
+        return d.summary_status === 'done';
+      }
+    } catch (e) { setRowError(id, e.message); return false; }
+  }
+  setRowError(id, 'Timeout pollingu');
+  return false;
 }
 
 async function _pollCombinedStatus(id, maxAttempts = 240) {

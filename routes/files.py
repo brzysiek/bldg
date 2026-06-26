@@ -51,6 +51,21 @@ def _run_extract_and_summarize_bg(doc_id: int, app):
         extract_and_summarize(doc_id)
 
 
+def _run_summarize_bg(doc_id: int, app):
+    """Run summarization in a background thread with its own app context."""
+    with app.app_context():
+        doc = db.session.get(Document, doc_id)
+        if not doc:
+            return
+        settings = AppSettings.query.first()
+        if not settings or not settings.gemini_api_key:
+            _db_write_error(doc_id, "Brak klucza Gemini API")
+            return
+        doc_snap      = _snap_orm(doc)
+        settings_snap = _snap_orm(settings)
+        _run_summarize(doc_snap, settings_snap)
+
+
 @bp.route("/competition/<c_slug>/edition/<e_slug>/upload", methods=["GET", "POST"])
 def upload(c_slug, e_slug):
     competition = Competition.query.filter_by(slug=c_slug).first_or_404()
@@ -242,40 +257,23 @@ def summarize(file_id):
 
 @bp.route("/files/<int:file_id>/summarize-json", methods=["POST"])
 def summarize_json(file_id):
-    try:
-        doc = db.session.get(Document, file_id)
-        if doc is None:
-            return jsonify({"ok": False, "file_id": file_id, "error": f"Dokument {file_id} nie istnieje"}), 404
+    """Start background summarization. Returns immediately; poll extract-status for result."""
+    doc = db.session.get(Document, file_id)
+    if doc is None:
+        return jsonify({"ok": False, "file_id": file_id, "error": f"Dokument {file_id} nie istnieje"}), 404
 
-        settings = AppSettings.query.first()
-        if not settings or not settings.gemini_api_key:
-            return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API w ustawieniach"})
+    settings = AppSettings.query.first()
+    if not settings or not settings.gemini_api_key:
+        return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API w ustawieniach"})
 
-        _logger.info("summarize_json: start file_id=%s name=%s", file_id, doc.original_name)
+    doc.ai_summary_status = "pending"
+    doc.ai_summary_error  = None
+    db.session.commit()
 
-        # Snapshot before commit — commit() expires ORM attrs, causing lazy reloads
-        # that hold a DB connection through the long Gemini call.
-        doc_snap      = _snap_orm(doc)
-        settings_snap = _snap_orm(settings)
-
-        doc.ai_summary_status = "pending"
-        db.session.commit()
-
-        ok, err = _run_summarize(doc_snap, settings_snap)
-        if ok:
-            _logger.info("summarize_json: done file_id=%s", file_id)
-            return jsonify({
-                "ok": True,
-                "file_id": file_id,
-                "description": doc_snap.ai_description or "",
-                "summary": doc_snap.ai_summary or "",
-            })
-        else:
-            _logger.warning("summarize_json: failed file_id=%s err=%s", file_id, err)
-            return jsonify({"ok": False, "file_id": file_id, "error": err})
-    except Exception as exc:
-        _logger.error("summarize_json: unhandled exception file_id=%s: %s", file_id, exc, exc_info=True)
-        return jsonify({"ok": False, "file_id": file_id, "error": str(exc)}), 500
+    app_obj = current_app._get_current_object()
+    threading.Thread(target=_run_summarize_bg, args=(file_id, app_obj), daemon=True).start()
+    _logger.info("summarize_json: spawned thread file_id=%s name=%s", file_id, doc.original_name)
+    return jsonify({"ok": True, "file_id": file_id, "started": True})
 
 
 @bp.route("/files/<int:file_id>/cancel-summary", methods=["POST"])
