@@ -112,7 +112,7 @@
       </div>
       <p class="text-xs text-slate-text/50 mb-1.5">Zmienne: {{ prompt_vars }}</p>
       <textarea id="prompt-{{ stage }}" name="prompt" rows="{{ prompt_rows }}"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ cfg.prompt }}</textarea>
+                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30 focus:border-bottle">{{ cfg.prompt or default_prompt }}</textarea>
       {% if default_prompt %}
       <details class="mt-1.5">
         <summary class="text-xs text-slate-text/40 cursor-pointer hover:text-bottle select-none">📋 Pokaż domyślny prompt</summary>
