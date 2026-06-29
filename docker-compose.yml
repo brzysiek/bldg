@@ -3,6 +3,8 @@ services:
   db:
     image: mysql:8.0
     restart: unless-stopped
+    networks:
+      - grant_net
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE:      ${MYSQL_DATABASE:-grant_docs}
@@ -22,6 +24,8 @@ services:
   app:
     build: .
     restart: unless-stopped
+    networks:
+      - grant_net
     depends_on:
       db:
         condition: service_healthy
@@ -51,3 +55,7 @@ services:
 
 volumes:
   mysql_data:
+
+networks:
+  grant_net:
+    driver: bridge
