@@ -40,6 +40,10 @@ services:
       COMPARISON_TIMEOUT_MINUTES: ${COMPARISON_TIMEOUT_MINUTES:-60}
       GEMINI_SLEEP_SECONDS:       ${GEMINI_SLEEP_SECONDS:-1.0}
       GEMINI_BATCH_SECTIONS:      ${GEMINI_BATCH_SECTIONS:-20}
+      GOOGLE_CLIENT_ID:           ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET:       ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI:        ${GOOGLE_REDIRECT_URI:-}
+      DEV_BYPASS_AUTH:            ${DEV_BYPASS_AUTH:-}
     volumes:
       - ./storage:/app/storage   # uploaded files — persists across deploys
       - ./logs:/app/logs         # application logs
