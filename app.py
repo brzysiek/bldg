@@ -442,8 +442,19 @@ def create_app():
 
     _AUTH_SKIP = {"auth.login", "auth.google", "auth.callback", "auth.logout", "static"}
 
+    _DEV_BYPASS = os.environ.get("DEV_BYPASS_AUTH", "").lower() in ("1", "true", "yes")
+    if _DEV_BYPASS:
+        import warnings
+        warnings.warn("DEV_BYPASS_AUTH is active — authentication disabled. Do NOT use in production.", stacklevel=1)
+
     @app.before_request
     def require_login():
+        if _DEV_BYPASS:
+            if not session.get("user_email"):
+                session["user_email"]   = "dev@local"
+                session["user_name"]    = "Dev (bypass)"
+                session["user_picture"] = ""
+            return
         endpoint = _req.endpoint
         if not endpoint or endpoint in _AUTH_SKIP:
             return
