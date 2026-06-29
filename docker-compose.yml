@@ -26,9 +26,25 @@ services:
     restart: unless-stopped
     networks:
       - grant_net
+      - app-net
     depends_on:
       db:
         condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=app-net"
+      # HTTPS
+      - "traefik.http.routers.grant-docs.rule=Host(`bldg.srv1353823.hstgr.cloud`)"
+      - "traefik.http.routers.grant-docs.entrypoints=websecure"
+      - "traefik.http.routers.grant-docs.tls=true"
+      - "traefik.http.routers.grant-docs.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.grant-docs.loadbalancer.server.port=8000"
+      # HTTP → HTTPS redirect
+      - "traefik.http.routers.grant-docs-http.rule=Host(`bldg.srv1353823.hstgr.cloud`)"
+      - "traefik.http.routers.grant-docs-http.entrypoints=web"
+      - "traefik.http.routers.grant-docs-http.middlewares=grant-https-redirect"
+      - "traefik.http.middlewares.grant-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.grant-https-redirect.redirectscheme.permanent=true"
     environment:
       MYSQL_HOST:     db
       MYSQL_PORT:     3306
@@ -48,10 +64,8 @@ services:
       GOOGLE_REDIRECT_URI:        ${GOOGLE_REDIRECT_URI:-}
       DEV_BYPASS_AUTH:            ${DEV_BYPASS_AUTH:-}
     volumes:
-      - ./storage:/app/storage   # uploaded files — persists across deploys
-      - ./logs:/app/logs         # application logs
-    ports:
-      - "${APP_PORT:-8000}:8000"
+      - ./storage:/app/storage
+      - ./logs:/app/logs
 
 volumes:
   mysql_data:
@@ -59,3 +73,5 @@ volumes:
 networks:
   grant_net:
     driver: bridge
+  app-net:
+    external: true
