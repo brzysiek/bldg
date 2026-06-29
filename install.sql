@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS editions (
     name             TEXT     NOT NULL,
     slug             TEXT,
     year             INT,
-    status           TEXT     DEFAULT 'aktywna',
+    status           VARCHAR(50) DEFAULT 'aktywna',
     deadline         DATE,
     description      TEXT,
     created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE TABLE IF NOT EXISTS app_settings (
     id                           INT    NOT NULL AUTO_INCREMENT PRIMARY KEY,
     gemini_api_key               TEXT,
-    gemini_model                 TEXT   DEFAULT 'gemini-2.5-flash',
+    gemini_model                 VARCHAR(100) DEFAULT 'gemini-2.5-flash',
     gemini_summary_prompt        TEXT,
     updated_at                   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     comparison_prompt_extraction TEXT,
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS prompt_versions (
     id         INT      NOT NULL AUTO_INCREMENT PRIMARY KEY,
     prompt_key TEXT     NOT NULL,
     content    TEXT     NOT NULL,
-    source     TEXT     DEFAULT 'manual',
+    source     VARCHAR(50) DEFAULT 'manual',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS comparison_jobs (
     label_old             TEXT,
     label_new             TEXT,
 
-    status                TEXT          DEFAULT 'pending',
+    status                VARCHAR(50)   DEFAULT 'pending',
     status_detail         TEXT,
     progress_current      INT           DEFAULT 0,
     progress_total        INT           DEFAULT 0,
