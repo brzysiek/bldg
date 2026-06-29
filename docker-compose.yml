@@ -1,0 +1,50 @@
+services:
+
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE:-grant_docs}
+      MYSQL_USER:          ${MYSQL_USER:-grant_docs}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      # install.sql runs automatically on first start (empty data volume)
+      - ./install.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root",
+             "--password=${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST:     db
+      MYSQL_PORT:     3306
+      MYSQL_USER:     ${MYSQL_USER:-grant_docs}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-grant_docs}
+      SECRET_KEY:     ${SECRET_KEY}
+      LOG_LEVEL:      ${LOG_LEVEL:-INFO}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-4}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-120}
+      COMPARISON_TIMEOUT_MINUTES: ${COMPARISON_TIMEOUT_MINUTES:-60}
+      GEMINI_SLEEP_SECONDS:       ${GEMINI_SLEEP_SECONDS:-1.0}
+      GEMINI_BATCH_SECTIONS:      ${GEMINI_BATCH_SECTIONS:-20}
+    volumes:
+      - ./storage:/app/storage   # uploaded files — persists across deploys
+      - ./logs:/app/logs         # application logs
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+volumes:
+  mysql_data:

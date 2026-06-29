@@ -3,9 +3,12 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+.env.*
+!.env.example
 _schema_version.txt
 _seed_done.txt
 storage/
 data/
+logs/
 *.db
 .DS_Store
