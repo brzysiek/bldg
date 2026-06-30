@@ -66,9 +66,15 @@ def google():
         return redirect(url_for("auth.login"))
 
     flow = _make_flow()
+    # Force consent screen when Drive is not yet authorized so Google issues
+    # a refresh_token covering the drive.readonly scope.  Once connected,
+    # revert to account-selection-only to avoid showing consent every login.
+    from models import AppSettings
+    _settings = AppSettings.query.first()
+    _drive_ok = bool(_settings and _settings.drive_refresh_token)
     auth_url, state = flow.authorization_url(
         access_type="offline",
-        prompt="select_account",
+        prompt="select_account" if _drive_ok else "consent",
     )
     session["oauth_state"] = state
     # google_auth_oauthlib >= 1.2 auto-generates a PKCE code_verifier and
