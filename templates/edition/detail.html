@@ -528,6 +528,25 @@ const _extractAndSummarizeUrl    = id => _EXTRACT_AND_SUMMARIZE_TPL.replace('/0/
 
 let _bulkStopRequested = false;
 
+/* ── Auto-watch shared state (modified by cancelExtraction / cancelSummary) ── */
+let _awTotal = 0;
+let _awDone  = 0;
+
+function _updateAutoWatchBar() {
+  const total = Math.max(_awTotal, _awDone);
+  if (total === 0) return;
+  const bar     = document.getElementById('progress-bar');
+  const fracEl  = document.getElementById('progress-fraction');
+  const labelEl = document.getElementById('progress-label');
+  const pct = Math.round((_awDone / total) * 100);
+  if (bar) bar.style.width = pct + '%';
+  if (fracEl) fracEl.textContent = `${_awDone} / ${total}`;
+  if (labelEl) {
+    if (_awDone < total) labelEl.textContent = `⏳ Segmentacja i AI w tle — ${_awDone} / ${total}`;
+    else { labelEl.textContent = `✅ Gotowe — przetworzono ${total} plików`; if (bar) { bar.classList.remove('bg-bottle'); bar.classList.add('bg-green-500'); } }
+  }
+}
+
 function stopBulkSummarize() {
   _bulkStopRequested = true;
   const btn = document.getElementById('btn-stop-bulk');
@@ -627,6 +646,8 @@ async function cancelExtraction(id) {
       if (row) { row.dataset.extractStatus = ''; row.dataset.summaryStatus = ''; _applyRowBg(id); }
       _setExtractActionSegmentuj(id);
       _setSummaryActionPodsumuj(id);
+      // decrement auto-watch counter
+      if (_awTotal > _awDone) { _awTotal--; _updateAutoWatchBar(); }
     } else {
       _setExtractActionAnuluj(id);
     }
@@ -801,7 +822,8 @@ async function _pollSummaryStatus(id, maxAttempts = 240) {
       const d = await r.json().catch(() => null);
       if (!r.ok || !d?.ok) { setRowError(id, d?.error || `HTTP ${r.status}`); return false; }
       if (d.summary_status === 'processing') { setRowProcessing(id); continue; }
-      if (d.summary_status !== 'pending' && d.summary_status != null) {
+      if (!d.summary_status) return true;  // cancelled externally — stop polling
+      if (d.summary_status !== 'pending') {
         if (d.summary_status === 'done') _setRowSummaryDone(id, d.description, d.summary);
         else setRowError(id, d.summary_error || 'Błąd podsumowania');
         return d.summary_status === 'done';
@@ -823,10 +845,11 @@ async function _pollCombinedStatus(id, maxAttempts = 240) {
         setRowError(id, d?.error || `HTTP ${r.status}`);
         return false;
       }
+      if (!d.status && !d.summary_status) return true;  // both cancelled externally
       if (d.status === 'processing') setExtractProcessing(id);
       if (d.summary_status === 'processing') setRowProcessing(id);
-      const extDone = d.status !== 'pending' && d.status !== 'processing' && d.status != null;
-      const sumDone = d.summary_status !== 'pending' && d.summary_status !== 'processing' && d.summary_status != null;
+      const extDone = !d.status || (d.status !== 'pending' && d.status !== 'processing');
+      const sumDone = !d.summary_status || (d.summary_status !== 'pending' && d.summary_status !== 'processing');
       if (extDone) {
         if (d.status === 'done') setExtractDone(id);
         else setExtractError(id, d.error || 'Błąd segmentacji');
@@ -972,6 +995,7 @@ async function _pollExtractStatus(id, maxAttempts = 240) {
       if (!r.ok || !d?.ok) { setExtractError(id, d?.error || `HTTP ${r.status}`); return false; }
       if (d.status === 'done')  { setExtractDone(id); return true; }
       if (d.status === 'error') { setExtractError(id, d.error || 'Błąd ekstrakcji'); return false; }
+      if (!d.status) return true;  // cancelled externally — stop polling
       if (d.status === 'processing') setExtractProcessing(id);
     } catch (e) {
       setExtractError(id, e.message);
@@ -1067,8 +1091,8 @@ const _AUTO_WATCH = [
 ];
 
 async function autoWatchProgress(docs) {
-  const total = docs.length;
-  let done = 0;
+  _awTotal = docs.length;
+  _awDone  = 0;
 
   const progressEl = document.getElementById('bulk-progress');
   const stopBtn    = document.getElementById('btn-stop-bulk');
@@ -1078,9 +1102,9 @@ async function autoWatchProgress(docs) {
   const bar = document.getElementById('progress-bar');
   bar.style.width = '0%';
   bar.className = 'bg-bottle h-2 rounded-full transition-all duration-500';
-  document.getElementById('progress-label').textContent   = `⏳ Segmentacja i AI w tle — 0 / ${total}`;
-  document.getElementById('progress-fraction').textContent = `0 / ${total}`;
-  document.getElementById('progress-file').textContent    = '';
+  document.getElementById('progress-label').textContent    = `⏳ Segmentacja i AI w tle — 0 / ${_awTotal}`;
+  document.getElementById('progress-fraction').textContent = `0 / ${_awTotal}`;
+  document.getElementById('progress-file').textContent     = '';
 
   await Promise.all(docs.map(async (d) => {
     const needsExtract = ['pending', 'processing'].includes(d.extractStatus);
@@ -1101,16 +1125,11 @@ async function autoWatchProgress(docs) {
       await _pollSummaryStatus(d.id);
     }
 
-    done++;
-    const pct = Math.round((done / total) * 100);
-    bar.style.width = pct + '%';
-    document.getElementById('progress-fraction').textContent = `${done} / ${total}`;
-    document.getElementById('progress-label').textContent = done < total
-      ? `⏳ Segmentacja i AI w tle — ${done} / ${total}`
-      : `✅ Gotowe — przetworzono ${total} plików`;
-    if (done === total) {
-      bar.classList.replace('bg-bottle', 'bg-green-500');
-      document.getElementById('progress-file').textContent = '';
+    // If this file was cancelled via button, _awTotal was already decremented;
+    // skip this increment to avoid overshooting the total.
+    if (_awDone < _awTotal) {
+      _awDone++;
+      _updateAutoWatchBar();
     }
   }));
 
