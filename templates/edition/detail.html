@@ -531,6 +531,7 @@ let _bulkStopRequested = false;
 /* ── Auto-watch shared state (modified by cancelExtraction / cancelSummary) ── */
 let _awTotal = 0;
 let _awDone  = 0;
+const _cancelledViaButton = new Set();
 
 function _updateAutoWatchBar() {
   const total = Math.max(_awTotal, _awDone);
@@ -646,7 +647,8 @@ async function cancelExtraction(id) {
       if (row) { row.dataset.extractStatus = ''; row.dataset.summaryStatus = ''; _applyRowBg(id); }
       _setExtractActionSegmentuj(id);
       _setSummaryActionPodsumuj(id);
-      // decrement auto-watch counter
+      // decrement auto-watch total (done stays — file is cancelled, not completed)
+      _cancelledViaButton.add(id);
       if (_awTotal > _awDone) { _awTotal--; _updateAutoWatchBar(); }
     } else {
       _setExtractActionAnuluj(id);
@@ -1125,9 +1127,10 @@ async function autoWatchProgress(docs) {
       await _pollSummaryStatus(d.id);
     }
 
-    // If this file was cancelled via button, _awTotal was already decremented;
-    // skip this increment to avoid overshooting the total.
-    if (_awDone < _awTotal) {
+    if (_cancelledViaButton.has(d.id)) {
+      _cancelledViaButton.delete(d.id);
+      // total already decremented in cancelExtraction — don't touch done
+    } else if (_awDone < _awTotal) {
       _awDone++;
       _updateAutoWatchBar();
     }
