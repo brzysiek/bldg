@@ -22,10 +22,10 @@
               {% if loop.first %}
                 <span class="text-slate-text/30">(aktualna)</span>
               {% else %}
-                <form method="POST" action="{{ url_for('settings.restore_prompt', key=prompt_key, version_id=v.id) }}"
-                      onsubmit="return confirm('Przywrócić tę wersję promptu? Aktualna treść zostanie zastąpiona (pozostanie zapisana w historii).')" class="ml-auto">
-                  <button type="submit" class="px-2 py-0.5 border border-gray-200 rounded text-xs hover:bg-gray-50 transition-colors">↺ Przywróć</button>
-                </form>
+                <button type="button" class="ml-auto px-2 py-0.5 border border-gray-200 rounded text-xs hover:bg-gray-50 transition-colors"
+                        onclick="_postConfirm('{{ url_for('settings.restore_prompt', key=prompt_key, version_id=v.id) }}', 'Przywrócić tę wersję promptu? Aktualna treść zostanie zastąpiona (pozostanie zapisana w historii).')">
+                  ↺ Przywróć
+                </button>
               {% endif %}
             </div>
             <details class="mt-1">
@@ -126,13 +126,10 @@
       <button type="submit" class="px-4 py-2.5 bg-bottle text-white rounded-lg text-sm font-semibold hover:bg-bottle/90 transition-colors">
         💾 Zapisz konfigurację
       </button>
-      <form method="POST" action="{{ url_for('settings.reset_stage', stage=stage) }}"
-            onsubmit="return confirm('Przywrócić domyślną konfigurację tego etapu? Model/temperatura/tokeny/system zostaną wyczyszczone, prompt przywrócony do domyślnego.')"
-            style="display:inline">
-        <button type="submit" class="px-3 py-2 border border-gray-200 text-slate-text/60 rounded-lg text-xs hover:bg-gray-50 transition-colors">
-          🔄 Przywróć domyślne
-        </button>
-      </form>
+      <button type="button" class="px-3 py-2 border border-gray-200 text-slate-text/60 rounded-lg text-xs hover:bg-gray-50 transition-colors"
+              onclick="_postConfirm('{{ url_for('settings.reset_stage', stage=stage) }}', 'Przywrócić domyślną konfigurację tego etapu? Model/temperatura/tokeny/system zostaną wyczyszczone, prompt przywrócony do domyślnego.')">
+        🔄 Przywróć domyślne
+      </button>
     </div>
   </form>
 </div>
@@ -339,6 +336,14 @@
 </div>
 
 <script>
+function _postConfirm(url, msg) {
+  if (!confirm(msg)) return;
+  const f = document.createElement('form');
+  f.method = 'POST'; f.action = url;
+  document.body.appendChild(f);
+  f.submit();
+}
+
 function loadDefaultPrompt(stage) {
   const pre = document.getElementById('default-' + stage);
   const ta  = document.getElementById('prompt-' + stage);
