@@ -149,6 +149,7 @@
       <span class="font-medium">{{ job.label_new or '?' }}</span>
       {% if job.created_at %}<span class="text-slate-text/40">•</span><span>{{ job.created_at.strftime('%d.%m.%Y %H:%M') }}</span>{% endif %}
       {% if job.gemini_model_used %}<span class="px-2 py-0.5 bg-bottle/10 text-bottle text-xs rounded-full font-medium">{{ job.gemini_model_used }}</span>{% endif %}
+      {% if job.requested_by %}<span class="text-slate-text/40">•</span><span>{{ job.requested_by }}</span>{% endif %}
       {% if job.skip_redactional %}<span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">bez zmian redakcyjnych</span>{% endif %}
     </div>
   </div>

@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS comparison_jobs (
     pair_lock_at          DATETIME,
     skip_redactional      TINYINT(1)    DEFAULT 0,
     job_label             TEXT,
+    requested_by          TEXT,
 
     CONSTRAINT fk_jobs_edition_old
         FOREIGN KEY (edition_old_id) REFERENCES editions (id) ON DELETE SET NULL,
@@ -188,3 +189,6 @@ CREATE TABLE IF NOT EXISTS comparison_jobs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET foreign_key_checks = 1;
+
+-- Migrations (safe to run on existing installations)
+ALTER TABLE comparison_jobs ADD COLUMN IF NOT EXISTS requested_by TEXT;

@@ -7,7 +7,7 @@ from datetime import datetime
 
 from flask import (
     Blueprint, jsonify, redirect, render_template,
-    request, url_for, flash,
+    request, url_for, flash, session,
 )
 from werkzeug.utils import secure_filename
 
@@ -151,6 +151,7 @@ def setup():
             gemini_model_used  = settings.gemini_model,
             skip_redactional   = request.form.get("skip_redactional") == "on",
             job_label          = request.form.get("job_label", "").strip() or None,
+            requested_by       = session.get("user_name") or session.get("user_email"),
         )
         db.session.add(job)
         db.session.commit()
