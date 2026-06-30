@@ -533,7 +533,7 @@ def extract_document(doc_id: int) -> tuple:
     settings_s = _snap(settings)
 
     try:
-        doc.extraction_status = "pending"
+        doc.extraction_status = "processing"
         doc.extraction_error  = None
         db.session.commit()
         # Connection returned to pool after commit. doc and settings are expired.
@@ -616,8 +616,18 @@ def extract_and_summarize(doc_id: int) -> tuple:
     client = genai.Client(api_key=settings_s.gemini_api_key)
     tokens = {"in": 0, "out": 0}
     call_extraction = _make_stage_caller(client, settings_s, "extraction", tokens)
-    # After creating the client we don't need the session anymore for the long work.
-    # The pending status was already set by the caller (extract_and_summarize_json).
+
+    try:
+        fresh = db.session.get(Document, doc_id)
+        if fresh:
+            fresh.extraction_status = "processing"
+            fresh.ai_summary_status = "processing"
+            db.session.commit()
+    except Exception:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
 
     try:
         local_path, tmp_dir = _resolve_local_path(doc_s, settings_s)

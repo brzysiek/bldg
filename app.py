@@ -258,7 +258,7 @@ _STALE_TASK_MINUTES = 30
 
 
 def _cleanup_stale_doc_tasks() -> int:
-    """Reset documents stuck in 'pending' for longer than _STALE_TASK_MINUTES.
+    """Reset documents stuck in 'pending'/'processing' for longer than _STALE_TASK_MINUTES.
 
     Uses DB timestamps instead of in-memory tracking — safe across multiple
     Gunicorn workers or Passenger processes.
@@ -269,20 +269,20 @@ def _cleanup_stale_doc_tasks() -> int:
     cutoff = datetime.utcnow() - timedelta(minutes=_STALE_TASK_MINUTES)
 
     stale = Document.query.filter(
-        or_(Document.ai_summary_status == "pending",
-            Document.extraction_status == "pending")
+        or_(Document.ai_summary_status.in_(["pending", "processing"]),
+            Document.extraction_status.in_(["pending", "processing"]))
     ).all()
 
     cleaned = 0
     for doc in stale:
         changed = False
-        if doc.ai_summary_status == "pending":
+        if doc.ai_summary_status in ("pending", "processing"):
             started = doc.ai_summary_started_at
             if started is None or started < cutoff:
                 doc.ai_summary_status = None
                 doc.ai_summary_error  = None
                 changed = True
-        if doc.extraction_status == "pending":
+        if doc.extraction_status in ("pending", "processing"):
             started = doc.extraction_started_at
             if started is None or started < cutoff:
                 doc.extraction_status = None

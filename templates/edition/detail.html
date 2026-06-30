@@ -159,7 +159,7 @@
           {% for doc in all_docs %}
             {%- set row_ext = doc.original_name.rsplit('.', 1)[-1].upper() if '.' in doc.original_name else '?' -%}
             {%- set is_pdf = (doc.mime_type == 'application/pdf') or doc.original_name.lower().endswith('.pdf') -%}
-            {%- set any_pending = (doc.extraction_status == 'pending') or (doc.ai_summary_status == 'pending') -%}
+            {%- set any_pending = (doc.extraction_status in ('pending', 'processing')) or (doc.ai_summary_status in ('pending', 'processing')) -%}
             <tr id="doc-row-{{ doc.id }}" data-ext="{{ row_ext }}" class="hover:bg-gray-50/50 transition-colors">
               <td class="px-3 py-3">
                 <input type="checkbox"
@@ -204,6 +204,8 @@
               <td id="extract-status-{{ doc.id }}" class="px-3 py-3">
                 {% if doc.extraction_status == 'done' %}
                   <button onclick='showSegments({{ doc.id }}, {{ doc.original_name | tojson }})' class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">✅ Gotowa</button>
+                {% elif doc.extraction_status == 'processing' %}
+                  <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⚙️ W toku</span>
                 {% elif doc.extraction_status == 'pending' %}
                   <span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>
                 {% elif doc.extraction_status == 'error' %}
@@ -220,6 +222,8 @@
                           class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">
                     🔍 Podsumowanie
                   </button>
+                {% elif doc.ai_summary_status == 'processing' %}
+                  <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⚙️ W toku</span>
                 {% elif doc.ai_summary_status == 'pending' %}
                   <span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>
                 {% elif doc.ai_summary_status == 'error' %}
@@ -651,6 +655,11 @@ function setRowPending(id) {
   if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>';
 }
 
+function setRowProcessing(id) {
+  const el = document.getElementById('status-' + id);
+  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⚙️ W toku</span>';
+}
+
 function setRowDone(id, description, summary) {
   SUMMARIES[id] = summary;
   const descEl = document.getElementById('desc-' + id);
@@ -692,6 +701,7 @@ async function _pollSummaryStatus(id, maxAttempts = 240) {
       const r = await fetch(_extractStatusUrl(id));
       const d = await r.json().catch(() => null);
       if (!r.ok || !d?.ok) { setRowError(id, d?.error || `HTTP ${r.status}`); return false; }
+      if (d.summary_status === 'processing') { setRowProcessing(id); continue; }
       if (d.summary_status !== 'pending' && d.summary_status != null) {
         if (d.summary_status === 'done') _setRowSummaryDone(id, d.description, d.summary);
         else setRowError(id, d.summary_error || 'Błąd podsumowania');
@@ -714,8 +724,10 @@ async function _pollCombinedStatus(id, maxAttempts = 240) {
         setRowError(id, d?.error || `HTTP ${r.status}`);
         return false;
       }
-      const extDone = d.status !== 'pending' && d.status != null;
-      const sumDone = d.summary_status !== 'pending' && d.summary_status != null;
+      if (d.status === 'processing') setExtractProcessing(id);
+      if (d.summary_status === 'processing') setRowProcessing(id);
+      const extDone = d.status !== 'pending' && d.status !== 'processing' && d.status != null;
+      const sumDone = d.summary_status !== 'pending' && d.summary_status !== 'processing' && d.summary_status != null;
       if (extDone) {
         if (d.status === 'done') setExtractDone(id);
         else setExtractError(id, d.error || 'Błąd segmentacji');
@@ -817,6 +829,13 @@ function setExtractPending(id) {
   if (cb) cb.dataset.extractPending = 'true';
 }
 
+function setExtractProcessing(id) {
+  const el = document.getElementById('extract-status-' + id);
+  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⚙️ W toku</span>';
+  const btn = document.getElementById('extract-btn-' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '⚙️ W toku'; }
+}
+
 function setExtractDone(id) {
   const el = document.getElementById('extract-status-' + id);
   if (el) {
@@ -848,6 +867,7 @@ async function _pollExtractStatus(id, maxAttempts = 240) {
       if (!r.ok || !d?.ok) { setExtractError(id, d?.error || `HTTP ${r.status}`); return false; }
       if (d.status === 'done')  { setExtractDone(id); return true; }
       if (d.status === 'error') { setExtractError(id, d.error || 'Błąd ekstrakcji'); return false; }
+      if (d.status === 'processing') setExtractProcessing(id);
     } catch (e) {
       setExtractError(id, e.message);
       return false;
