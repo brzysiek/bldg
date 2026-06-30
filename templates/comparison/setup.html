@@ -95,7 +95,7 @@
       <div class="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl mb-4">
         <span class="text-xl shrink-0 mt-0.5">🕐</span>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-semibold text-amber-800 mb-1">Segmentacja w toku</p>
+          <p class="text-sm font-semibold text-amber-800 mb-1">Trwa wstępna analiza plików</p>
           <p id="segmentation-block-msg" class="text-xs text-amber-700 mb-3"></p>
           <div id="segmentation-block-files" class="space-y-1 mb-3"></div>
           <button type="button" onclick="retryLoadFiles()"
@@ -363,7 +363,7 @@ async function loadFiles(oldId, newId) {
     if (inToku)   parts.push(`${inToku} ${inToku === 1 ? 'plik jest' : 'pliki są'} w toku`);
     if (wKolejce) parts.push(`${wKolejce} ${wKolejce === 1 ? 'czeka' : 'czeka'} w kolejce`);
     document.getElementById('segmentation-block-msg').textContent =
-      `Wybór par do porównania zostanie odblokowany po zakończeniu segmentacji. ${parts.join(', ')}.`;
+      `Zanim wybierzemy pliki do porównania, musimy je wstępnie przeanalizować. ${parts.join(', ')}.`;
     const filesEl = document.getElementById('segmentation-block-files');
     filesEl.innerHTML = blockingFiles.map(f => {
       const badge = f.status === 'processing'
