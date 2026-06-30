@@ -265,7 +265,7 @@ def _resolve_local_path(doc, settings):
         if not creds:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise ValueError(
-                f"Brak autoryzacji Drive — zaloguj sie ponownie (plik '{doc.original_name}')"
+                f"Brak autoryzacji Drive — zaloguj się ponownie (plik '{doc.original_name}')"
             )
         log.info(
             "_resolve_local_path  pobieranie z Drive: '%s'  id=%s",
@@ -522,8 +522,8 @@ def extract_document(doc_id: int) -> tuple:
         return True, None
 
     if doc.gdrive_file_id and not settings.drive_refresh_token:
-        _write_extract_error(doc_id, "Brak autoryzacji Drive — zaloguj sie ponownie")
-        return False, "Brak autoryzacji Drive — zaloguj sie ponownie"
+        _write_extract_error(doc_id, "Brak autoryzacji Drive — zaloguj się ponownie")
+        return False, "Brak autoryzacji Drive"
 
     # Snapshot all needed values while the session is still open.
     # commit() expires ORM attributes; accessing expired attrs after commit
@@ -600,8 +600,8 @@ def extract_and_summarize(doc_id: int) -> tuple:
         return False, "Brak klucza Gemini API"
 
     if doc.gdrive_file_id and not settings.drive_refresh_token:
-        _write_extract_error(doc_id, "Brak autoryzacji Drive — zaloguj sie ponownie")
-        return False, "Brak autoryzacji Drive — zaloguj sie ponownie"
+        _write_extract_error(doc_id, "Brak autoryzacji Drive — zaloguj się ponownie")
+        return False, "Brak autoryzacji Drive"
 
     # Snapshot BEFORE any commit — commit() expires ORM attributes, triggering
     # lazy reloads that hold a DB connection through the long Gemini/Drive work.
