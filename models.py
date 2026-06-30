@@ -81,7 +81,11 @@ class AppSettings(db.Model):
     comparison_prompt_comparison = db.Column(db.Text)
     comparison_prompt_summary = db.Column(db.Text)
 
-    google_drive_api_key = db.Column(db.Text)
+    google_drive_api_key = db.Column(db.Text)  # deprecated — zastąpione OAuth
+
+    drive_access_token  = db.Column(db.Text)
+    drive_refresh_token = db.Column(db.Text)
+    drive_token_expiry  = db.Column(db.DateTime)
 
     # Per-stage config for AI document summary (services/gemini.py)
     doc_summary_model = db.Column(db.Text)

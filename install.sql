@@ -114,7 +114,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
     cmp_edition_model            TEXT,
     cmp_edition_temperature      DOUBLE,
     cmp_edition_max_tokens       INT,
-    cmp_edition_system           TEXT
+    cmp_edition_system           TEXT,
+
+    drive_access_token           TEXT,
+    drive_refresh_token          TEXT,
+    drive_token_expiry           DATETIME
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Seed: pusty rekord — aplikacja uzupełni prompt przy pierwszym uruchomieniu

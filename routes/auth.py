@@ -43,6 +43,7 @@ def _make_flow(state=None):
             "openid",
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile",
+            "https://www.googleapis.com/auth/drive.readonly",
         ],
         redirect_uri=_redirect_uri(),
         **kwargs,
@@ -136,6 +137,23 @@ def callback():
     session["user_name"]    = info.get("name", email)
     session["user_picture"] = info.get("picture", "")
     session.pop("oauth_state", None)
+
+    # Save Drive OAuth tokens so the app can sync Drive on behalf of this user.
+    # refresh_token is only issued on first consent — keep existing one if Google omits it.
+    try:
+        from models import AppSettings
+        from extensions import db as _db
+        settings = AppSettings.query.first()
+        if not settings:
+            settings = AppSettings(id=1)
+            _db.session.add(settings)
+        settings.drive_access_token = credentials.token
+        if credentials.refresh_token:
+            settings.drive_refresh_token = credentials.refresh_token
+        settings.drive_token_expiry = credentials.expiry
+        _db.session.commit()
+    except Exception as _exc:
+        log.warning("Nie udało się zapisać tokenów Drive: %s", _exc)
 
     log.info("Zalogowano: %s", email)
 

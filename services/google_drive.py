@@ -97,21 +97,55 @@ def extract_folder_id(url: str) -> str | None:
     return None
 
 
-def list_folder_files(folder_id: str, api_key: str) -> list[dict]:
-    """List a publicly shared Drive folder using an API key."""
+def get_drive_credentials():
+    """Return valid google.oauth2.credentials.Credentials from AppSettings, refreshing if needed."""
+    import os
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+    from models import AppSettings
+    from extensions import db
+
+    settings = AppSettings.query.first()
+    if not settings or not settings.drive_refresh_token:
+        return None
+
+    creds = Credentials(
+        token=settings.drive_access_token,
+        refresh_token=settings.drive_refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=os.environ["GOOGLE_CLIENT_ID"],
+        client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
+        expiry=settings.drive_token_expiry,
+    )
+
+    if not creds.valid:
+        try:
+            creds.refresh(Request())
+            settings.drive_access_token = creds.token
+            settings.drive_token_expiry  = creds.expiry
+            db.session.commit()
+        except Exception as e:
+            _log.warning("Nie udało się odświeżyć tokenu Drive: %s", e)
+            return None
+
+    return creds
+
+
+def list_folder_files(folder_id: str, access_token: str) -> list[dict]:
+    """List a Drive folder shared with the authorized user."""
     url = "https://www.googleapis.com/drive/v3/files"
     params = {
         "q": f"'{folder_id}' in parents and trashed=false",
         "fields": "nextPageToken,files(id,name,mimeType,size)",
         "pageSize": 100,
-        "key": api_key,
         "supportsAllDrives": "true",
         "includeItemsFromAllDrives": "true",
     }
+    headers = {"Authorization": f"Bearer {access_token}"}
     results = []
     session = _make_session()
     while True:
-        resp = session.get(url, params=params, timeout=20)
+        resp = session.get(url, params=params, headers=headers, timeout=20)
         if not resp.ok:
             _raise_drive_error(resp)
         data = resp.json()
@@ -161,13 +195,13 @@ def _raise_drive_error(resp, file_name: str = "") -> None:
     if status == 403:
         if api_reason in ("insufficientFilePermissions", "domainPolicy"):
             hint = (
-                "Plik nie jest udostepniony publicznie lub dostep jest ograniczony domenowo. "
-                "Otworz plik w Google Drive -> Udostepnij -> ustaw 'Kazdy, kto ma link' -> Przegladajacy."
+                "Brak uprawnien do tego pliku. Sprawdz, czy folder jest udostepniony "
+                "uzytkownikowi powiazanemu z kluczem OAuth aplikacji."
             )
         else:
             hint = (
-                "Brak uprawnien do pobrania pliku. Sprawdz, czy plik jest udostepniony publicznie "
-                "(Google Drive -> Udostepnij -> 'Kazdy, kto ma link' -> Przegladajacy)."
+                "Brak uprawnien do pobrania pliku. Sprawdz, czy folder Drive jest udostepniony "
+                "wlasciwemu uzytkownikowi i zaloguj sie ponownie do aplikacji."
             )
         raise RuntimeError(
             f"Google Drive 403 Forbidden{name_info}{drive_detail}{reason_detail}. {hint}"
@@ -192,8 +226,8 @@ def _raise_drive_error(resp, file_name: str = "") -> None:
         )
 
 
-def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, api_key: str) -> str:
-    """Download a publicly shared Drive file using an API key.
+def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, access_token: str) -> str:
+    """Download a Drive file shared with the authorized user.
 
     Retry strategy:
     - attempt 0: normal download
@@ -202,16 +236,17 @@ def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, a
     """
     os.makedirs(dest_dir, exist_ok=True)
     safe_name = _safe_filename(file_name)
+    base_headers: dict = {"Authorization": f"Bearer {access_token}"}
     if mime_type in EXPORT_MIME:
         export_mime, ext = EXPORT_MIME[mime_type]
         base = os.path.splitext(safe_name)[0]
         dest_path = os.path.join(dest_dir, f"{base}{ext}")
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}/export"
-        base_params: dict = {"mimeType": export_mime, "key": api_key, "supportsAllDrives": "true"}
+        base_params: dict = {"mimeType": export_mime, "supportsAllDrives": "true"}
     else:
         dest_path = os.path.join(dest_dir, safe_name)
         url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
-        base_params = {"alt": "media", "key": api_key, "supportsAllDrives": "true"}
+        base_params = {"alt": "media", "supportsAllDrives": "true"}
 
     session = _make_session()
     last_resp = None
@@ -227,7 +262,7 @@ def download_file(file_id: str, file_name: str, mime_type: str, dest_dir: str, a
             "Drive download attempt=%d  file=%s  id=%s  acknowledgeAbuse=%s",
             attempt, file_name, file_id, params.get("acknowledgeAbuse", "false"),
         )
-        resp = session.get(url, params=params, timeout=120, stream=True)
+        resp = session.get(url, params=params, headers=base_headers, timeout=120, stream=True)
         last_resp = resp
 
         if resp.ok:

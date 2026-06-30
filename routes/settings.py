@@ -302,15 +302,15 @@ def gemini_models():
         return jsonify({"error": str(e), "models": []})
 
 
-@bp.route("/settings/save-google-drive", methods=["POST"])
-def save_google_drive():
+@bp.route("/settings/revoke-drive", methods=["POST"])
+def revoke_drive():
     settings = _get_or_create_settings()
-    api_key = request.form.get("google_drive_api_key", "").strip()
-    if api_key:
-        settings.google_drive_api_key = api_key
+    settings.drive_access_token  = None
+    settings.drive_refresh_token = None
+    settings.drive_token_expiry  = None
     settings.updated_at = datetime.utcnow()
     db.session.commit()
-    flash("Klucz Drive API zapisany.", "success")
+    flash("Autoryzacja Google Drive została odwołana.", "success")
     return redirect(url_for("settings.index", tab="integracje"))
 
 
