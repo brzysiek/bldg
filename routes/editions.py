@@ -177,23 +177,34 @@ def sync_drive(c_slug, e_slug):
     edition.gdrive_synced_at = datetime.utcnow()
     db.session.commit()
 
-    # Spawn eager extraction for newly added Drive files — sequential in one thread
-    # to avoid exhausting the DB connection pool (pool_size=2 + overflow=1).
-    new_docs = Document.query.filter_by(edition_id=edition.id).filter(
-        Document.extraction_status == None,
-        Document.gdrive_file_id != None,
-    ).all()
-    if new_docs and settings and settings.gemini_api_key:
-        from routes.files import _run_extract_bg
+    # Spawn segmentation + AI summary for newly added PDF Drive files — sequential
+    # in one thread to avoid exhausting the DB connection pool (pool_size=2 + overflow=1).
+    new_pdfs = [
+        d for d in Document.query.filter_by(edition_id=edition.id).filter(
+            Document.gdrive_file_id != None,
+            Document.extraction_status == None,
+        ).all()
+        if d.mime_type == 'application/pdf' or (d.original_name or '').lower().endswith('.pdf')
+    ]
+    if new_pdfs and settings and settings.gemini_api_key:
+        from routes.files import _run_extract_and_summarize_bg
         app = current_app._get_current_object()
-        doc_ids = [d.id for d in new_docs]
+        for d in new_pdfs:
+            d.extraction_status     = 'pending'
+            d.extraction_error      = None
+            d.extraction_started_at = datetime.utcnow()
+            d.ai_summary_status     = 'pending'
+            d.ai_summary_error      = None
+            d.ai_summary_started_at = datetime.utcnow()
+        db.session.commit()
+        pdf_ids = [d.id for d in new_pdfs]
 
-        def _extract_sequential(ids, _app):
+        def _process_sequential(ids, _app):
             for did in ids:
-                _run_extract_bg(did, _app)
+                _run_extract_and_summarize_bg(did, _app)
 
-        threading.Thread(target=_extract_sequential, args=(doc_ids, app), daemon=True).start()
-        _logger.info("sync_drive: spawned sequential extraction for %d new files", len(new_docs))
+        threading.Thread(target=_process_sequential, args=(pdf_ids, app), daemon=True).start()
+        _logger.info("sync_drive: spawned sequential extract+summarize for %d PDF files", len(new_pdfs))
 
     _logger.info("sync_drive: done +%d updated=%d", added, updated)
     flash(f"Zsynchronizowano: +{added} nowych, {updated} zaktualizowanych.", "success")

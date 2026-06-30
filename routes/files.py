@@ -109,7 +109,8 @@ def upload(c_slug, e_slug):
         db.session.commit()
 
         settings = AppSettings.query.first()
-        if settings and settings.gemini_api_key:
+        _is_pdf = mime.startswith('application/pdf') or original_name.lower().endswith('.pdf')
+        if settings and settings.gemini_api_key and _is_pdf:
             app = current_app._get_current_object()
             threading.Thread(target=_run_extract_bg, args=(doc.id, app), daemon=True).start()
 
@@ -296,6 +297,10 @@ def extract_json(file_id):
     doc = db.session.get(Document, file_id)
     if doc is None:
         return jsonify({"ok": False, "file_id": file_id, "error": "Dokument nie istnieje"}), 404
+
+    _is_pdf = (doc.mime_type or '').startswith('application/pdf') or (doc.original_name or '').lower().endswith('.pdf')
+    if not _is_pdf:
+        return jsonify({"ok": False, "file_id": file_id, "error": "Segmentacja dostępna tylko dla plików PDF"})
 
     settings = AppSettings.query.first()
     if not settings or not settings.gemini_api_key:
