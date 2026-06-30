@@ -150,7 +150,7 @@
             <th class="text-left px-3 py-3 font-medium">Plik</th>
             <th class="text-left px-3 py-3 font-medium">Format</th>
             <th class="text-left px-3 py-3 font-medium">Segmentacja</th>
-            <th class="text-left px-3 py-3 font-medium">Status AI</th>
+            <th class="text-left px-3 py-3 font-medium">Podsumowanie AI</th>
             <th class="text-right px-5 py-3 font-medium">Akcje</th>
           </tr>
         </thead>
@@ -267,33 +267,33 @@
                   {% endif %}
                   {% if has_gemini %}
                     {% if is_pdf %}
-                      {% if any_pending %}
-                        <button id="extract-btn-{{ doc.id }}" disabled
-                                class="px-2.5 py-1.5 bg-gray-100 text-gray-400 rounded text-xs cursor-not-allowed">
-                          🕐 W kolejce
+                      <div id="extract-action-{{ doc.id }}">
+                        {% if doc.extraction_status == 'pending' %}
+                          <button onclick="cancelExtraction({{ doc.id }})"
+                                  class="px-2.5 py-1.5 border border-red-200 text-red-500 rounded text-xs font-medium hover:bg-red-50 transition-colors">
+                            ⛔ Anuluj segm.
+                          </button>
+                        {% elif doc.extraction_status not in ('processing', 'done') %}
+                          <button onclick="extractFile({{ doc.id }})"
+                                  class="px-2.5 py-1.5 border border-bottle/20 text-bottle rounded text-xs font-medium hover:bg-bottle/10 transition-colors">
+                            🔧 Segmentuj
+                          </button>
+                        {% endif %}
+                      </div>
+                    {% endif %}
+                    <div id="summary-action-{{ doc.id }}">
+                      {% if doc.ai_summary_status == 'pending' %}
+                        <button onclick="cancelSummary({{ doc.id }})"
+                                class="px-2.5 py-1.5 border border-red-200 text-red-500 rounded text-xs font-medium hover:bg-red-50 transition-colors">
+                          ⛔ Anuluj podsumuj.
                         </button>
-                      {% else %}
-                        <button id="extract-btn-{{ doc.id }}" onclick="extractFile({{ doc.id }})"
-                                class="px-2.5 py-1.5 border border-bottle/20 text-bottle rounded text-xs font-medium hover:bg-bottle/10 transition-colors">
-                          🔧 {{ 'Ponów segm.' if doc.extraction_status == 'done' else 'Segmentuj' }}
+                      {% elif doc.ai_summary_status not in ('processing', 'done') %}
+                        <button onclick="startSummarize({{ doc.id }})"
+                                class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors">
+                          ✨ Podsumuj
                         </button>
                       {% endif %}
-                    {% endif %}
-                    {% if doc.ai_summary_status == 'pending' %}
-                      <button id="cancel-btn-{{ doc.id }}" onclick="cancelSummary({{ doc.id }})"
-                              class="px-2.5 py-1.5 border border-red-100 text-red-500 rounded text-xs font-medium hover:bg-red-50 transition-colors">
-                        ⛔ Anuluj
-                      </button>
-                    {% else %}
-                      <form id="summarize-form-{{ doc.id }}" method="POST"
-                            action="{{ url_for('files.summarize', file_id=doc.id) }}"
-                            onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='⏳...'">
-                        <button type="submit"
-                                class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors">
-                          ✨ {{ 'Ponów' if doc.ai_summary_status == 'done' else 'Podsumuj AI' }}
-                        </button>
-                      </form>
-                    {% endif %}
+                    </div>
                   {% endif %}
                   <form method="POST" action="{{ url_for('files.delete', file_id=doc.id) }}"
                         onsubmit="return confirm('Usunac plik {{ doc.original_name|e }}?')">
@@ -517,6 +517,8 @@ const _SEGMENTS_JSON_TPL     = {{ url_for('files.segments_json',           file_
 const _segmentsJsonUrl       = id => _SEGMENTS_JSON_TPL.replace('/0/', '/' + id + '/');
 const _CANCEL_TPL            = {{ url_for('files.cancel_summary',          file_id=0)|tojson }};
 const _cancelSummaryUrl      = id => _CANCEL_TPL.replace('/0/', '/' + id + '/');
+const _CANCEL_EXTRACT_TPL    = {{ url_for('files.cancel_extraction',        file_id=0)|tojson }};
+const _cancelExtractionUrl   = id => _CANCEL_EXTRACT_TPL.replace('/0/', '/' + id + '/');
 const _EXTRACT_JSON_TPL      = {{ url_for('files.extract_json',            file_id=0)|tojson }};
 const _extractJsonUrl        = id => _EXTRACT_JSON_TPL.replace('/0/', '/' + id + '/');
 const _EXTRACT_STATUS_TPL    = {{ url_for('files.extract_status',          file_id=0)|tojson }};
@@ -595,18 +597,47 @@ async function bulkSummarize() {
 }
 
 async function cancelSummary(id) {
-  const btn = document.getElementById('cancel-btn-' + id);
-  if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
+  const ac = document.getElementById('summary-action-' + id);
+  if (ac) { ac.innerHTML = '<span class="text-xs text-gray-400">⏳…</span>'; }
   try {
     const resp = await fetch(_cancelSummaryUrl(id), { method: 'POST' });
     if (resp.ok) {
       _setRowCancelled(id);
     } else {
-      if (btn) { btn.disabled = false; btn.textContent = '⛔ Anuluj'; }
+      _setSummaryActionPodsumuj(id);
     }
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = '⛔ Anuluj'; }
+    _setSummaryActionPodsumuj(id);
   }
+}
+
+async function cancelExtraction(id) {
+  const ac = document.getElementById('extract-action-' + id);
+  if (ac) { ac.innerHTML = '<span class="text-xs text-gray-400">⏳…</span>'; }
+  try {
+    const resp = await fetch(_cancelExtractionUrl(id), { method: 'POST' });
+    if (resp.ok) {
+      const row = document.getElementById('doc-row-' + id);
+      if (row) { row.dataset.extractStatus = ''; _applyRowBg(id); }
+      _setExtractActionSegmentuj(id);
+    } else {
+      _setExtractActionAnuluj(id);
+    }
+  } catch (e) {
+    _setExtractActionAnuluj(id);
+  }
+}
+
+async function startSummarize(id) {
+  const ac = document.getElementById('summary-action-' + id);
+  if (ac) { ac.innerHTML = ''; }
+  setRowPending(id);
+  try {
+    const resp = await fetch(_summarizeJsonUrl(id), { method: 'POST' });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok || !data?.ok) { setRowError(id, data?.error || `HTTP ${resp.status}`); _setSummaryActionPodsumuj(id); return; }
+  } catch (e) { setRowError(id, e.message); _setSummaryActionPodsumuj(id); return; }
+  await _pollSummaryStatus(id);
 }
 
 async function bulkCancel() {
@@ -621,6 +652,21 @@ async function bulkCancel() {
   updateBulkBtn();
 }
 
+function _setExtractActionSegmentuj(id) {
+  const ac = document.getElementById('extract-action-' + id);
+  if (ac) ac.innerHTML = `<button onclick="extractFile(${id})" class="px-2.5 py-1.5 border border-bottle/20 text-bottle rounded text-xs font-medium hover:bg-bottle/10 transition-colors">🔧 Segmentuj</button>`;
+}
+
+function _setExtractActionAnuluj(id) {
+  const ac = document.getElementById('extract-action-' + id);
+  if (ac) ac.innerHTML = `<button onclick="cancelExtraction(${id})" class="px-2.5 py-1.5 border border-red-200 text-red-500 rounded text-xs font-medium hover:bg-red-50 transition-colors">⛔ Anuluj segm.</button>`;
+}
+
+function _setSummaryActionPodsumuj(id) {
+  const ac = document.getElementById('summary-action-' + id);
+  if (ac) ac.innerHTML = `<button onclick="startSummarize(${id})" class="px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors">✨ Podsumuj</button>`;
+}
+
 function _setRowCancelled(id) {
   const statusEl = document.getElementById('status-' + id);
   if (statusEl) statusEl.innerHTML = '<span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full">— Brak</span>';
@@ -628,20 +674,10 @@ function _setRowCancelled(id) {
   if (row) {
     const cb = row.querySelector('.doc-cb');
     if (cb) { cb.dataset.pending = 'false'; cb.checked = false; }
-    const cancelBtn = document.getElementById('cancel-btn-' + id);
-    if (cancelBtn) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = _SUMMARIZE_JSON_TPL.replace('/0/summarize-json', '/' + id + '/summarize');
-      form.onsubmit = function() { this.querySelector('button').disabled = true; this.querySelector('button').textContent = '⏳…'; };
-      const btn = document.createElement('button');
-      btn.type = 'submit';
-      btn.className = 'px-2.5 py-1.5 bg-lime text-bottle rounded text-xs font-semibold hover:bg-lime/80 transition-colors';
-      btn.textContent = '✨ Podsumuj AI';
-      form.appendChild(btn);
-      cancelBtn.replaceWith(form);
-    }
+    row.dataset.summaryStatus = '';
+    _applyRowBg(id);
   }
+  _setSummaryActionPodsumuj(id);
   updateBulkBtn();
 }
 
@@ -691,6 +727,8 @@ function _applyRowBg(id) {
 function setRowPending(id) {
   const el = document.getElementById('status-' + id);
   if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>';
+  const ac = document.getElementById('summary-action-' + id);
+  if (ac) ac.innerHTML = `<button onclick="cancelSummary(${id})" class="px-2.5 py-1.5 border border-red-200 text-red-500 rounded text-xs font-medium hover:bg-red-50 transition-colors">⛔ Anuluj podsumuj.</button>`;
   const row = document.getElementById('doc-row-' + id);
   if (row) { row.dataset.summaryStatus = 'pending'; _applyRowBg(id); }
 }
@@ -698,6 +736,8 @@ function setRowPending(id) {
 function setRowProcessing(id) {
   const el = document.getElementById('status-' + id);
   if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⚙️ W toku</span>';
+  const ac = document.getElementById('summary-action-' + id);
+  if (ac) ac.innerHTML = '';
   const row = document.getElementById('doc-row-' + id);
   if (row) { row.dataset.summaryStatus = 'processing'; _applyRowBg(id); }
 }
@@ -714,6 +754,8 @@ function setRowDone(id, description, summary) {
       class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">
       🔍 Podsumowanie</button>`;
   }
+  const ac = document.getElementById('summary-action-' + id);
+  if (ac) ac.innerHTML = '';
   const row = document.getElementById('doc-row-' + id);
   if (row) { row.dataset.summaryStatus = 'done'; _applyRowBg(id); }
 }
@@ -721,6 +763,7 @@ function setRowDone(id, description, summary) {
 function setRowError(id, msg) {
   const el = document.getElementById('status-' + id);
   if (el) el.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">❌ Błąd</span>`;
+  _setSummaryActionPodsumuj(id);
   const row = document.getElementById('doc-row-' + id);
   if (row) { row.dataset.summaryStatus = 'error'; _applyRowBg(id); }
 }
@@ -737,6 +780,8 @@ function _setRowSummaryDone(id, description, summary) {
       class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">
       🔍 Podsumowanie</button>`;
   }
+  const ac = document.getElementById('summary-action-' + id);
+  if (ac) ac.innerHTML = '';
   const row = document.getElementById('doc-row-' + id);
   if (row) { row.dataset.summaryStatus = 'done'; _applyRowBg(id); }
 }
@@ -870,8 +915,7 @@ async function bulkSummarizeAndExtract() {
 function setExtractPending(id) {
   const el = document.getElementById('extract-status-' + id);
   if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>';
-  const btn = document.getElementById('extract-btn-' + id);
-  if (btn) { btn.disabled = true; btn.textContent = '🕐 W kolejce'; }
+  _setExtractActionAnuluj(id);
   const cb = document.querySelector(`.doc-cb[value="${id}"]`);
   if (cb) cb.dataset.extractPending = 'true';
   const row = document.getElementById('doc-row-' + id);
@@ -881,8 +925,8 @@ function setExtractPending(id) {
 function setExtractProcessing(id) {
   const el = document.getElementById('extract-status-' + id);
   if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⚙️ W toku</span>';
-  const btn = document.getElementById('extract-btn-' + id);
-  if (btn) { btn.disabled = true; btn.textContent = '⚙️ W toku'; }
+  const ac = document.getElementById('extract-action-' + id);
+  if (ac) ac.innerHTML = '';
   const row = document.getElementById('doc-row-' + id);
   if (row) { row.dataset.extractStatus = 'processing'; _applyRowBg(id); }
 }
@@ -894,8 +938,8 @@ function setExtractDone(id) {
     const name = row ? (row.querySelector('.doc-cb')?.dataset.name || '') : '';
     el.innerHTML = `<button onclick='showSegments(${id}, ${JSON.stringify(name)})' class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">✅ Gotowa</button>`;
   }
-  const btn = document.getElementById('extract-btn-' + id);
-  if (btn) { btn.disabled = false; btn.textContent = '🔧 Ponów segm.'; }
+  const ac = document.getElementById('extract-action-' + id);
+  if (ac) ac.innerHTML = '';
   const cb = document.querySelector(`.doc-cb[value="${id}"]`);
   if (cb) { cb.dataset.extractPending = 'false'; cb.dataset.extracted = 'true'; }
   const row = document.getElementById('doc-row-' + id);
@@ -905,8 +949,7 @@ function setExtractDone(id) {
 function setExtractError(id, msg) {
   const el = document.getElementById('extract-status-' + id);
   if (el) el.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">❌ Błąd</span>`;
-  const btn = document.getElementById('extract-btn-' + id);
-  if (btn) { btn.disabled = false; btn.textContent = '🔧 Ponów segm.'; }
+  _setExtractActionSegmentuj(id);
   const cb = document.querySelector(`.doc-cb[value="${id}"]`);
   if (cb) cb.dataset.extractPending = 'false';
   const row = document.getElementById('doc-row-' + id);
