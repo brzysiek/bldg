@@ -177,14 +177,17 @@ def sync_drive(c_slug, e_slug):
     edition.gdrive_synced_at = datetime.utcnow()
     db.session.commit()
 
-    # Spawn segmentation + AI summary for newly added PDF Drive files — sequential
+    # Spawn segmentation + AI summary for newly added PDF/DOCX Drive files — sequential
     # in one thread to avoid exhausting the DB connection pool (pool_size=2 + overflow=1).
+    _SEGMENT_MIME = {'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+    _SEGMENT_EXT  = {'.pdf', '.docx'}
     new_pdfs = [
         d for d in Document.query.filter_by(edition_id=edition.id).filter(
             Document.gdrive_file_id != None,
             Document.extraction_status == None,
         ).all()
-        if d.mime_type == 'application/pdf' or (d.original_name or '').lower().endswith('.pdf')
+        if (d.mime_type or '') in _SEGMENT_MIME
+        or any((d.original_name or '').lower().endswith(e) for e in _SEGMENT_EXT)
     ]
     if new_pdfs and settings and settings.gemini_api_key:
         from routes.files import _run_extract_and_summarize_bg
@@ -258,17 +261,19 @@ def api_edition_files(edition_id):
     edition = db.session.get(Edition, edition_id)
     if not edition:
         return jsonify([])
+    _SM = {'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+    _SE = {'.pdf', '.docx'}
     docs = []
     for doc in edition.documents:
-        is_pdf = (doc.mime_type or '').startswith('application/pdf') \
-                 or (doc.original_name or '').lower().endswith('.pdf')
+        is_segmentable = (doc.mime_type or '') in _SM \
+                         or any((doc.original_name or '').lower().endswith(e) for e in _SE)
         docs.append({
             "id": doc.id,
             "name": doc.original_name,
             "size": doc.file_size or 0,
             "from_gdrive": bool(doc.gdrive_file_id),
             "description": (doc.ai_description or "").strip(),
-            "is_pdf": is_pdf,
+            "is_pdf": is_segmentable,
             "extraction_status": doc.extraction_status,
         })
     docs.sort(key=lambda d: d["name"])

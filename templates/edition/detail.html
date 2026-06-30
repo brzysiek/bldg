@@ -158,7 +158,9 @@
         <tbody class="divide-y divide-gray-50">
           {% for doc in all_docs %}
             {%- set row_ext = doc.original_name.rsplit('.', 1)[-1].upper() if '.' in doc.original_name else '?' -%}
-            {%- set is_pdf = (doc.mime_type == 'application/pdf') or doc.original_name.lower().endswith('.pdf') -%}
+            {%- set is_pdf = (doc.mime_type in ('application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'))
+                            or doc.original_name.lower().endswith('.pdf')
+                            or doc.original_name.lower().endswith('.docx') -%}
             {%- set any_pending = (doc.extraction_status in ('pending', 'processing')) or (doc.ai_summary_status in ('pending', 'processing')) -%}
             <tr id="doc-row-{{ doc.id }}" data-ext="{{ row_ext }}" class="hover:bg-gray-50/50 transition-colors">
               <td class="px-3 py-3">

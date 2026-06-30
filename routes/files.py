@@ -109,7 +109,10 @@ def upload(c_slug, e_slug):
         db.session.commit()
 
         settings = AppSettings.query.first()
-        _is_pdf = mime.startswith('application/pdf') or original_name.lower().endswith('.pdf')
+        _is_pdf = mime.startswith('application/pdf') \
+                  or original_name.lower().endswith('.pdf') \
+                  or original_name.lower().endswith('.docx') \
+                  or 'wordprocessingml' in mime
         if settings and settings.gemini_api_key and _is_pdf:
             app = current_app._get_current_object()
             threading.Thread(target=_run_extract_bg, args=(doc.id, app), daemon=True).start()
@@ -298,9 +301,12 @@ def extract_json(file_id):
     if doc is None:
         return jsonify({"ok": False, "file_id": file_id, "error": "Dokument nie istnieje"}), 404
 
-    _is_pdf = (doc.mime_type or '').startswith('application/pdf') or (doc.original_name or '').lower().endswith('.pdf')
-    if not _is_pdf:
-        return jsonify({"ok": False, "file_id": file_id, "error": "Segmentacja dostępna tylko dla plików PDF"})
+    _mime = doc.mime_type or ''
+    _name = (doc.original_name or '').lower()
+    _is_segmentable = (_mime.startswith('application/pdf') or 'wordprocessingml' in _mime
+                       or _name.endswith('.pdf') or _name.endswith('.docx'))
+    if not _is_segmentable:
+        return jsonify({"ok": False, "file_id": file_id, "error": "Segmentacja dostępna tylko dla plików PDF i DOCX"})
 
     settings = AppSettings.query.first()
     if not settings or not settings.gemini_api_key:
