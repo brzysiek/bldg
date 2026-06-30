@@ -12,6 +12,16 @@
   </div>
 </div>
 
+<!-- Grep filter -->
+<div class="relative mb-3">
+  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-mono select-none">grep:</span>
+  <input id="grep-input" type="text" placeholder="filtruj logi…"
+         class="w-full pl-12 pr-8 py-1.5 bg-gray-100 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-bottle/30"
+         oninput="setGrep(this.value)">
+  <button onclick="setGrep(''); document.getElementById('grep-input').value=''"
+          class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm leading-none hidden" id="grep-clear">✕</button>
+</div>
+
 <!-- Level filters -->
 <div class="flex gap-2 mb-4 flex-wrap">
   {% for lvl, cls in [('ALL','bg-gray-700 text-white'), ('DEBUG','bg-gray-500 text-white'), ('INFO','bg-blue-600 text-white'), ('WARNING','bg-yellow-500 text-white'), ('ERROR','bg-red-600 text-white'), ('CRITICAL','bg-red-900 text-white')] %}
@@ -42,6 +52,7 @@ const LEVEL_COLORS = {
 const LEVEL_ORDER = ['DEBUG','INFO','WARNING','ERROR','CRITICAL'];
 
 let activeFilter = 'ALL';
+let grepFilter   = '';
 let lastTs = 0;
 let allRecords = [];
 let autoScroll = true;
@@ -59,6 +70,12 @@ function setFilter(lvl) {
   renderAll();
 }
 
+function setGrep(val) {
+  grepFilter = val.trim().toLowerCase();
+  document.getElementById('grep-clear').classList.toggle('hidden', !grepFilter);
+  renderAll();
+}
+
 function clearView() {
   allRecords = [];
   lastTs = Date.now() / 1000;
@@ -66,8 +83,9 @@ function clearView() {
 }
 
 function passesFilter(r) {
-  if (activeFilter === 'ALL') return true;
-  return LEVEL_ORDER.indexOf(r.level) >= LEVEL_ORDER.indexOf(activeFilter);
+  if (activeFilter !== 'ALL' && LEVEL_ORDER.indexOf(r.level) < LEVEL_ORDER.indexOf(activeFilter)) return false;
+  if (grepFilter && !r.msg.toLowerCase().includes(grepFilter) && !(r.name || '').toLowerCase().includes(grepFilter)) return false;
+  return true;
 }
 
 function renderAll() {
