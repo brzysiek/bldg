@@ -66,6 +66,9 @@ class Document(db.Model):
     extraction_status      = db.Column(db.Text)   # null | 'pending' | 'done' | 'error'
     extraction_error       = db.Column(db.Text)
     extraction_prompt_hash = db.Column(db.Text)   # md5 of extraction prompt only
+    extraction_started_at  = db.Column(db.DateTime)
+
+    ai_summary_started_at  = db.Column(db.DateTime)
 
 
 class AppSettings(db.Model):
