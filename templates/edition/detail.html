@@ -167,8 +167,8 @@
                        value="{{ doc.id }}"
                        data-name="{{ doc.original_name | e }}"
                        data-is-pdf="{{ 'true' if is_pdf else 'false' }}"
-                       data-pending="{{ 'true' if doc.ai_summary_status == 'pending' else 'false' }}"
-                       data-extract-pending="{{ 'true' if doc.extraction_status == 'pending' else 'false' }}"
+                       data-pending="{{ 'true' if doc.ai_summary_status in ('pending', 'processing') else 'false' }}"
+                       data-extract-pending="{{ 'true' if doc.extraction_status in ('pending', 'processing') else 'false' }}"
                        data-extracted="{{ 'true' if doc.extraction_status == 'done' else 'false' }}"
                        onchange="updateBulkBtn()" />
               </td>
@@ -946,5 +946,74 @@ async function bulkExtract() {
   document.querySelectorAll('.doc-cb').forEach(cb => { cb.disabled = false; cb.checked = false; });
   updateBulkBtn();
 }
+
+/* ── Auto-watch: postęp segmentacji uruchomionej w tle (np. po sync) ── */
+const _AUTO_WATCH = [
+  {% for doc in all_docs %}
+  {% if doc.extraction_status in ('pending', 'processing') or doc.ai_summary_status in ('pending', 'processing') %}
+  {
+    id: {{ doc.id }},
+    name: {{ doc.original_name | tojson }},
+    extractStatus: {{ (doc.extraction_status or '') | tojson }},
+    summaryStatus: {{ (doc.ai_summary_status or '') | tojson }},
+  },
+  {% endif %}
+  {% endfor %}
+];
+
+async function autoWatchProgress(docs) {
+  const total = docs.length;
+  let done = 0;
+
+  const progressEl = document.getElementById('bulk-progress');
+  const stopBtn    = document.getElementById('btn-stop-bulk');
+  progressEl.classList.remove('hidden');
+  if (stopBtn) { stopBtn.disabled = true; }
+
+  const bar = document.getElementById('progress-bar');
+  bar.style.width = '0%';
+  bar.className = 'bg-bottle h-2 rounded-full transition-all duration-500';
+  document.getElementById('progress-label').textContent   = `⏳ Segmentacja i AI w tle — 0 / ${total}`;
+  document.getElementById('progress-fraction').textContent = `0 / ${total}`;
+  document.getElementById('progress-file').textContent    = '';
+
+  await Promise.all(docs.map(async (d) => {
+    const needsExtract = ['pending', 'processing'].includes(d.extractStatus);
+    const needsSummary = ['pending', 'processing'].includes(d.summaryStatus);
+
+    if (needsExtract) {
+      d.extractStatus === 'processing' ? setExtractProcessing(d.id) : setExtractPending(d.id);
+    }
+    if (needsSummary) {
+      d.summaryStatus === 'processing' ? setRowProcessing(d.id) : setRowPending(d.id);
+    }
+
+    if (needsExtract && needsSummary) {
+      await _pollCombinedStatus(d.id);
+    } else if (needsExtract) {
+      await _pollExtractStatus(d.id);
+    } else {
+      await _pollSummaryStatus(d.id);
+    }
+
+    done++;
+    const pct = Math.round((done / total) * 100);
+    bar.style.width = pct + '%';
+    document.getElementById('progress-fraction').textContent = `${done} / ${total}`;
+    document.getElementById('progress-label').textContent = done < total
+      ? `⏳ Segmentacja i AI w tle — ${done} / ${total}`
+      : `✅ Gotowe — przetworzono ${total} plików`;
+    if (done === total) {
+      bar.classList.replace('bg-bottle', 'bg-green-500');
+      document.getElementById('progress-file').textContent = '';
+    }
+  }));
+
+  if (stopBtn) { stopBtn.disabled = false; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (_AUTO_WATCH.length > 0) autoWatchProgress(_AUTO_WATCH);
+});
 </script>
 {% endblock %}
