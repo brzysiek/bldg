@@ -10,7 +10,9 @@ log = logging.getLogger(__name__)
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
-ALLOWED_DOMAINS = {"bldg.pl", "lukaszbrzyski.com"}
+def _allowed_domains() -> set[str]:
+    raw = os.environ.get("ALLOWED_DOMAINS", "bldg.pl,lukaszbrzyski.com")
+    return {d.strip().lower() for d in raw.split(",") if d.strip()}
 
 
 def _redirect_uri():
@@ -128,11 +130,12 @@ def callback():
 
     email  = info.get("email", "")
     domain = email.split("@")[-1].lower() if "@" in email else ""
+    allowed = _allowed_domains()
 
-    if domain not in ALLOWED_DOMAINS:
+    if domain not in allowed:
         log.warning("Zablokowana próba logowania: %s (domena %s)", email, domain)
         flash(
-            f"Dostęp tylko dla kont @bldg.pl i @lukaszbrzyski.com. "
+            f"Dostęp tylko dla kont z dozwolonych domen ({', '.join(sorted(allowed))}). "
             f"Zalogowano jako: {email}",
             "error",
         )
