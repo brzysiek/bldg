@@ -62,6 +62,7 @@ services:
       GOOGLE_CLIENT_ID:           ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET:       ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI:        ${GOOGLE_REDIRECT_URI:-}
+      ALLOWED_DOMAINS:            ${ALLOWED_DOMAINS:-}
       DEV_BYPASS_AUTH:            ${DEV_BYPASS_AUTH:-}
     volumes:
       - ./storage:/app/storage
