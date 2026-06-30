@@ -373,6 +373,9 @@ def cancel_extraction(file_id):
         return jsonify({"ok": False, "error": "Dokument nie istnieje"}), 404
     if doc.extraction_status == "pending":
         doc.extraction_status = None
+        # extraction and AI run together — cancel both
+        if doc.ai_summary_status == "pending":
+            doc.ai_summary_status = None
         db.session.commit()
     return jsonify({"ok": True, "file_id": file_id})
 

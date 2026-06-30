@@ -617,9 +617,16 @@ async function cancelExtraction(id) {
   try {
     const resp = await fetch(_cancelExtractionUrl(id), { method: 'POST' });
     if (resp.ok) {
+      // clear extraction status cell
+      const extEl = document.getElementById('extract-status-' + id);
+      if (extEl) extEl.innerHTML = '<span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full">— Brak</span>';
+      // clear AI summary status cell (both run together, so both cancelled)
+      const sumEl = document.getElementById('status-' + id);
+      if (sumEl) sumEl.innerHTML = '<span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full">— Brak</span>';
       const row = document.getElementById('doc-row-' + id);
-      if (row) { row.dataset.extractStatus = ''; _applyRowBg(id); }
+      if (row) { row.dataset.extractStatus = ''; row.dataset.summaryStatus = ''; _applyRowBg(id); }
       _setExtractActionSegmentuj(id);
+      _setSummaryActionPodsumuj(id);
     } else {
       _setExtractActionAnuluj(id);
     }

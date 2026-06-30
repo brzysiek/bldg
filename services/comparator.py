@@ -620,8 +620,13 @@ def extract_and_summarize(doc_id: int) -> tuple:
     try:
         fresh = db.session.get(Document, doc_id)
         if fresh:
-            fresh.extraction_status = "processing"
-            fresh.ai_summary_status = "processing"
+            if fresh.extraction_status is None:
+                # cancelled before we started — abort silently
+                return True, None
+            if fresh.extraction_status == "pending":
+                fresh.extraction_status = "processing"
+            if fresh.ai_summary_status == "pending":
+                fresh.ai_summary_status = "processing"
             db.session.commit()
     except Exception:
         try:
