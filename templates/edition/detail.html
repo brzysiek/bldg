@@ -678,6 +678,7 @@ async function bulkCancel() {
     .then(r => r.ok && _setRowCancelled(+cb.value))
     .catch(() => {})
   ));
+  _updateAutoWatchBar();
   document.getElementById('btn-bulk-cancel').disabled = false;
   updateBulkBtn();
 }
@@ -708,8 +709,11 @@ function _setRowCancelled(id) {
     _applyRowBg(id);
   }
   _setSummaryActionPodsumuj(id);
+  _cancelledViaButton.add(id);
+  if (_awTotal > _awDone) { _awTotal--; }
   updateBulkBtn();
 }
+
 
 function showProgressError(fileId, fileName, msg) {
   const log = document.getElementById('error-log');
