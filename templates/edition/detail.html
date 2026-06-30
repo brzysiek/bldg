@@ -161,7 +161,24 @@
                             or doc.original_name.lower().endswith('.pdf')
                             or doc.original_name.lower().endswith('.docx') -%}
             {%- set any_pending = (doc.extraction_status in ('pending', 'processing')) or (doc.ai_summary_status in ('pending', 'processing')) -%}
-            <tr id="doc-row-{{ doc.id }}" data-ext="{{ row_ext }}" class="hover:bg-gray-50/50 transition-colors">
+            {%- set _es = doc.extraction_status or '' -%}
+            {%- set _ss = doc.ai_summary_status or '' -%}
+            {%- if _es == 'error' or _ss == 'error' -%}
+              {%- set row_bg = 'bg-red-50 hover:bg-red-100/50' -%}
+            {%- elif _es == 'processing' or _ss == 'processing' -%}
+              {%- set row_bg = 'bg-blue-50 hover:bg-blue-100/50' -%}
+            {%- elif _es == 'pending' or _ss == 'pending' -%}
+              {%- set row_bg = 'bg-amber-50 hover:bg-amber-100/50' -%}
+            {%- elif _ss == 'done' and (not is_pdf or _es == 'done') -%}
+              {%- set row_bg = 'bg-green-50 hover:bg-green-100/50' -%}
+            {%- else -%}
+              {%- set row_bg = 'hover:bg-gray-50/50' -%}
+            {%- endif -%}
+            <tr id="doc-row-{{ doc.id }}" data-ext="{{ row_ext }}"
+                data-extract-status="{{ doc.extraction_status or '' }}"
+                data-summary-status="{{ doc.ai_summary_status or '' }}"
+                data-is-pdf="{{ 'true' if is_pdf else 'false' }}"
+                class="{{ row_bg }} transition-colors">
               <td class="px-3 py-3">
                 <input type="checkbox"
                        class="doc-cb rounded border-gray-300 text-bottle focus:ring-bottle/30 cursor-pointer"
@@ -653,14 +670,36 @@ function setProgress(done, total, filename, state) {
   }
 }
 
+function _applyRowBg(id) {
+  const row = document.getElementById('doc-row-' + id);
+  if (!row) return;
+  const ext   = row.dataset.extractStatus || '';
+  const sum   = row.dataset.summaryStatus || '';
+  const isPdf = row.dataset.isPdf === 'true';
+  const allDone = sum === 'done' && (!isPdf || ext === 'done');
+  const BG = ['bg-red-50','bg-blue-50','bg-amber-50','bg-green-50',
+              'hover:bg-red-100/50','hover:bg-blue-100/50','hover:bg-amber-100/50',
+              'hover:bg-green-100/50','hover:bg-gray-50/50'];
+  BG.forEach(c => row.classList.remove(c));
+  if ([ext, sum].includes('error'))       { row.classList.add('bg-red-50',   'hover:bg-red-100/50'); }
+  else if ([ext, sum].includes('processing')) { row.classList.add('bg-blue-50',  'hover:bg-blue-100/50'); }
+  else if ([ext, sum].includes('pending'))    { row.classList.add('bg-amber-50', 'hover:bg-amber-100/50'); }
+  else if (allDone)                           { row.classList.add('bg-green-50', 'hover:bg-green-100/50'); }
+  else                                        { row.classList.add('hover:bg-gray-50/50'); }
+}
+
 function setRowPending(id) {
   const el = document.getElementById('status-' + id);
   if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>';
+  const row = document.getElementById('doc-row-' + id);
+  if (row) { row.dataset.summaryStatus = 'pending'; _applyRowBg(id); }
 }
 
 function setRowProcessing(id) {
   const el = document.getElementById('status-' + id);
   if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⚙️ W toku</span>';
+  const row = document.getElementById('doc-row-' + id);
+  if (row) { row.dataset.summaryStatus = 'processing'; _applyRowBg(id); }
 }
 
 function setRowDone(id, description, summary) {
@@ -671,16 +710,19 @@ function setRowDone(id, description, summary) {
   if (statusEl) {
     const row = document.getElementById('doc-row-' + id);
     const name = row ? (row.querySelector('.doc-cb')?.dataset.name || '') : '';
-    // Use single-quoted attribute to avoid " conflict with JSON.stringify
     statusEl.innerHTML = `<button onclick='showSummary(${id}, ${JSON.stringify(name)})'
       class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">
       🔍 Podsumowanie</button>`;
   }
+  const row = document.getElementById('doc-row-' + id);
+  if (row) { row.dataset.summaryStatus = 'done'; _applyRowBg(id); }
 }
 
 function setRowError(id, msg) {
   const el = document.getElementById('status-' + id);
   if (el) el.innerHTML = `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="${msg.replace(/"/g,'&quot;')}">❌ Błąd</span>`;
+  const row = document.getElementById('doc-row-' + id);
+  if (row) { row.dataset.summaryStatus = 'error'; _applyRowBg(id); }
 }
 
 function _setRowSummaryDone(id, description, summary) {
@@ -695,6 +737,8 @@ function _setRowSummaryDone(id, description, summary) {
       class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">
       🔍 Podsumowanie</button>`;
   }
+  const row = document.getElementById('doc-row-' + id);
+  if (row) { row.dataset.summaryStatus = 'done'; _applyRowBg(id); }
 }
 
 async function _pollSummaryStatus(id, maxAttempts = 240) {
@@ -830,6 +874,8 @@ function setExtractPending(id) {
   if (btn) { btn.disabled = true; btn.textContent = '🕐 W kolejce'; }
   const cb = document.querySelector(`.doc-cb[value="${id}"]`);
   if (cb) cb.dataset.extractPending = 'true';
+  const row = document.getElementById('doc-row-' + id);
+  if (row) { row.dataset.extractStatus = 'pending'; _applyRowBg(id); }
 }
 
 function setExtractProcessing(id) {
@@ -837,6 +883,8 @@ function setExtractProcessing(id) {
   if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⚙️ W toku</span>';
   const btn = document.getElementById('extract-btn-' + id);
   if (btn) { btn.disabled = true; btn.textContent = '⚙️ W toku'; }
+  const row = document.getElementById('doc-row-' + id);
+  if (row) { row.dataset.extractStatus = 'processing'; _applyRowBg(id); }
 }
 
 function setExtractDone(id) {
@@ -850,6 +898,8 @@ function setExtractDone(id) {
   if (btn) { btn.disabled = false; btn.textContent = '🔧 Ponów segm.'; }
   const cb = document.querySelector(`.doc-cb[value="${id}"]`);
   if (cb) { cb.dataset.extractPending = 'false'; cb.dataset.extracted = 'true'; }
+  const row = document.getElementById('doc-row-' + id);
+  if (row) { row.dataset.extractStatus = 'done'; _applyRowBg(id); }
 }
 
 function setExtractError(id, msg) {
@@ -859,6 +909,8 @@ function setExtractError(id, msg) {
   if (btn) { btn.disabled = false; btn.textContent = '🔧 Ponów segm.'; }
   const cb = document.querySelector(`.doc-cb[value="${id}"]`);
   if (cb) cb.dataset.extractPending = 'false';
+  const row = document.getElementById('doc-row-' + id);
+  if (row) { row.dataset.extractStatus = 'error'; _applyRowBg(id); }
 }
 
 async function _pollExtractStatus(id, maxAttempts = 240) {
