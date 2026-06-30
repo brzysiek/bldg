@@ -54,7 +54,9 @@
             <div class="text-xs text-slate-text/50 mt-0.5 flex items-center gap-3">
               {% if edition.year %}<span>{{ edition.year }}</span>{% endif %}
               {% if edition.deadline %}<span>Termin: {{ edition.deadline.strftime('%d.%m.%Y') }}</span>{% endif %}
-              <span>{{ edition.document_types | length }} typ{% if edition.document_types | length != 1 %}y{% endif %} dokumentów</span>
+              {% set total_docs = edition.documents | length %}
+              {% set ready_docs = edition.documents | selectattr('extraction_status', 'equalto', 'done') | list | length %}
+              <span>{{ total_docs }} plik{% if total_docs == 1 %}{% elif total_docs in [2,3,4] %}i{% else %}ów{% endif %} ({{ ready_docs }} gotowych do porównania)</span>
             </div>
           </div>
         </div>
