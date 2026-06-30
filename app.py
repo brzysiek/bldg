@@ -254,20 +254,19 @@ def _seed_comparison_prompts():
         db.session.commit()
 
 
-def _cleanup_stale_doc_tasks() -> int:
-    """Reset documents stuck in 'pending' with no active background thread.
+_STALE_TASK_MINUTES = 30
 
-    Safe to call at startup (active set is empty → all pending tasks are orphaned)
-    and periodically during runtime (only clears tasks not tracked in _ACTIVE_TASKS).
+
+def _cleanup_stale_doc_tasks() -> int:
+    """Reset documents stuck in 'pending' for longer than _STALE_TASK_MINUTES.
+
+    Uses DB timestamps instead of in-memory tracking — safe across multiple
+    Gunicorn workers or Passenger processes.
     """
     from models import Document
     from sqlalchemy import or_
-    try:
-        from routes.files import _ACTIVE_TASKS, _ACTIVE_TASKS_LOCK
-        with _ACTIVE_TASKS_LOCK:
-            active_ids = set(_ACTIVE_TASKS.keys())
-    except Exception:
-        active_ids = set()
+
+    cutoff = datetime.utcnow() - timedelta(minutes=_STALE_TASK_MINUTES)
 
     stale = Document.query.filter(
         or_(Document.ai_summary_status == "pending",
@@ -276,17 +275,19 @@ def _cleanup_stale_doc_tasks() -> int:
 
     cleaned = 0
     for doc in stale:
-        if doc.id in active_ids:
-            continue
         changed = False
         if doc.ai_summary_status == "pending":
-            doc.ai_summary_status = None
-            doc.ai_summary_error = None
-            changed = True
+            started = doc.ai_summary_started_at
+            if started is None or started < cutoff:
+                doc.ai_summary_status = None
+                doc.ai_summary_error  = None
+                changed = True
         if doc.extraction_status == "pending":
-            doc.extraction_status = None
-            doc.extraction_error = None
-            changed = True
+            started = doc.extraction_started_at
+            if started is None or started < cutoff:
+                doc.extraction_status = None
+                doc.extraction_error  = None
+                changed = True
         if changed:
             cleaned += 1
 

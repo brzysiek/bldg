@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS documents (
     extraction_status      TEXT,
     extraction_error       TEXT,
     extraction_prompt_hash TEXT,
+    extraction_started_at  DATETIME,
+    ai_summary_started_at  DATETIME,
 
     CONSTRAINT fk_documents_edition
         FOREIGN KEY (edition_id) REFERENCES editions (id) ON DELETE CASCADE

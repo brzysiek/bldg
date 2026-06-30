@@ -19,20 +19,6 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 bp = Blueprint("files", __name__)
 
-# Registry of doc_ids currently being processed in background threads.
-# Used by _cleanup_stale_doc_tasks() to distinguish live tasks from orphaned ones.
-_ACTIVE_TASKS: dict[int, str] = {}   # doc_id → 'summarize' | 'extract' | 'both'
-_ACTIVE_TASKS_LOCK = threading.Lock()
-
-
-def _register_task(doc_id: int, kind: str) -> None:
-    with _ACTIVE_TASKS_LOCK:
-        _ACTIVE_TASKS[doc_id] = kind
-
-
-def _unregister_task(doc_id: int) -> None:
-    with _ACTIVE_TASKS_LOCK:
-        _ACTIVE_TASKS.pop(doc_id, None)
 
 
 def _snap_orm(obj):
@@ -54,43 +40,31 @@ def _allowed(filename):
 
 def _run_extract_bg(doc_id: int, app):
     """Run extract_document in a background thread with its own app context."""
-    _register_task(doc_id, "extract")
-    try:
-        from services.comparator import extract_document
-        with app.app_context():
-            extract_document(doc_id)
-    finally:
-        _unregister_task(doc_id)
+    from services.comparator import extract_document
+    with app.app_context():
+        extract_document(doc_id)
 
 
 def _run_extract_and_summarize_bg(doc_id: int, app):
     """Run extract_and_summarize in a background thread with its own app context."""
-    _register_task(doc_id, "both")
-    try:
-        from services.comparator import extract_and_summarize
-        with app.app_context():
-            extract_and_summarize(doc_id)
-    finally:
-        _unregister_task(doc_id)
+    from services.comparator import extract_and_summarize
+    with app.app_context():
+        extract_and_summarize(doc_id)
 
 
 def _run_summarize_bg(doc_id: int, app):
     """Run summarization in a background thread with its own app context."""
-    _register_task(doc_id, "summarize")
-    try:
-        with app.app_context():
-            doc = db.session.get(Document, doc_id)
-            if not doc:
-                return
-            settings = AppSettings.query.first()
-            if not settings or not settings.gemini_api_key:
-                _db_write_error(doc_id, "Brak klucza Gemini API")
-                return
-            doc_snap      = _snap_orm(doc)
-            settings_snap = _snap_orm(settings)
-            _run_summarize(doc_snap, settings_snap)
-    finally:
-        _unregister_task(doc_id)
+    with app.app_context():
+        doc = db.session.get(Document, doc_id)
+        if not doc:
+            return
+        settings = AppSettings.query.first()
+        if not settings or not settings.gemini_api_key:
+            _db_write_error(doc_id, "Brak klucza Gemini API")
+            return
+        doc_snap      = _snap_orm(doc)
+        settings_snap = _snap_orm(settings)
+        _run_summarize(doc_snap, settings_snap)
 
 
 @bp.route("/competition/<c_slug>/edition/<e_slug>/upload", methods=["GET", "POST"])
@@ -294,8 +268,9 @@ def summarize_json(file_id):
     if not settings or not settings.gemini_api_key:
         return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API w ustawieniach"})
 
-    doc.ai_summary_status = "pending"
-    doc.ai_summary_error  = None
+    doc.ai_summary_status     = "pending"
+    doc.ai_summary_error      = None
+    doc.ai_summary_started_at = datetime.utcnow()
     db.session.commit()
 
     app_obj = current_app._get_current_object()
@@ -326,8 +301,9 @@ def extract_json(file_id):
     if not settings or not settings.gemini_api_key:
         return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
 
-    doc.extraction_status = "pending"
-    doc.extraction_error  = None
+    doc.extraction_status     = "pending"
+    doc.extraction_error      = None
+    doc.extraction_started_at = datetime.utcnow()
     db.session.commit()
 
     app = current_app._get_current_object()
@@ -347,10 +323,12 @@ def extract_and_summarize_json(file_id):
     if not settings or not settings.gemini_api_key:
         return jsonify({"ok": False, "file_id": file_id, "error": "Brak klucza Gemini API"})
 
-    doc.extraction_status = "pending"
-    doc.extraction_error  = None
-    doc.ai_summary_status = "pending"
-    doc.ai_summary_error  = None
+    doc.extraction_status     = "pending"
+    doc.extraction_error      = None
+    doc.extraction_started_at = datetime.utcnow()
+    doc.ai_summary_status     = "pending"
+    doc.ai_summary_error      = None
+    doc.ai_summary_started_at = datetime.utcnow()
     db.session.commit()
 
     app_obj = current_app._get_current_object()
