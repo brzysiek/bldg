@@ -158,12 +158,15 @@
         <tbody class="divide-y divide-gray-50">
           {% for doc in all_docs %}
             {%- set row_ext = doc.original_name.rsplit('.', 1)[-1].upper() if '.' in doc.original_name else '?' -%}
+            {%- set is_pdf = (doc.mime_type == 'application/pdf') or doc.original_name.lower().endswith('.pdf') -%}
+            {%- set any_pending = (doc.extraction_status == 'pending') or (doc.ai_summary_status == 'pending') -%}
             <tr id="doc-row-{{ doc.id }}" data-ext="{{ row_ext }}" class="hover:bg-gray-50/50 transition-colors">
               <td class="px-3 py-3">
                 <input type="checkbox"
                        class="doc-cb rounded border-gray-300 text-bottle focus:ring-bottle/30 cursor-pointer"
                        value="{{ doc.id }}"
                        data-name="{{ doc.original_name | e }}"
+                       data-is-pdf="{{ 'true' if is_pdf else 'false' }}"
                        data-pending="{{ 'true' if doc.ai_summary_status == 'pending' else 'false' }}"
                        data-extract-pending="{{ 'true' if doc.extraction_status == 'pending' else 'false' }}"
                        data-extracted="{{ 'true' if doc.extraction_status == 'done' else 'false' }}"
@@ -202,9 +205,11 @@
                 {% if doc.extraction_status == 'done' %}
                   <button onclick='showSegments({{ doc.id }}, {{ doc.original_name | tojson }})' class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium hover:bg-green-200 transition-colors">✅ Gotowa</button>
                 {% elif doc.extraction_status == 'pending' %}
-                  <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>
+                  <span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>
                 {% elif doc.extraction_status == 'error' %}
                   <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="{{ doc.extraction_error or '' }}">❌ Błąd</span>
+                {% elif not is_pdf %}
+                  <span class="px-2 py-0.5 bg-gray-100 text-gray-300 text-xs rounded-full">— n/d</span>
                 {% else %}
                   <span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-full">— Brak</span>
                 {% endif %}
@@ -216,7 +221,7 @@
                     🔍 Podsumowanie
                   </button>
                 {% elif doc.ai_summary_status == 'pending' %}
-                  <span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>
+                  <span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>
                 {% elif doc.ai_summary_status == 'error' %}
                   <span class="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-medium cursor-help" title="{{ doc.ai_summary_error or '' }}">❌ Błąd</span>
                 {% else %}
@@ -237,13 +242,18 @@
                     </a>
                   {% endif %}
                   {% if has_gemini %}
-                    {% if doc.extraction_status == 'pending' %}
-                      <span id="extract-btn-{{ doc.id }}" class="px-2.5 py-1.5 bg-gray-100 text-gray-400 rounded text-xs">⏳ Segmentuję…</span>
-                    {% else %}
-                      <button id="extract-btn-{{ doc.id }}" onclick="extractFile({{ doc.id }})"
-                              class="px-2.5 py-1.5 border border-bottle/20 text-bottle rounded text-xs font-medium hover:bg-bottle/10 transition-colors">
-                        🔧 {{ 'Ponów segm.' if doc.extraction_status == 'done' else 'Segmentuj' }}
-                      </button>
+                    {% if is_pdf %}
+                      {% if any_pending %}
+                        <button id="extract-btn-{{ doc.id }}" disabled
+                                class="px-2.5 py-1.5 bg-gray-100 text-gray-400 rounded text-xs cursor-not-allowed">
+                          🕐 W kolejce
+                        </button>
+                      {% else %}
+                        <button id="extract-btn-{{ doc.id }}" onclick="extractFile({{ doc.id }})"
+                                class="px-2.5 py-1.5 border border-bottle/20 text-bottle rounded text-xs font-medium hover:bg-bottle/10 transition-colors">
+                          🔧 {{ 'Ponów segm.' if doc.extraction_status == 'done' else 'Segmentuj' }}
+                        </button>
+                      {% endif %}
                     {% endif %}
                     {% if doc.ai_summary_status == 'pending' %}
                       <button id="cancel-btn-{{ doc.id }}" onclick="cancelSummary({{ doc.id }})"
@@ -638,7 +648,7 @@ function setProgress(done, total, filename, state) {
 
 function setRowPending(id) {
   const el = document.getElementById('status-' + id);
-  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>';
+  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>';
 }
 
 function setRowDone(id, description, summary) {
@@ -800,9 +810,9 @@ async function bulkSummarizeAndExtract() {
 /* ── Extraction ── */
 function setExtractPending(id) {
   const el = document.getElementById('extract-status-' + id);
-  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">⏳ W toku</span>';
+  if (el) el.innerHTML = '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">🕐 W kolejce</span>';
   const btn = document.getElementById('extract-btn-' + id);
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Segmentuję…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '🕐 W kolejce'; }
   const cb = document.querySelector(`.doc-cb[value="${id}"]`);
   if (cb) cb.dataset.extractPending = 'true';
 }
