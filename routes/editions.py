@@ -258,15 +258,18 @@ def api_edition_files(edition_id):
     edition = db.session.get(Edition, edition_id)
     if not edition:
         return jsonify([])
-    docs = [
-        {
+    docs = []
+    for doc in edition.documents:
+        is_pdf = (doc.mime_type or '').startswith('application/pdf') \
+                 or (doc.original_name or '').lower().endswith('.pdf')
+        docs.append({
             "id": doc.id,
             "name": doc.original_name,
             "size": doc.file_size or 0,
             "from_gdrive": bool(doc.gdrive_file_id),
             "description": (doc.ai_description or "").strip(),
-        }
-        for doc in edition.documents
-    ]
+            "is_pdf": is_pdf,
+            "extraction_status": doc.extraction_status,
+        })
     docs.sort(key=lambda d: d["name"])
     return jsonify(docs)

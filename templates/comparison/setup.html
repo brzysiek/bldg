@@ -90,6 +90,22 @@
       </button>
     </div>
 
+    <!-- Blokada segmentacji -->
+    <div id="segmentation-block" class="hidden py-5">
+      <div class="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl mb-4">
+        <span class="text-xl shrink-0 mt-0.5">🕐</span>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-amber-800 mb-1">Segmentacja w toku</p>
+          <p id="segmentation-block-msg" class="text-xs text-amber-700 mb-3"></p>
+          <div id="segmentation-block-files" class="space-y-1 mb-3"></div>
+          <button type="button" onclick="retryLoadFiles()"
+                  class="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 transition-colors">
+            ↺ Odśwież status
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="mapping-content" class="hidden">
       <!-- Kreator par: Starsza → Nowsza (spójnie z krokiem 2) -->
       <div class="flex flex-col sm:flex-row gap-3 items-end mb-4 pb-4 border-b border-gray-100">
@@ -327,9 +343,47 @@ async function loadFiles(oldId, newId) {
     labelInput.value = `${compName} — ${oldName} → ${newName}`;
   }
 
-  autoPairs();
+  // Sprawdź czy któreś PDF-y są jeszcze w trakcie segmentacji
+  const _inProgress = s => s === 'pending' || s === 'processing';
+  const blockingFiles = [
+    ...rawOld.filter(f => f.is_pdf && _inProgress(f.extraction_status))
+              .map(f => ({name: f.name, edition: oldName, status: f.extraction_status})),
+    ...rawNew.filter(f => f.is_pdf && _inProgress(f.extraction_status))
+              .map(f => ({name: f.name, edition: newName, status: f.extraction_status})),
+  ];
 
   document.getElementById('mapping-loading').classList.add('hidden');
+  const blockEl = document.getElementById('segmentation-block');
+
+  if (blockingFiles.length > 0) {
+    const total = blockingFiles.length;
+    const inToku = blockingFiles.filter(f => f.status === 'processing').length;
+    const wKolejce = total - inToku;
+    const parts = [];
+    if (inToku)   parts.push(`${inToku} ${inToku === 1 ? 'plik jest' : 'pliki są'} w toku`);
+    if (wKolejce) parts.push(`${wKolejce} ${wKolejce === 1 ? 'czeka' : 'czeka'} w kolejce`);
+    document.getElementById('segmentation-block-msg').textContent =
+      `Wybór par do porównania zostanie odblokowany po zakończeniu segmentacji. ${parts.join(', ')}.`;
+    const filesEl = document.getElementById('segmentation-block-files');
+    filesEl.innerHTML = blockingFiles.map(f => {
+      const badge = f.status === 'processing'
+        ? '<span class="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded font-medium">⚙️ W toku</span>'
+        : '<span class="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs rounded font-medium">🕐 W kolejce</span>';
+      return `<div class="flex items-center gap-2 text-xs text-amber-800">
+        ${badge}
+        <span class="font-medium truncate">${f.edition}</span>
+        <span class="text-amber-600/60">›</span>
+        <span class="truncate">${f.name}</span>
+      </div>`;
+    }).join('');
+    blockEl.classList.remove('hidden');
+    document.getElementById('mapping-content').classList.add('hidden');
+    document.getElementById('submit-panel').style.display = 'none';
+    return;
+  }
+
+  blockEl.classList.add('hidden');
+  autoPairs();
   document.getElementById('mapping-content').classList.remove('hidden');
 }
 
