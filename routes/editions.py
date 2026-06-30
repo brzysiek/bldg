@@ -58,7 +58,7 @@ def new(c_slug):
 
 
 def _has_drive(settings) -> bool:
-    return bool(settings and settings.google_drive_api_key)
+    return bool(settings and settings.drive_refresh_token)
 
 
 @bp.route("/competition/<c_slug>/edition/<e_slug>")
@@ -130,17 +130,22 @@ def sync_drive(c_slug, e_slug):
     settings = AppSettings.query.first()
 
     if not _has_drive(settings):
-        flash("Brak klucza Drive API. Skonfiguruj go w Ustawieniach.", "warning")
+        flash("Brak autoryzacji Google Drive. Wyloguj się i zaloguj ponownie, aby udzielić dostępu.", "warning")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
     if not edition.gdrive_folder_id:
         flash("Ustaw link do folderu Google Drive dla tej edycji.", "warning")
         return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
 
+    from services.google_drive import get_drive_credentials, list_folder_files
+    creds = get_drive_credentials()
+    if not creds:
+        flash("Token Drive wygasł lub jest nieprawidłowy. Wyloguj się i zaloguj ponownie.", "warning")
+        return redirect(url_for("editions.detail", c_slug=c_slug, e_slug=e_slug))
+
     _logger.info("sync_drive: listing folder=%s", edition.gdrive_folder_id)
     try:
-        from services.google_drive import list_folder_files
-        files = list_folder_files(edition.gdrive_folder_id, settings.google_drive_api_key)
+        files = list_folder_files(edition.gdrive_folder_id, creds.token)
     except Exception as exc:
         _logger.error("sync_drive: list error: %s", exc)
         flash(f"Błąd pobierania listy plików z Drive: {exc}", "error")
