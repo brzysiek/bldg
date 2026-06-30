@@ -260,22 +260,22 @@ def _resolve_local_path(doc, settings):
     import tempfile, shutil
     tmp_dir = tempfile.mkdtemp()
     try:
-        if settings and settings.google_drive_api_key:
-            from services.google_drive import download_file
-            log.info(
-                "_resolve_local_path  pobieranie z Drive: '%s'  id=%s",
-                doc.original_name, doc.gdrive_file_id,
-            )
-            path = download_file(
-                doc.gdrive_file_id, doc.original_name,
-                doc.mime_type or "application/pdf", tmp_dir, settings.google_drive_api_key,
-            )
-            log.info("_resolve_local_path  pobrano OK: '%s'", doc.original_name)
-        else:
+        from services.google_drive import get_drive_credentials, download_file
+        creds = get_drive_credentials()
+        if not creds:
             shutil.rmtree(tmp_dir, ignore_errors=True)
             raise ValueError(
-                f"Brak klucza Drive API — nie mozna pobrac pliku '{doc.original_name}'"
+                f"Brak autoryzacji Drive — zaloguj się ponownie (plik '{doc.original_name}')"
             )
+        log.info(
+            "_resolve_local_path  pobieranie z Drive: '%s'  id=%s",
+            doc.original_name, doc.gdrive_file_id,
+        )
+        path = download_file(
+            doc.gdrive_file_id, doc.original_name,
+            doc.mime_type or "application/pdf", tmp_dir, creds.token,
+        )
+        log.info("_resolve_local_path  pobrano OK: '%s'", doc.original_name)
         return path, tmp_dir
     except Exception:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -521,9 +521,9 @@ def extract_document(doc_id: int) -> tuple:
     if doc.extraction_status == "done" and doc.extraction_prompt_hash == ph:
         return True, None
 
-    if doc.gdrive_file_id and not settings.google_drive_api_key:
-        _write_extract_error(doc_id, "Brak klucza Drive API")
-        return False, "Brak klucza Drive API"
+    if doc.gdrive_file_id and not settings.drive_refresh_token:
+        _write_extract_error(doc_id, "Brak autoryzacji Drive — zaloguj się ponownie")
+        return False, "Brak autoryzacji Drive"
 
     # Snapshot all needed values while the session is still open.
     # commit() expires ORM attributes; accessing expired attrs after commit
@@ -599,9 +599,9 @@ def extract_and_summarize(doc_id: int) -> tuple:
         _write_extract_error(doc_id, "Brak klucza Gemini API")
         return False, "Brak klucza Gemini API"
 
-    if doc.gdrive_file_id and not settings.google_drive_api_key:
-        _write_extract_error(doc_id, "Brak klucza Drive API")
-        return False, "Brak klucza Drive API"
+    if doc.gdrive_file_id and not settings.drive_refresh_token:
+        _write_extract_error(doc_id, "Brak autoryzacji Drive — zaloguj się ponownie")
+        return False, "Brak autoryzacji Drive"
 
     # Snapshot BEFORE any commit — commit() expires ORM attributes, triggering
     # lazy reloads that hold a DB connection through the long Gemini/Drive work.
