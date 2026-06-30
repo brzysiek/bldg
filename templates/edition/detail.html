@@ -149,7 +149,6 @@
             </th>
             <th class="text-left px-3 py-3 font-medium">Plik</th>
             <th class="text-left px-3 py-3 font-medium">Format</th>
-            <th class="text-left px-3 py-3 font-medium">Opis</th>
             <th class="text-left px-3 py-3 font-medium">Segmentacja</th>
             <th class="text-left px-3 py-3 font-medium">Status AI</th>
             <th class="text-right px-5 py-3 font-medium">Akcje</th>
@@ -175,10 +174,15 @@
                        onchange="updateBulkBtn()" />
               </td>
               <td class="px-3 py-3">
-                <div class="flex items-center gap-2">
-                  <span>{{ doc.original_name | file_icon }}</span>
-                  <span class="font-medium text-slate-text">{{ doc.original_name }}</span>
-                  {% if doc.gdrive_file_id %}<span class="text-xs text-blue-400">☁️</span>{% endif %}
+                <div class="flex items-start gap-2">
+                  <span class="mt-0.5 shrink-0">{{ doc.original_name | file_icon }}</span>
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-1.5">
+                      <span class="font-medium text-slate-text">{{ doc.original_name }}</span>
+                      {% if doc.gdrive_file_id %}<span class="text-xs text-blue-400 shrink-0">☁️</span>{% endif %}
+                    </div>
+                    <div id="desc-{{ doc.id }}" class="text-xs text-slate-text/50 mt-0.5 leading-snug">{{ doc.ai_description or '' }}</div>
+                  </div>
                 </div>
               </td>
               <td class="px-3 py-3">
@@ -199,9 +203,6 @@
                   'jpeg': 'bg-violet-100 text-violet-700',
                 } -%}
                 <span class="px-2 py-0.5 {{ _ec.get(ext, 'bg-gray-100 text-gray-500') }} text-xs rounded font-mono">{{ ext.upper() or '?' }}</span>
-              </td>
-              <td id="desc-{{ doc.id }}" class="px-3 py-3 text-slate-text/70 text-xs max-w-[160px]">
-                {{ doc.ai_description or '—' }}
               </td>
               <td id="extract-status-{{ doc.id }}" class="px-3 py-3">
                 {% if doc.extraction_status == 'done' %}
@@ -665,7 +666,7 @@ function setRowProcessing(id) {
 function setRowDone(id, description, summary) {
   SUMMARIES[id] = summary;
   const descEl = document.getElementById('desc-' + id);
-  if (descEl) descEl.textContent = description || '—';
+  if (descEl) descEl.textContent = description || '';
   const statusEl = document.getElementById('status-' + id);
   if (statusEl) {
     const row = document.getElementById('doc-row-' + id);
@@ -684,7 +685,7 @@ function setRowError(id, msg) {
 
 function _setRowSummaryDone(id, description, summary) {
   const descEl = document.getElementById('desc-' + id);
-  if (descEl) descEl.textContent = description || '—';
+  if (descEl) descEl.textContent = description || '';
   SUMMARIES[id] = summary || '';
   const statusEl = document.getElementById('status-' + id);
   if (statusEl) {
